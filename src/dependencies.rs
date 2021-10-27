@@ -2,11 +2,10 @@ use crate::error::*;
 use std::io::BufRead;
 use std::path::Path;
 use std::process::Command;
-use tempdir::TempDir;
 
 /// Resolves the dependencies based on the output of dpkg-shlibdeps on the binary.
 pub fn resolve(path: &Path) -> CDResult<Vec<String>> {
-    let temp_folder = TempDir::new("cargo-deb-dependency-resolve")?;
+    let temp_folder = tempfile::tempdir()?;
     let debian_folder = temp_folder.path().join("debian");
     let control_file_path = debian_folder.join("control");
     std::fs::create_dir_all(&debian_folder)?;

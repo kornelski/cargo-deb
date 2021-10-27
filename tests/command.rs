@@ -2,7 +2,6 @@ use std::env;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
-use tempdir::TempDir;
 
 #[test]
 #[cfg(all(feature = "lzma", target_os = "linux"))]
@@ -22,7 +21,7 @@ fn run_cargo_deb_command_on_example_dir() {
     let deb_path = Path::new(::std::str::from_utf8(last_line).unwrap());
     assert!(deb_path.exists());
 
-    let ardir = TempDir::new("cargo-deb-test").expect("testdir");
+    let ardir = tempfile::tempdir().expect("testdir");
     assert!(ardir.path().exists());
     assert!(Command::new("ar")
         .current_dir(ardir.path())
@@ -34,7 +33,7 @@ fn run_cargo_deb_command_on_example_dir() {
     assert!(ardir.path().join("data.tar.xz").exists());
     assert!(ardir.path().join("control.tar.xz").exists());
 
-    let cdir = TempDir::new("cargo-control-test").unwrap();
+    let cdir = tempfile::tempdir().unwrap();
     assert!(Command::new("tar")
         .arg("xf")
         .current_dir(cdir.path())
@@ -56,7 +55,7 @@ fn run_cargo_deb_command_on_example_dir() {
     assert!(md5sums.contains("1537684900f6b12358c88a612adf1049  var/lib/example/3.txt\n"));
     assert!(md5sums.contains("6f65f1e8907ea8a25171915b3bba45af  usr/share/doc/example/copyright\n"));
 
-    let ddir = TempDir::new("cargo-data-test").unwrap();
+    let ddir = tempfile::tempdir().unwrap();
     assert!(Command::new("tar")
         .arg("xJf")
         .current_dir(ddir.path())
@@ -82,7 +81,7 @@ fn run_cargo_deb_command_on_example_dir_with_variant() {
     let root = PathBuf::from(env::var_os("CARGO_MANIFEST_DIR").unwrap());
     let cmd_path = root.join(format!("target/debug/cargo-deb{}", std::env::consts::EXE_SUFFIX));
     assert!(cmd_path.exists());
-    let cargo_dir = TempDir::new("cargo-deb-target").unwrap();
+    let cargo_dir = tempfile::tempdir().unwrap();
     let deb_path = cargo_dir.path().join("test.deb");
     let output = Command::new(cmd_path)
         .env("CARGO_TARGET_DIR", cargo_dir.path()) // otherwise tests overwrite each other
@@ -105,7 +104,7 @@ fn run_cargo_deb_command_on_example_dir_with_variant() {
     assert_eq!(printed_deb_path, deb_path);
     assert!(deb_path.exists());
 
-    let ardir = TempDir::new("cargo-deb-test2").unwrap();
+    let ardir = tempfile::tempdir().unwrap();
     assert!(ardir.path().exists());
     assert!(Command::new("ar")
         .current_dir(ardir.path())
@@ -117,7 +116,7 @@ fn run_cargo_deb_command_on_example_dir_with_variant() {
     assert!(ardir.path().join("data.tar.xz").exists());
     assert!(ardir.path().join("control.tar.xz").exists());
 
-    let cdir = TempDir::new("cargo-control-test").unwrap();
+    let cdir = tempfile::tempdir().unwrap();
     assert!(Command::new("tar")
         .arg("xJf")
         .current_dir(cdir.path())
@@ -139,7 +138,7 @@ fn run_cargo_deb_command_on_example_dir_with_variant() {
     assert!(md5sums.contains("835a3c46f2330925774ebf780aa74241  var/lib/example/4.txt\n"));
     assert!(md5sums.contains("2455967cef930e647146a8c762199ed3  usr/share/doc/example-debug/copyright\n"));
 
-    let ddir = TempDir::new("cargo-data-test").unwrap();
+    let ddir = tempfile::tempdir().unwrap();
     assert!(Command::new("tar")
         .arg("xJf")
         .current_dir(ddir.path())
@@ -160,7 +159,7 @@ fn run_cargo_deb_command_on_example_dir_with_version() {
     let root = PathBuf::from(env::var_os("CARGO_MANIFEST_DIR").unwrap());
     let cmd_path = root.join("target/debug/cargo-deb");
     assert!(cmd_path.exists());
-    let cargo_dir = TempDir::new("cargo-deb-target").unwrap();
+    let cargo_dir = tempfile::tempdir().unwrap();
     let deb_path = cargo_dir.path().join("test.deb");
     let output = Command::new(cmd_path)
         .env("CARGO_TARGET_DIR", cargo_dir.path()) // otherwise tests overwrite each other
@@ -178,7 +177,7 @@ fn run_cargo_deb_command_on_example_dir_with_version() {
     let deb_path = Path::new(::std::str::from_utf8(last_line).unwrap());
     assert!(deb_path.exists());
 
-    let ardir = TempDir::new("cargo-deb-test").unwrap();
+    let ardir = tempfile::tempdir().unwrap();
     assert!(ardir.path().exists());
     assert!(Command::new("ar")
         .current_dir(ardir.path())
@@ -190,7 +189,7 @@ fn run_cargo_deb_command_on_example_dir_with_version() {
     assert!(ardir.path().join("data.tar.xz").exists());
     assert!(ardir.path().join("control.tar.xz").exists());
 
-    let cdir = TempDir::new("cargo-control-test").unwrap();
+    let cdir = tempfile::tempdir().unwrap();
     assert!(Command::new("tar")
         .arg("xf")
         .current_dir(cdir.path())
@@ -212,7 +211,7 @@ fn run_cargo_deb_command_on_example_dir_with_version() {
     assert!(md5sums.contains("1537684900f6b12358c88a612adf1049  var/lib/example/3.txt\n"));
     assert!(md5sums.contains("6f65f1e8907ea8a25171915b3bba45af  usr/share/doc/example/copyright\n"), "has:\n{}", md5sums);
 
-    let ddir = TempDir::new("cargo-data-test").unwrap();
+    let ddir = tempfile::tempdir().unwrap();
     assert!(Command::new("tar")
         .arg("xJf")
         .current_dir(ddir.path())

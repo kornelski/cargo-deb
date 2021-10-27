@@ -54,7 +54,7 @@ rayon = "1.5.1"
 regex = { version = "1.5.4", default-features = false, features = ["std"] }
 itertools = "0.10.1"
 num_cpus = { version = "1.13.0", optional = true }
-tempdir = "0.3.7"
+tempfile = "3.2.0"
 
 [features]
 default = ["lzma"]
