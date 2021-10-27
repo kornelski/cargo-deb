@@ -32,18 +32,11 @@ pub fn resolve(path: &Path) -> CDResult<Vec<String>> {
         ));
     }
 
-    let deps = output
-        .stdout
-        .lines()
-        .find(|line_result| {
-            if let Ok(line) = line_result {
-                line.starts_with("shlibs:")
-            } else {
-                false
-            }
-        })
-        .ok_or(CargoDebError::Str("Failed to find dependency specification."))??
-        .replace("shlibs:Depends=", "")
+    let deps = output.stdout.lines()
+        .filter_map(|line| line.ok())
+        .find(|line| line.starts_with("shlibs:Depends="))
+        .ok_or(CargoDebError::Str("Failed to find dependency specification."))?
+        .trim_start_matches("shlibs:Depends=")
         .split(',')
         .map(|dep| dep.trim().to_string())
         .filter(|dep| !dep.starts_with("libgcc-")) // libgcc guaranteed by LSB to always be present
