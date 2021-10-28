@@ -41,9 +41,9 @@ pub fn xz_or_gz(data: &[u8], _fast: bool) -> CDResult<Compressed> {
 /// Compresses data using the xz2 library
 #[cfg(feature = "lzma")]
 pub fn xz_or_gz(data: &[u8], fast: bool) -> CDResult<Compressed> {
+    use std::io::Write;
     use xz2::stream;
     use xz2::write::XzEncoder;
-    use std::io::Write;
 
     // Compressed data is typically half to a third the original size
     let buf = Vec::with_capacity(data.len() >> 1);
@@ -58,7 +58,7 @@ pub fn xz_or_gz(data: &[u8], fast: bool) -> CDResult<Compressed> {
     let mut writer = XzEncoder::new_stream(buf, encoder);
     writer.write_all(data).map_err(|e| CargoDebError::Io(e))?;
 
-    let compressed = writer.finish().map_err(|e| CargoDebError::Io(e))?; 
+    let compressed = writer.finish().map_err(|e| CargoDebError::Io(e))?;
 
     Ok(Compressed::Xz(compressed))
 }
