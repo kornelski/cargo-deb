@@ -28,9 +28,8 @@ No configuration is necessary to make a basic package from a Cargo project with 
 
 For a more complete Debian package, you may also define a new table, `[package.metadata.deb]` that contains `maintainer`, `copyright`, `license-file`, `changelog`, `depends`, `conflicts`, `breaks`, `replaces`, `provides`, `extended-description`/`extended-description-file`, `section`, `priority`, and `assets`.
 
-For a Debian package that includes one or more systemd unit files you may also wish to define a new (inline) table, `[package.metadata.deb.systemd-units]`, so that the unit files are automatically added as assets and the units are properly installed. [Systemd integration][systemd]
+For a Debian package that includes one or more systemd unit files you may also wish to define a new (inline) table, `[package.metadata.deb.systemd-units]`, so that the unit files are automatically added as assets and the units are properly installed. [Systemd integration](./systemd.md)
 
-[systemd]: https://github.com/mmstick/cargo-deb/blob/HEAD/systemd.md
 
 ### `[package.metadata.deb]` options
 
@@ -65,7 +64,7 @@ Everything is optional:
  - **default-features**: whether to use default crate features in addition to the `features` list (default `true`).
  - **separate-debug-symbols**: whether to keep debug symbols, but strip them from executables and save them in separate files (default `false`).
  - **preserve-symlinks**: Whether to preserve symlinks in the asset files (default `false`).
- - **systemd-units**: Optional configuration settings for automated installation of [systemd units][systemd].
+ - **systemd-units**: Optional configuration settings for automated installation of [systemd units](./systemd.md).
 
 ### Example of custom `Cargo.toml` additions
 
@@ -96,7 +95,7 @@ There can be multiple variants of the metadata in one `Cargo.toml` file. `--vari
 
 ### `[package.metadata.deb.systemd-units]`
 
-[See systemd integration][systemd].
+[See systemd integration](./systemd.md).
 
 ### Cross-compilation
 
