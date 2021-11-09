@@ -1192,7 +1192,7 @@ mod tests {
         mock_listener.expect_info().return_const(());
 
         // supply a systemd unit file as if it were available on disk
-        add_test_fs_paths(&vec![to_canon_static_str("cargo-deb.service")]);
+        let _g = add_test_fs_paths(&vec![to_canon_static_str("cargo-deb.service")]);
 
         let config = Config::from_manifest(Path::new("Cargo.toml"), None, None, None, None, None, &mut mock_listener).unwrap();
 
@@ -1210,7 +1210,7 @@ mod tests {
         mock_listener.expect_info().return_const(());
 
         // supply a systemd unit file as if it were available on disk
-        add_test_fs_paths(&vec![to_canon_static_str("cargo-deb.service")]);
+        let _g = add_test_fs_paths(&vec![to_canon_static_str("cargo-deb.service")]);
 
         let mut config = Config::from_manifest(Path::new("Cargo.toml"), None, None, None, None, None, &mut mock_listener).unwrap();
 

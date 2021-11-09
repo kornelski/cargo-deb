@@ -487,7 +487,7 @@ mod tests {
         // one of each valid pattern (without a specific unit) and one
         // additional valid pattern with a unit (which should not be matched
         // as we don't specify a specific unit name to match)
-        add_test_fs_paths(&vec![
+        let _g = add_test_fs_paths(&vec![
             "debian/mypkg.mount",
             "debian/mypkg@.path",
             "debian/service", // demonstrates the main package fallback
@@ -513,7 +513,7 @@ mod tests {
         // one of each valid pattern (with a specific unit) and one additional
         // valid pattern without a unit (which should not be matched if there is
         // match with the correctly named unit).
-        add_test_fs_paths(&vec![
+        let _g = add_test_fs_paths(&vec![
             "debian/mypkg.myunit.mount",
             "debian/mypkg@.myunit.path",
             "debian/service", // main package match should be ignored
@@ -525,7 +525,7 @@ mod tests {
         ]);
 
         // add some paths that should not be matched
-        add_test_fs_paths(&vec![
+        let _g = add_test_fs_paths(&vec![
             "debian/nested/dir/mykpg.myunit.mount",
             "debian/README.md",
             "mypkg.myunit.mount",
@@ -788,7 +788,7 @@ WantedBy=multi-user.target");
 
         // Add all Autoscript paths to the in-memory test file system so that
         // we can track whether they are read or not.
-        add_test_fs_paths(&vec![
+        let _g = add_test_fs_paths(&vec![
             "postinst-init-tmpfiles",
             "postinst-systemd-dont-enable",
             "postinst-systemd-enable",

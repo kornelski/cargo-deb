@@ -281,7 +281,7 @@ mod tests {
         let (config, mut mock_listener, mut in_ar) = prepare();
 
         // supply a maintainer script as if it were available on disk
-        add_test_fs_paths(&vec!["debian/postinst"]);
+        let _g = add_test_fs_paths(&vec!["debian/postinst"]);
 
         // generate scripts and store them in the given archive
         generate_scripts(&mut in_ar, &config, &mut mock_listener).unwrap();
@@ -347,7 +347,7 @@ mod tests {
         let (mut config, mut mock_listener, mut in_ar) = prepare();
 
         // supply a systemd unit file as if it were available on disk
-        add_test_fs_paths(&vec!["some.service"]);
+        let _g = add_test_fs_paths(&vec!["some.service"]);
 
         // make the unit file available for systemd unit processing
         config.assets.resolved.push(Asset::new(

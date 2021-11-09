@@ -339,7 +339,7 @@ mod tests {
 
     #[test]
     fn pkgfile_finds_most_specific_match_with_pkg_unit_file() {
-        add_test_fs_paths(&vec![
+        let _g = add_test_fs_paths(&vec![
             "/parent/dir/postinst",
             "/parent/dir/myunit.postinst",
             "/parent/dir/mypkg.postinst",
@@ -357,7 +357,7 @@ mod tests {
 
     #[test]
     fn pkgfile_finds_most_specific_match_without_unit_file() {
-        add_test_fs_paths(&vec![
+        let _g = add_test_fs_paths(&vec![
             "/parent/dir/postinst",
             "/parent/dir/mypkg.postinst",
         ]);
@@ -371,7 +371,7 @@ mod tests {
 
     #[test]
     fn pkgfile_finds_most_specific_match_without_pkg_file() {
-        add_test_fs_paths(&vec![
+        let _g = add_test_fs_paths(&vec![
             "/parent/dir/postinst",
             "/parent/dir/myunit.postinst",
         ]);
@@ -385,7 +385,7 @@ mod tests {
 
     #[test]
     fn pkgfile_finds_a_fallback_match() {
-        add_test_fs_paths(&vec![
+        let _g = add_test_fs_paths(&vec![
             "/parent/dir/postinst",
             "/parent/dir/myunit.postinst",
             "/parent/dir/mypkg.postinst",
@@ -403,7 +403,7 @@ mod tests {
 
     #[test]
     fn pkgfile_fails_to_find_a_match() {
-        add_test_fs_paths(&vec![
+        let _g = add_test_fs_paths(&vec![
             "/parent/dir/postinst",
             "/parent/dir/myunit.postinst",
             "/parent/dir/mypkg.postinst",
@@ -608,6 +608,7 @@ mod tests {
     #[rstest]
     #[should_panic(expected = "Test failed as expected")]
     fn debhelper_script_subst_errs_if_user_file_lacks_token(invalid_user_file: String) {
+        let _g = add_test_fs_paths(&[]);
         set_test_fs_path_content("myscript", invalid_user_file);
 
         let mut mock_listener = crate::listener::MockListener::new();
@@ -625,6 +626,7 @@ mod tests {
     #[rstest]
     #[test]
     fn debhelper_script_subst_with_user_file_only(valid_user_file: String) {
+        let _g = add_test_fs_paths(&[]);
         set_test_fs_path_content("myscript", valid_user_file);
 
         let mut mock_listener = crate::listener::MockListener::new();
@@ -644,6 +646,7 @@ mod tests {
 
     #[test]
     fn debhelper_script_subst_with_generated_file_only() {
+        let _g = add_test_fs_paths(&[]);
         let mut mock_listener = crate::listener::MockListener::new();
         mock_listener.expect_info().times(1).return_const(());
 
@@ -663,6 +666,7 @@ mod tests {
     #[rstest]
     #[test]
     fn debhelper_script_subst_with_user_and_generated_file(valid_user_file: String) {
+        let _g = add_test_fs_paths(&[]);
         set_test_fs_path_content("myscript", valid_user_file.clone());
 
         let mut mock_listener = crate::listener::MockListener::new();
@@ -693,6 +697,7 @@ mod tests {
         maintainer_script: &'static str,
         service_order: bool,
     ) {
+        let _g = add_test_fs_paths(&[]);
         set_test_fs_path_content(maintainer_script, valid_user_file.clone());
 
         let mut mock_listener = crate::listener::MockListener::new();
@@ -727,6 +732,7 @@ mod tests {
     )]
     #[test]
     fn debhelper_script_subst_with_user_file_access_error(error: &str) {
+        let _g = add_test_fs_paths(&[]);
         set_test_fs_path_content("myscript", format!("error:{}", error).to_owned());
 
         let mut mock_listener = crate::listener::MockListener::new();
@@ -755,6 +761,7 @@ mod tests {
     #[rstest]
     #[test]
     fn apply_with_valid_user_files(valid_user_file: String) {
+        let _g = add_test_fs_paths(&[]);
         let scripts = &["postinst", "preinst", "prerm", "postrm"];
 
         for script in scripts {

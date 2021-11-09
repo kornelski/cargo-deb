@@ -159,13 +159,25 @@ pub(crate) mod tests {
         static MOCK_FS: Mutex<HashMap<&'static str, TestPath>> = Mutex::new(HashMap::new());
     );
 
-    pub(crate) fn add_test_fs_paths(paths: &Vec<&'static str>) {
+    pub(crate) struct ResetFsGuard;
+
+    impl Drop for ResetFsGuard {
+        fn drop(&mut self) {
+            MOCK_FS.with(|fs| {
+                fs.lock().unwrap().clear();
+            });
+        }
+    }
+
+    #[must_use]
+    pub(crate) fn add_test_fs_paths(paths: &[&'static str]) -> ResetFsGuard {
         MOCK_FS.with(|fs| {
             let mut fs_map = fs.lock().unwrap();
             for path in paths {
                 fs_map.insert(path, TestPath::new(path, "".to_owned()));
             }
-        })
+        });
+        ResetFsGuard
     }
 
     pub(crate) fn set_test_fs_path_content(path: &'static str, contents: String) {
