@@ -75,15 +75,23 @@ impl CargoConfig {
                 return Some(Cow::Borrowed(Path::new(strip)));
             }
         }
+
+        let debian_target_triple = crate::debian_triple(target_triple);
         if let Some(linker) = self.linker_command(target_triple) {
-            if linker.contains('/') {
-                let strip_path = Path::new(linker).with_file_name(command_name);
+            if linker.parent().is_some() {
+                let linker_file_name = linker.file_name().unwrap().to_str().unwrap();
+                // checks whether it's `/usr/bin/triple-ld` or `/custom-toolchain/ld`
+                let strip_path = if linker_file_name.starts_with(&debian_target_triple) {
+                    linker.with_file_name(format!("{}-{}", debian_target_triple, command_name))
+                } else {
+                    linker.with_file_name(command_name)
+                };
                 if strip_path.exists() {
                     return Some(strip_path.into());
                 }
             }
         }
-        let path = PathBuf::from(format!("/usr/bin/{}-{}", crate::debian_triple(target_triple), command_name));
+        let path = PathBuf::from(format!("/usr/bin/{}-{}", debian_target_triple, command_name));
         if path.exists() {
             return Some(path.into());
         }
@@ -94,9 +102,9 @@ impl CargoConfig {
         &self.path
     }
 
-    fn linker_command(&self, target_triple: &str) -> Option<&str> {
+    fn linker_command(&self, target_triple: &str) -> Option<&Path> {
         if let Some(target) = self.target_conf(target_triple) {
-            return target.get("linker").and_then(|l| l.as_str());
+            return target.get("linker").and_then(|l| l.as_str()).map(Path::new);
         }
         None
     }
