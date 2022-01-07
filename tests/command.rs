@@ -7,7 +7,7 @@ use std::process::Command;
 #[cfg(all(feature = "lzma", target_os = "linux"))]
 fn run_cargo_deb_command_on_example_dir() {
     let root = PathBuf::from(env::var_os("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR"));
-    let cmd_path = root.join("target/debug/cargo-deb");
+    let cmd_path = root.join(env!("CARGO_BIN_EXE_cargo-deb"));
     assert!(cmd_path.exists());
     let output = Command::new(cmd_path)
         .arg(format!("--manifest-path={}", root.join("example/Cargo.toml").display()))
@@ -79,7 +79,7 @@ fn run_cargo_deb_command_on_example_dir() {
 #[cfg(all(feature = "lzma"))]
 fn run_cargo_deb_command_on_example_dir_with_variant() {
     let root = PathBuf::from(env::var_os("CARGO_MANIFEST_DIR").unwrap());
-    let cmd_path = root.join(format!("target/debug/cargo-deb{}", std::env::consts::EXE_SUFFIX));
+    let cmd_path = root.join(env!("CARGO_BIN_EXE_cargo-deb"));
     assert!(cmd_path.exists());
     let cargo_dir = tempfile::tempdir().unwrap();
     let deb_path = cargo_dir.path().join("test.deb");
@@ -157,7 +157,7 @@ fn run_cargo_deb_command_on_example_dir_with_variant() {
 #[cfg(all(feature = "lzma", target_os = "linux"))]
 fn run_cargo_deb_command_on_example_dir_with_version() {
     let root = PathBuf::from(env::var_os("CARGO_MANIFEST_DIR").unwrap());
-    let cmd_path = root.join("target/debug/cargo-deb");
+    let cmd_path = root.join(env!("CARGO_BIN_EXE_cargo-deb"));
     assert!(cmd_path.exists());
     let cargo_dir = tempfile::tempdir().unwrap();
     let deb_path = cargo_dir.path().join("test.deb");
