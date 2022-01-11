@@ -1,0 +1,2 @@
+echo >&2 "Yay post-installation reached."
+#DEBHELPER#

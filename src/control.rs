@@ -48,6 +48,7 @@ pub fn generate_archive(options: &Config, time: u64, asset_hashes: HashMap<PathB
 /// should be inserted.
 fn generate_scripts(archive: &mut Archive, option: &Config, listener: &mut dyn Listener) -> CDResult<()> {
     if let Some(ref maintainer_scripts_dir) = option.maintainer_scripts {
+        let maintainer_scripts_dir = option.manifest_dir.as_path().join(&maintainer_scripts_dir);
         let mut scripts;
 
         if let Some(systemd_units_config) = &option.systemd_units {
@@ -265,11 +266,26 @@ mod tests {
         out
     }
 
-    fn prepare() -> (Config, crate::listener::MockListener, Archive) {
+    fn prepare(in_example_package: bool) -> (Config, crate::listener::MockListener, Archive) {
         let mut mock_listener = crate::listener::MockListener::new();
         mock_listener.expect_info().return_const(());
 
-        let config = Config::from_manifest(Path::new("Cargo.toml"), None, None, None, None, None, &mut mock_listener).unwrap();
+        let package_name = if in_example_package {
+            mock_listener.expect_warning().withf(|msg| msg == "description field is missing in Cargo.toml").return_const(());
+            mock_listener.expect_warning().withf(|msg| msg == "license field is missing in Cargo.toml").return_const(());
+            Some("example")
+        } else {
+            None
+        };
+
+        let manifest_path = Path::new("Cargo.toml");
+        let manifest_path = if in_example_package {
+            Path::new("example").join(manifest_path)
+        } else {
+            manifest_path.to_path_buf()
+        };
+        let mut config = Config::from_manifest(manifest_path.as_path(), package_name, None, None, None, None, &mut mock_listener).unwrap();
+        config.manifest_dir = manifest_path.parent().unwrap_or(Path::new("")).to_path_buf();
 
         let ar = Archive::new(0);
 
@@ -278,7 +294,7 @@ mod tests {
 
     #[test]
     fn generate_scripts_does_nothing_if_maintainer_scripts_is_not_set() {
-        let (config, mut mock_listener, mut in_ar) = prepare();
+        let (config, mut mock_listener, mut in_ar) = prepare(false);
 
         // supply a maintainer script as if it were available on disk
         let _g = add_test_fs_paths(&vec!["debian/postinst"]);
@@ -298,16 +314,37 @@ mod tests {
     }
 
     #[test]
-    fn generate_scripts_archives_user_supplied_maintainer_scripts() {
-        let maintainer_script_names = &vec!["config", "preinst", "postinst", "prerm", "postrm", "templates"];
+    fn generate_scripts_archives_user_supplied_maintainer_scripts_with_root_package() {
+        let maintainer_script_names = vec!["config", "preinst", "postinst", "prerm", "postrm", "templates"];
+        generate_scripts_archives_user_supplied_maintainer_scripts(false, &maintainer_script_names);
+    }
 
-        let (mut config, mut mock_listener, mut in_ar) = prepare();
+    #[test]
+    fn generate_scripts_archives_user_supplied_maintainer_scripts_with_workspace_package() {
+        // Hard-code in static strings the location of the control files when acting as if the workspace "example"
+        // package has been passed as "-p example" to cargo-deb. The strings have to be static because the mock
+        // virtual file system mechanism requires static strings as input, which means we can't construct them
+        // dynamically at test run time. This assumes that `example/Cargo.toml` contains:
+        //   maintainer-scripts = "debian/"
+        let maintainer_script_names = vec![
+            "example/debian/config",
+            "example/debian/preinst",
+            "example/debian/postinst",
+            "example/debian/prerm",
+            "example/debian/postrm",
+            "example/debian/templates"
+        ];
+        generate_scripts_archives_user_supplied_maintainer_scripts(true, &maintainer_script_names);
+    }
+
+    fn generate_scripts_archives_user_supplied_maintainer_scripts(in_example_package: bool, maintainer_script_names: &Vec<&'static str>) {
+        let (mut config, mut mock_listener, mut in_ar) = prepare(in_example_package);
 
         // supply a maintainer script as if it were available on disk
         // provide file content that we can easily verify
         let mut maintainer_script_contents = Vec::new();
         for script in maintainer_script_names.iter() {
-            let content = format!("some contents: {}", script);
+            let content = format!("some contents: {}\n#DEBHELPER#", script);
             set_test_fs_path_content(script, content.clone());
             maintainer_script_contents.push(content);
         }
@@ -337,14 +374,15 @@ mod tests {
         // verify that the content we supplied was faithfully archived
         for script in maintainer_script_names.iter() {
             let expected_content = &format!("some contents: {}", script);
-            let actual_content = archived_content.get(&script.to_string()).unwrap();
+            let file_name = Path::new(script).file_name().unwrap().to_string_lossy().to_string();
+            let actual_content = archived_content.get(&file_name).unwrap().lines().next().unwrap();
             assert_eq!(expected_content, actual_content);
         }
     }
 
     #[test]
     fn generate_scripts_generates_maintainer_scripts_for_unit() {
-        let (mut config, mut mock_listener, mut in_ar) = prepare();
+        let (mut config, mut mock_listener, mut in_ar) = prepare(false);
 
         // supply a systemd unit file as if it were available on disk
         let _g = add_test_fs_paths(&vec!["some.service"]);

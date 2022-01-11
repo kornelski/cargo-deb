@@ -25,6 +25,7 @@ assets = [
 changelog = "changelog"
 default-features = false
 features = ["example_debian_build"]
+maintainer-scripts = "debian/"
 
 [package.metadata.deb.variants.debug]
 assets =  [
