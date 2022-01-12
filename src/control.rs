@@ -48,6 +48,7 @@ pub fn generate_archive(options: &Config, time: u64, asset_hashes: HashMap<PathB
 /// should be inserted.
 fn generate_scripts(archive: &mut Archive, option: &Config, listener: &mut dyn Listener) -> CDResult<()> {
     if let Some(ref maintainer_scripts_dir) = option.maintainer_scripts {
+        let maintainer_scripts_dir = option.manifest_dir.as_path().join(&maintainer_scripts_dir);
         let mut scripts;
 
         if let Some(systemd_units_config) = &option.systemd_units {
@@ -239,10 +240,41 @@ fn generate_triggers_file(archive: &mut Archive, path: &Path) -> CDResult<()> {
 
 #[cfg(test)]
 mod tests {
+    // The following test suite verifies that `fn generate_scripts()` correctly
+    // copies "maintainer scripts" (files with the name config, preinst, postinst,
+    // prerm, postrm, and/or templates) from the `maintainer_scripts` directory
+    // into the generated archive, and in the case that a systemd config is
+    // provided, that a service file when present causes #DEBHELPER# placeholders
+    // in the maintainer scripts to be replaced and missing maintainer scripts to
+    // be generated.
+    //
+    // The exact details of maintainer script replacement is tested
+    // in `dh_installsystemd.rs`, here we are more interested in testing that
+    // `fn generate_scripts()` correctly looks for maintainer script and unit
+    // script files relative to the crate root, whether processing the root crate
+    // or a workspace member crate.
+    //
+    // This test depends on the existence of two test crates organized such that
+    // one is a Cargo workspace member and the other is a root crate.
+    //
+    //   test-resources/
+    //     testroot/         <-- root crate
+    //       Cargo.toml
+    //       testchild/      <-- workspace member crate
+    //         Cargo.toml
+
     use super::*;
     use crate::manifest::{Asset, AssetSource, SystemdUnitsConfig};
     use crate::util::tests::{add_test_fs_paths, set_test_fs_path_content};
     use std::io::prelude::Read;
+
+    fn filename_from_path_str(path: &str) -> String {
+        Path::new(path)
+            .file_name()
+            .unwrap()
+            .to_string_lossy()
+            .to_string()
+    }
 
     fn decode_name<R>(entry: &tar::Entry<R>) -> String where R: Read {
         std::str::from_utf8(&entry.path_bytes()).unwrap().to_string()
@@ -265,12 +297,30 @@ mod tests {
         out
     }
 
-    fn prepare() -> (Config, crate::listener::MockListener, Archive) {
+    fn prepare(package_name: Option<&str>) -> (Config, crate::listener::MockListener, Archive) {
         let mut mock_listener = crate::listener::MockListener::new();
         mock_listener.expect_info().return_const(());
 
-        let config = Config::from_manifest(Path::new("Cargo.toml"), None, None, None, None, None, &mut mock_listener).unwrap();
+        let mut config = Config::from_manifest(
+            &Path::new("test-resources/testroot/Cargo.toml"),
+            package_name,
+            None,
+            None,
+            None,
+            None,
+            &mut mock_listener)
+            .unwrap();
 
+        // make the absolute manifest dir relative to our crate root dir
+        // as the static paths we receive from the caller cannot be set
+        // to the absolute path we find ourselves in at test run time, but
+        // instead have to match exactly the paths looked up based on the
+        // value of the manifest dir.
+        config.manifest_dir = config.manifest_dir
+            .strip_prefix(env!("CARGO_MANIFEST_DIR"))
+            .unwrap()
+            .to_path_buf();
+ 
         let ar = Archive::new(0);
 
         (config, mock_listener, ar)
@@ -278,7 +328,7 @@ mod tests {
 
     #[test]
     fn generate_scripts_does_nothing_if_maintainer_scripts_is_not_set() {
-        let (config, mut mock_listener, mut in_ar) = prepare();
+        let (config, mut mock_listener, mut in_ar) = prepare(None);
 
         // supply a maintainer script as if it were available on disk
         let _g = add_test_fs_paths(&vec!["debian/postinst"]);
@@ -298,23 +348,50 @@ mod tests {
     }
 
     #[test]
-    fn generate_scripts_archives_user_supplied_maintainer_scripts() {
-        let maintainer_script_names = &vec!["config", "preinst", "postinst", "prerm", "postrm", "templates"];
+    fn generate_scripts_archives_user_supplied_maintainer_scripts_in_root_package() {
+        let maintainer_script_paths = vec![
+            "test-resources/testroot/debian/config",
+            "test-resources/testroot/debian/preinst",
+            "test-resources/testroot/debian/postinst",
+            "test-resources/testroot/debian/prerm",
+            "test-resources/testroot/debian/postrm",
+            "test-resources/testroot/debian/templates"
+        ];
+        generate_scripts_for_package_without_systemd_unit(
+            None, &maintainer_script_paths);
+    }
 
-        let (mut config, mut mock_listener, mut in_ar) = prepare();
+    #[test]
+    fn generate_scripts_archives_user_supplied_maintainer_scripts_in_workspace_package() {
+        let maintainer_script_paths = vec![
+            "test-resources/testroot/testchild/debian/config",
+            "test-resources/testroot/testchild/debian/preinst",
+            "test-resources/testroot/testchild/debian/postinst",
+            "test-resources/testroot/testchild/debian/prerm",
+            "test-resources/testroot/testchild/debian/postrm",
+            "test-resources/testroot/testchild/debian/templates"
+        ];
+        generate_scripts_for_package_without_systemd_unit(
+            Some("testchild"), &maintainer_script_paths);
+    }
+
+    fn generate_scripts_for_package_without_systemd_unit(
+        package_name: Option<&str>,
+        maintainer_script_paths: &Vec<&'static str>
+    ) {
+        let (mut config, mut mock_listener, mut in_ar) = prepare(package_name);
 
         // supply a maintainer script as if it were available on disk
         // provide file content that we can easily verify
         let mut maintainer_script_contents = Vec::new();
-        for script in maintainer_script_names.iter() {
+        for script in maintainer_script_paths.iter() {
             let content = format!("some contents: {}", script);
             set_test_fs_path_content(script, content.clone());
             maintainer_script_contents.push(content);
         }
 
-        // look in the current (virtual) dir for the maintainer script we just
-        // "added"
-        config.maintainer_scripts.get_or_insert(PathBuf::new());
+        // specify a path relative to the (root or workspace child) package
+        config.maintainer_scripts.get_or_insert(PathBuf::from("debian"));
 
         // generate scripts and store them in the given archive
         generate_scripts(&mut in_ar, &config, &mut mock_listener).unwrap();
@@ -325,41 +402,102 @@ mod tests {
         // parse the archive bytes
         let mut out_ar = tar::Archive::new(&archive_bytes[..]);
 
-        // compare the file names in the archive to what we expect
-        // let archived_file_names = decode_names(&mut out_ar);
-        // assert_eq!(maintainer_script_names.to_owned(), archived_file_names);
-
         // compare the file contents in the archive to what we expect
         let archived_content = extract_contents(&mut out_ar);
 
-        assert_eq!(maintainer_script_names.len(), archived_content.len());
+        assert_eq!(maintainer_script_paths.len(), archived_content.len());
 
         // verify that the content we supplied was faithfully archived
-        for script in maintainer_script_names.iter() {
+        for script in maintainer_script_paths.iter() {
             let expected_content = &format!("some contents: {}", script);
-            let actual_content = archived_content.get(&script.to_string()).unwrap();
+            let filename = filename_from_path_str(script);
+            let actual_content = archived_content.get(&filename).unwrap();
             assert_eq!(expected_content, actual_content);
         }
     }
 
     #[test]
-    fn generate_scripts_generates_maintainer_scripts_for_unit() {
-        let (mut config, mut mock_listener, mut in_ar) = prepare();
+    fn generate_scripts_augments_maintainer_scripts_for_unit_in_root_package() {
+        let maintainer_scripts = vec![
+            ("test-resources/testroot/debian/config", Some("dummy content")),
+            ("test-resources/testroot/debian/preinst", Some("dummy content\n#DEBHELPER#")),
+            ("test-resources/testroot/debian/postinst", Some("dummy content\n#DEBHELPER#")),
+            ("test-resources/testroot/debian/prerm", Some("dummy content\n#DEBHELPER#")),
+            ("test-resources/testroot/debian/postrm", Some("dummy content\n#DEBHELPER#")),
+            ("test-resources/testroot/debian/templates", Some("dummy content")),
+        ];
+        generate_scripts_for_package_with_systemd_unit(
+            None, &maintainer_scripts, "test-resources/testroot/debian/some.service");
+    }
 
-        // supply a systemd unit file as if it were available on disk
-        let _g = add_test_fs_paths(&vec!["some.service"]);
+    #[test]
+    fn generate_scripts_augments_maintainer_scripts_for_unit_in_workspace_package() {
+        let maintainer_scripts = vec![
+            ("test-resources/testroot/testchild/debian/config", Some("dummy content")),
+            ("test-resources/testroot/testchild/debian/preinst", Some("dummy content\n#DEBHELPER#")),
+            ("test-resources/testroot/testchild/debian/postinst", Some("dummy content\n#DEBHELPER#")),
+            ("test-resources/testroot/testchild/debian/prerm", Some("dummy content\n#DEBHELPER#")),
+            ("test-resources/testroot/testchild/debian/postrm", Some("dummy content\n#DEBHELPER#")),
+            ("test-resources/testroot/testchild/debian/templates", Some("dummy content")),
+        ];
+        generate_scripts_for_package_with_systemd_unit(
+            Some("testchild"), &maintainer_scripts, "test-resources/testroot/testchild/debian/some.service");
+    }
+
+
+    #[test]
+    fn generate_scripts_generates_missing_maintainer_scripts_for_unit_in_root_package() {
+        let maintainer_scripts = vec![
+            ("test-resources/testroot/debian/postinst", None),
+            ("test-resources/testroot/debian/prerm", None),
+            ("test-resources/testroot/debian/postrm", None),
+        ];
+        generate_scripts_for_package_with_systemd_unit(
+            None, &maintainer_scripts, "test-resources/testroot/debian/some.service");
+    }
+
+    #[test]
+    fn generate_scripts_generates_missing_maintainer_scripts_for_unit_in_workspace_package() {
+        let maintainer_scripts = vec![
+            ("test-resources/testroot/testchild/debian/postinst", None),
+            ("test-resources/testroot/testchild/debian/prerm", None),
+            ("test-resources/testroot/testchild/debian/postrm", None),
+        ];
+        generate_scripts_for_package_with_systemd_unit(
+            Some("testchild"), &maintainer_scripts, "test-resources/testroot/testchild/debian/some.service");
+    }
+
+    // `maintainer_scripts` is a collection of file system paths for which:
+    //   - each file should be in the same directory
+    //   - the generated archive should contain a file with each of the given filenames
+    //   - if Some(...) then pretend when creating the archive that a file at that path exists with the given content
+    fn generate_scripts_for_package_with_systemd_unit(
+        package_name: Option<&str>,
+        maintainer_scripts: &Vec<(&'static str, Option<&'static str>)>,
+        service_file: &'static str,
+    ) {
+        let (mut config, mut mock_listener, mut in_ar) = prepare(package_name);
+
+        // supply a maintainer script as if it were available on disk
+        // provide file content that we can easily verify
+        let mut maintainer_script_contents = Vec::new();
+        for (script, content) in maintainer_scripts.iter() {
+            if let Some(content) = content {
+                set_test_fs_path_content(script, content.to_string());
+                maintainer_script_contents.push(content);
+            }
+        }
+
+        set_test_fs_path_content(service_file, "mock service file".to_string());
 
         // make the unit file available for systemd unit processing
-        config.assets.resolved.push(Asset::new(
-            AssetSource::Path(PathBuf::from("some.service")),
-            PathBuf::from("lib/systemd/system/some.service"),
-            0o000,
-            false,
-        ));
+        let source = AssetSource::Path(PathBuf::from(service_file));
+        let target_path = PathBuf::from(format!("lib/systemd/system/{}", filename_from_path_str(service_file)));
+        config.assets.resolved.push(Asset::new(source, target_path, 0o000, false));
 
         // look in the current dir for maintainer scripts (none, but the systemd
         // unit processing will be skipped if we don't set this)
-        config.maintainer_scripts.get_or_insert(PathBuf::new());
+        config.maintainer_scripts.get_or_insert(PathBuf::from("debian"));
 
         // enable systemd unit processing
         config.systemd_units.get_or_insert(SystemdUnitsConfig::default());
@@ -370,19 +508,36 @@ mod tests {
         // finish the archive and unwrap it as a byte vector
         let archive_bytes = in_ar.into_inner().unwrap();
 
-        // parse the archive bytes
+        // check that the expected files were included in the archive
         let mut out_ar = tar::Archive::new(&archive_bytes[..]);
 
-        // compare the file names in the archive to what we expect
         let mut archived_file_names = decode_names(&mut out_ar);
         archived_file_names.sort();
 
-        // don't check the file content, generation of correct files and content
-        // is tested at a lower level, we're only testing the higher level.
-        let expected_maintainer_scripts = vec!["postinst", "postrm", "prerm"]
+        let mut expected_maintainer_scripts = maintainer_scripts
             .iter()
-            .map(|i| i.to_string())
+            .map(|(script, _)| filename_from_path_str(script))
             .collect::<Vec<String>>();
+        expected_maintainer_scripts.sort();
+
         assert_eq!(expected_maintainer_scripts, archived_file_names);
+
+        // check the content of the archived files for any unreplaced placeholders.
+        // create a new tar wrapper around the bytes as you cannot seek the same
+        // Archive more than once.
+        let mut out_ar = tar::Archive::new(&archive_bytes[..]);
+
+        let unreplaced_placeholders = out_ar
+            .entries()
+            .unwrap()
+            .map(Result::unwrap)
+            .map(|mut entry| {
+                let mut v = String::new();
+                entry.read_to_string(&mut v).unwrap();
+                v
+            })
+            .any(|v| v.contains("#DEBHELPER#"));
+
+        assert_eq!(unreplaced_placeholders, false);
     }
 }
