@@ -2,7 +2,7 @@
 name = "testchild"
 version = "0.1.0"
 edition = "2021"
-description = "A test root crate"
+description = "A test workspace member crate"
 license = "Some license"
 
 [package.metadata.deb]
