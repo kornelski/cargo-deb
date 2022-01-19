@@ -6,7 +6,7 @@ use std::time;
 
 struct CliOptions {
     no_build: bool,
-    no_strip: bool,
+    strip_override: Option<bool>,
     separate_debug_symbols: bool,
     fast: bool,
     verbose: bool,
@@ -30,6 +30,7 @@ fn main() {
     let mut cli_opts = getopts::Options::new();
     cli_opts.optflag("", "no-build", "Assume project is already built");
     cli_opts.optflag("", "no-strip", "Do not strip debug symbols from the binary");
+    cli_opts.optflag("", "strip", "Always try to strip debug symbols");
     cli_opts.optflag("", "separate-debug-symbols", "Strip debug symbols into a separate .debug file");
     cli_opts.optflag("", "fast", "Use faster compression, which yields larger archive");
     cli_opts.optflag("", "install", "Immediately install created package");
@@ -64,7 +65,7 @@ fn main() {
     let install = matches.opt_present("install");
     match process(CliOptions {
         no_build: matches.opt_present("no-build"),
-        no_strip: matches.opt_present("no-strip"),
+        strip_override: if matches.opt_present("strip") { Some(true) } else if matches.opt_present("no-strip") { Some(false) } else { None },
         separate_debug_symbols: matches.opt_present("separate-debug-symbols"),
         quiet: matches.opt_present("quiet"),
         verbose: matches.opt_present("verbose"),
@@ -112,7 +113,7 @@ fn process(
         target,
         install,
         no_build,
-        no_strip,
+        strip_override,
         separate_debug_symbols,
         quiet,
         fast,
@@ -165,10 +166,10 @@ fn process(
 
     crate::data::compress_assets(&mut options, listener)?;
 
-    if (options.strip || separate_debug_symbols) && !no_strip {
+    if strip_override.unwrap_or(options.strip || separate_debug_symbols) {
         strip_binaries(&mut options, target, listener, separate_debug_symbols)?;
     } else {
-        log::debug!("not stripping");
+        log::debug!("not stripping profile.release.debug={} strip-flag={:?}", options.strip, strip_override);
     }
 
     // Obtain the current time which will be used to stamp the generated files in the archives.
