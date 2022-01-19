@@ -344,7 +344,7 @@ pub struct Config {
     pub features: Vec<String>,
     pub default_features: bool,
     /// Should the binary be stripped from debug symbols?
-    pub strip: bool,
+    pub debug_enabled: bool,
     /// Should the debug symbols be moved to a separate file included in the package? (implies `strip:true`)
     pub separate_debug_symbols: bool,
     /// Should symlinks be preserved in the assets
@@ -733,12 +733,12 @@ impl Cargo {
             features: deb.features.take().unwrap_or_default(),
             default_features: deb.default_features.unwrap_or(true),
             separate_debug_symbols: deb.separate_debug_symbols.unwrap_or(false),
-            strip: self.profile.as_ref().and_then(|p|p.release.as_ref())
+            debug_enabled: self.profile.as_ref().and_then(|p|p.release.as_ref())
                 .and_then(|r| r.debug.as_ref())
-                .map_or(true, |debug| match *debug {
+                .map_or(false, |debug| match *debug {
                     toml::Value::Integer(0) => false,
                     toml::Value::Boolean(value) => value,
-                    _ => true
+                    _ => true,
                 }),
             preserve_symlinks: deb.preserve_symlinks.unwrap_or(false),
             systemd_units: deb.systemd_units.take(),

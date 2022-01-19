@@ -166,10 +166,10 @@ fn process(
 
     crate::data::compress_assets(&mut options, listener)?;
 
-    if strip_override.unwrap_or(options.strip || separate_debug_symbols) {
+    if strip_override.unwrap_or(separate_debug_symbols || !options.debug_enabled) {
         strip_binaries(&mut options, target, listener, separate_debug_symbols)?;
     } else {
-        log::debug!("not stripping profile.release.debug={} strip-flag={:?}", options.strip, strip_override);
+        log::debug!("not stripping profile.release.debug={} strip-flag={:?}", options.debug_enabled, strip_override);
     }
 
     // Obtain the current time which will be used to stamp the generated files in the archives.
