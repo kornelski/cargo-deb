@@ -19,6 +19,7 @@ struct CliOptions {
     manifest_path: Option<String>,
     cargo_build_flags: Vec<String>,
     deb_version: Option<String>,
+    system_xz: bool,
 }
 
 fn main() {
@@ -40,6 +41,7 @@ fn main() {
     cli_opts.optflag("h", "help", "Print this help menu");
     cli_opts.optflag("", "version", "Show the version of cargo-deb");
     cli_opts.optopt("", "deb-version", "Alternate version string for package", "version");
+    cli_opts.optflag("", "system-xz", "Compress using command-line xz command instead of built-in");
 
     let matches = match cli_opts.parse(&args[1..]) {
         Ok(m) => m,
@@ -73,6 +75,7 @@ fn main() {
         package_name: matches.opt_str("package"),
         manifest_path: matches.opt_str("manifest-path"),
         deb_version: matches.opt_str("deb-version"),
+        system_xz: matches.opt_present("system-xz"),
         cargo_build_flags: matches.free,
     }) {
         Ok(()) => {},
@@ -114,6 +117,7 @@ fn process(
         verbose,
         mut cargo_build_flags,
         deb_version,
+        system_xz,
     }: CliOptions,
 ) -> CDResult<()> {
     let target = target.as_deref();
@@ -178,9 +182,9 @@ fn process(
     let (control_compressed, data_compressed) = rayon::join(move || {
         // The control archive is the metadata for the package manager
         let control_archive = control::generate_archive(options, system_time, asset_hashes, listener_tmp)?;
-        compress::xz_or_gz(&control_archive, fast)
+        compress::xz_or_gz(&control_archive, fast, system_xz)
     }, move || {
-        compress::xz_or_gz(&data_archive, fast)
+        compress::xz_or_gz(&data_archive, fast, system_xz)
     });
     let control_compressed = control_compressed?;
     let data_compressed = data_compressed?;
