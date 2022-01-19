@@ -99,7 +99,7 @@ fn run_cargo_deb_command_on_example_dir_with_variant() {
     }
 
     // prints deb path on the last line
-    let last_line = output.stdout[..output.stdout.len()-1].split(|&c| c==b'\n').last().unwrap();
+    let last_line = output.stdout[..output.stdout.len() - 1].split(|&c| c == b'\n').last().unwrap();
     let printed_deb_path = Path::new(::std::str::from_utf8(last_line).unwrap());
     assert_eq!(printed_deb_path, deb_path);
     assert!(deb_path.exists());

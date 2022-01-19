@@ -1,5 +1,5 @@
-use std::ops;
 use crate::error::*;
+use std::ops;
 
 pub enum Compressed {
     Gz(Vec<u8>),

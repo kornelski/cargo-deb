@@ -58,11 +58,11 @@ fn generate_scripts(archive: &mut Archive, option: &Config, listener: &mut dyn L
                 &option.name,
                 &option.assets.resolved,
                 &dh_installsystemd::Options::from(systemd_units_config),
-                listener)?;
+                listener,
+            )?;
 
             // Get Option<&str> from Option<String>
-            let unit_name = systemd_units_config.unit_name
-                .as_deref();
+            let unit_name = systemd_units_config.unit_name.as_deref();
 
             // Replace the #DEBHELPER# token in the users maintainer scripts
             // and/or generate maintainer scripts from scratch as needed.
@@ -355,10 +355,9 @@ mod tests {
             "test-resources/testroot/debian/postinst",
             "test-resources/testroot/debian/prerm",
             "test-resources/testroot/debian/postrm",
-            "test-resources/testroot/debian/templates"
+            "test-resources/testroot/debian/templates",
         ];
-        generate_scripts_for_package_without_systemd_unit(
-            None, &maintainer_script_paths);
+        generate_scripts_for_package_without_systemd_unit(None, &maintainer_script_paths);
     }
 
     #[test]
@@ -369,7 +368,7 @@ mod tests {
             "test-resources/testroot/testchild/debian/postinst",
             "test-resources/testroot/testchild/debian/prerm",
             "test-resources/testroot/testchild/debian/postrm",
-            "test-resources/testroot/testchild/debian/templates"
+            "test-resources/testroot/testchild/debian/templates",
         ];
         generate_scripts_for_package_without_systemd_unit(
             Some("testchild"), &maintainer_script_paths);
@@ -443,7 +442,6 @@ mod tests {
         generate_scripts_for_package_with_systemd_unit(
             Some("testchild"), &maintainer_scripts, "test-resources/testroot/testchild/debian/some.service");
     }
-
 
     #[test]
     fn generate_scripts_generates_missing_maintainer_scripts_for_unit_in_root_package() {
