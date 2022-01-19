@@ -374,7 +374,7 @@ impl Config {
         } else {
             metadata.resolve.root.as_ref().and_then(|root_id| {
                 metadata.packages.iter()
-                    .find(|p| &p.id == root_id)
+                    .find(move |p| &p.id == root_id)
             })
             .ok_or_else(|| CargoDebError::NoRootFoundInWorkspace(available_package_names()))
         }?;
@@ -757,7 +757,7 @@ impl Cargo {
         }
         if let Some(readme) = readme {
             if deb.extended_description.is_none() && deb.extended_description_file.is_none() && (readme.ends_with(".md") || readme.ends_with(".markdown")) {
-                listener.warning(format!("extended-description field missing. Using {}, but markdown may not render well.",readme));
+                listener.info(format!("extended-description field missing. Using {}, but markdown may not render well.", readme));
             }
         } else {
             for p in &["README.md", "README.markdown", "README.txt", "README"] {

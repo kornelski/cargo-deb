@@ -282,7 +282,7 @@ pub fn generate(package: &str, assets: &[Asset], options: &Options, listener: &m
 
             // get the unit file contents
             let needle = Path::new(LIB_SYSTEMD_SYSTEM_DIR).join(unit);
-            let data = assets.iter().find(|&item| item.target_path == needle).unwrap().source.data()?;
+            let data = assets.iter().find(move |&item| item.target_path == needle).unwrap().source.data()?;
             let reader = data.into_owned();
 
             // for every line in the file look for specific keys that we are

@@ -28,7 +28,7 @@ pub(crate) fn generate_changelog_asset(options: &Config) -> CDResult<Option<Vec<
                 compressed.shrink_to_fit();
                 Ok(compressed)
             })
-            .map_err(|e| CargoDebError::IoFile("unable to read changelog file", e, path.into()))?;
+            .map_err(move |e| CargoDebError::IoFile("unable to read changelog file", e, path.into()))?;
         Ok(Some(changelog))
     } else {
         Ok(None)
