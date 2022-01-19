@@ -31,6 +31,8 @@ pub fn resolve(path: &Path) -> CDResult<Vec<String>> {
         ));
     }
 
+    log::debug!("dpkg-shlibdeps for {}: {}", path.display(), String::from_utf8_lossy(&output.stdout));
+
     let deps = output.stdout.lines()
         .filter_map(|line| line.ok())
         .find(|line| line.starts_with("shlibs:Depends="))

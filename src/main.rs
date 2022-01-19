@@ -23,6 +23,8 @@ struct CliOptions {
 }
 
 fn main() {
+    env_logger::init();
+
     let args: Vec<String> = env::args().collect();
 
     let mut cli_opts = getopts::Options::new();
@@ -165,6 +167,8 @@ fn process(
 
     if (options.strip || separate_debug_symbols) && !no_strip {
         strip_binaries(&mut options, target, listener, separate_debug_symbols)?;
+    } else {
+        log::debug!("not stripping");
     }
 
     // Obtain the current time which will be used to stamp the generated files in the archives.

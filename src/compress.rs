@@ -53,7 +53,10 @@ pub fn xz_or_gz(data: &[u8], fast: bool, with_system_xz: bool) -> CDResult<Compr
     match system_xz(data, fast) {
         Ok(compressed) => return Ok(compressed),
         Err(err) if with_system_xz => return Err(err),
-        Err(_) => {}, // not explicitly enabled
+        Err(err) => {
+            log::debug!("couldn't use system xz: {}", err);
+            // not explicitly enabled
+        },
     };
 
     use zopfli::{Format, Options};

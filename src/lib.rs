@@ -189,13 +189,13 @@ pub fn strip_binaries(options: &mut Config, target: Option<&str>, listener: &mut
 
                 // The debug_path and debug_filename should never return None if we have an AssetSource::Path
                 let debug_path = asset.source.debug_source().expect("Failed to compute debug source path");
-                let debug_filename = debug_path.file_name().expect("Built binary has no filename");
                 let conf_path = cargo_config
                     .as_ref()
                     .map(|c| c.path())
                     .unwrap_or_else(|| Path::new(".cargo/config"));
 
                 if separate_file {
+                    log::debug!("extracting debug info of {} with {}", path.display(), objcopy_cmd.display());
                     Command::new(objcopy_cmd)
                         .arg("--only-keep-debug")
                         .arg(path)
@@ -210,6 +210,8 @@ pub fn strip_binaries(options: &mut Config, target: Option<&str>, listener: &mut
                             }
                         })?;
                 }
+
+                log::debug!("stripping {} with {}", path.display(), strip_cmd.display());
                 Command::new(strip_cmd)
                    .arg("--strip-unneeded")
                    .arg(path)
@@ -223,6 +225,8 @@ pub fn strip_binaries(options: &mut Config, target: Option<&str>, listener: &mut
                         }
                     })?;
                 if separate_file {
+                    log::debug!("linking debug info to {} with {}", debug_path.display(), objcopy_cmd.display());
+                    let debug_filename = debug_path.file_name().expect("Built binary has no filename");
                     Command::new(objcopy_cmd)
                         .current_dir(debug_path.parent().expect("Debug source file had no parent path"))
                         .arg(format!(
