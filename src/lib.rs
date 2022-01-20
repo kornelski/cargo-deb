@@ -43,6 +43,7 @@ mod tararchive;
 mod wordsplit;
 
 use crate::listener::Listener;
+use rayon::prelude::*;
 use std::env;
 use std::fs;
 use std::io;
@@ -182,7 +183,7 @@ pub fn strip_binaries(options: &mut Config, target: Option<&str>, listener: &dyn
         }
     }
 
-    for asset in options.built_binaries() {
+    options.built_binaries().par_iter().try_for_each(|asset| {
         match asset.source.path() {
             Some(path) => {
                 // We always strip the symbols to a separate file,  but they will only be included if specified
@@ -244,8 +245,9 @@ pub fn strip_binaries(options: &mut Config, target: Option<&str>, listener: &dyn
                 // This is unexpected - emit a warning if we come across it
                 listener.warning(format!("Found built asset with non-path source '{:?}'", asset));
             }
-        }
-    }
+        };
+        Ok::<_, CargoDebError>(())
+    })?;
 
     if separate_file {
         // If we want to debug symols included in a separate file, add these files to the debian assets
