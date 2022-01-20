@@ -169,7 +169,7 @@ pub(crate) fn autoscript(
     snippet_filename: &str,
     replacements: &HashMap<&str, String>,
     service_order: bool,
-    listener: &mut dyn Listener,
+    listener: &dyn Listener,
 ) -> CDResult<()> {
     let bin_name = std::env::current_exe().unwrap();
     let bin_name = bin_name.file_name().unwrap();
@@ -249,7 +249,7 @@ fn autoscript_sed(snippet_filename: &str, replacements: &HashMap<&str, String>) 
 ///
 /// <https://git.launchpad.net/ubuntu/+source/debhelper/tree/lib/Debian/Debhelper/Dh_Lib.pm?h=applied/12.10ubuntu1#n2161>
 fn debhelper_script_subst(user_scripts_dir: &Path, scripts: &mut ScriptFragments, package: &str, script: &str, unit_name: Option<&str>,
-    listener: &mut dyn Listener) -> CDResult<()>
+    listener: &dyn Listener) -> CDResult<()>
 {
     let user_file = pkgfile(user_scripts_dir, package, package, script, unit_name);
     let mut generated_scripts: Vec<String> = vec![
@@ -302,7 +302,7 @@ fn debhelper_script_subst(user_scripts_dir: &Path, scripts: &mut ScriptFragments
 ///
 /// See: https://git.launchpad.net/ubuntu/+source/debhelper/tree/dh_installdeb?h=applied/12.10ubuntu1#n300
 pub(crate) fn apply(user_scripts_dir: &Path, scripts: &mut ScriptFragments, package: &str, unit_name: Option<&str>,
-    listener: &mut dyn Listener) -> CDResult<()>
+    listener: &dyn Listener) -> CDResult<()>
 {
     for script in &["postinst", "preinst", "prerm", "postrm"] {
         // note: we don't support custom defines thus we don't have the final

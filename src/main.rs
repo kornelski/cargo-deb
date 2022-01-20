@@ -136,14 +136,14 @@ fn process(
     }
 
     // Listener conditionally prints warnings
-    let mut listener_tmp1;
-    let mut listener_tmp2;
-    let listener: &mut dyn listener::Listener = if quiet {
+    let listener_tmp1;
+    let listener_tmp2;
+    let listener: &dyn listener::Listener = if quiet {
         listener_tmp1 = listener::NoOpListener;
-        &mut listener_tmp1
+        &listener_tmp1
     } else {
         listener_tmp2 = listener::StdErrListener { verbose };
-        &mut listener_tmp2
+        &listener_tmp2
     };
 
     let manifest_path = manifest_path.as_ref().map_or("Cargo.toml", |s| s.as_str());
@@ -182,7 +182,7 @@ fn process(
     let (data_archive, asset_hashes) = data::generate_archive(&options, system_time, listener)?;
     let original = data_archive.len();
 
-    let listener_tmp = &mut *listener; // reborrow for the closure
+    let listener_tmp = &*listener; // reborrow for the closure
     let options = &options;
     let (control_compressed, data_compressed) = rayon::join(move || {
         // The control archive is the metadata for the package manager

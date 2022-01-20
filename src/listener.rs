@@ -1,3 +1,5 @@
+use std::io::Write;
+
 #[cfg_attr(test, mockall::automock)]
 pub trait Listener: Send + Sync {
     fn warning(&self, s: String);
@@ -15,11 +17,11 @@ pub struct StdErrListener {
 }
 impl Listener for StdErrListener {
     fn warning(&self, s: String) {
-        eprintln!("warning: {}", s);
+        let _ = writeln!(&mut std::io::stdout().lock(), "warning: {}", s);
     }
     fn info(&self, s: String) {
         if self.verbose {
-            eprintln!("info: {}", s);
+            let _ = writeln!(&mut std::io::stdout().lock(), "info: {}", s);
         }
     }
 }

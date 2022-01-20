@@ -221,7 +221,7 @@ fn unquote(s: &str) -> &str {
 ///
 /// See:
 ///   <https://git.launchpad.net/ubuntu/+source/debhelper/tree/dh_installsystemd?h=applied/12.10ubuntu1#n288>
-pub fn generate(package: &str, assets: &[Asset], options: &Options, listener: &mut dyn Listener) -> CDResult<ScriptFragments> {
+pub fn generate(package: &str, assets: &[Asset], options: &Options, listener: &dyn Listener) -> CDResult<ScriptFragments> {
     let mut scripts = ScriptFragments::new();
 
     // add postinst code blocks to handle tmpfiles

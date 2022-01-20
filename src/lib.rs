@@ -158,7 +158,7 @@ fn ensure_success(status: ExitStatus) -> io::Result<()> {
 }
 
 /// Strips the binary that was created with cargo
-pub fn strip_binaries(options: &mut Config, target: Option<&str>, listener: &mut dyn Listener, separate_file: bool) -> CDResult<()> {
+pub fn strip_binaries(options: &mut Config, target: Option<&str>, listener: &dyn Listener, separate_file: bool) -> CDResult<()> {
     let mut cargo_config = None;
     let objcopy_tmp;
     let strip_tmp;

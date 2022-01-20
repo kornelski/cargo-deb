@@ -15,7 +15,7 @@ use std::io::Write;
 use std::path::{Path, PathBuf};
 
 /// Generates an uncompressed tar archive with `control`, `md5sums`, and others
-pub fn generate_archive(options: &Config, time: u64, asset_hashes: HashMap<PathBuf, Digest>, listener: &mut dyn Listener) -> CDResult<Vec<u8>> {
+pub fn generate_archive(options: &Config, time: u64, asset_hashes: HashMap<PathBuf, Digest>, listener: &dyn Listener) -> CDResult<Vec<u8>> {
     let mut archive = Archive::new(time);
     generate_md5sums(&mut archive, options, asset_hashes)?;
     generate_control(&mut archive, options, listener)?;
@@ -46,7 +46,7 @@ pub fn generate_archive(options: &Config, time: u64, asset_hashes: HashMap<PathB
 /// When `systemd_units` is configured, user supplied `maintainer_scripts` must
 /// contain a `#DEBHELPER#` token at the point where shell script fragments
 /// should be inserted.
-fn generate_scripts(archive: &mut Archive, option: &Config, listener: &mut dyn Listener) -> CDResult<()> {
+fn generate_scripts(archive: &mut Archive, option: &Config, listener: &dyn Listener) -> CDResult<()> {
     if let Some(ref maintainer_scripts_dir) = option.maintainer_scripts {
         let maintainer_scripts_dir = option.manifest_dir.as_path().join(&maintainer_scripts_dir);
         let mut scripts;
@@ -123,7 +123,7 @@ fn generate_md5sums(archive: &mut Archive, options: &Config, asset_hashes: HashM
 }
 
 /// Generates the control file that obtains all the important information about the package.
-fn generate_control(archive: &mut Archive, options: &Config, listener: &mut dyn Listener) -> CDResult<()> {
+fn generate_control(archive: &mut Archive, options: &Config, listener: &dyn Listener) -> CDResult<()> {
     // Create and return the handle to the control file with write access.
     let mut control: Vec<u8> = Vec::with_capacity(1024);
 

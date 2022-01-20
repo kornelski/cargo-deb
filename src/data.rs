@@ -11,7 +11,7 @@ use std::path::{Path, PathBuf};
 use zopfli::{self, Format, Options};
 
 /// Generates an uncompressed tar archive and hashes of its files
-pub fn generate_archive(options: &Config, time: u64, listener: &mut dyn Listener) -> CDResult<(Vec<u8>, HashMap<PathBuf, Digest>)> {
+pub fn generate_archive(options: &Config, time: u64, listener: &dyn Listener) -> CDResult<(Vec<u8>, HashMap<PathBuf, Digest>)> {
     let mut archive = Archive::new(time);
     let copy_hashes = archive_files(&mut archive, options, listener)?;
     Ok((archive.into_inner()?, copy_hashes))
@@ -131,7 +131,7 @@ pub fn compress_assets(options: &mut Config, listener: &dyn Listener) -> CDResul
 
 /// Copies all the files to be packaged into the tar archive.
 /// Returns MD5 hashes of files copied
-fn archive_files(archive: &mut Archive, options: &Config, listener: &mut dyn Listener) -> CDResult<HashMap<PathBuf, Digest>> {
+fn archive_files(archive: &mut Archive, options: &Config, listener: &dyn Listener) -> CDResult<HashMap<PathBuf, Digest>> {
     let mut hashes = HashMap::new();
     for asset in &options.assets.resolved {
         let out_data = asset.source.data()?;
