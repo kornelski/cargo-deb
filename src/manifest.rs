@@ -708,7 +708,7 @@ impl Cargo {
             description: self.package.description.take().unwrap_or_else(||format!("[generated from Rust crate {}]", self.package.name)),
             extended_description: self.extended_description(
                 deb.extended_description.take(),
-                deb.extended_description_file.as_ref().or(readme))?,
+                deb.extended_description_file.as_deref().or(readme))?,
             maintainer: deb.maintainer.take().ok_or_then(|| {
                 Ok(self.package.authors.get(0)
                     .ok_or("The package must have a maintainer or authors property")?.to_owned())
@@ -756,7 +756,7 @@ impl Cargo {
         Ok(config)
     }
 
-    fn check_config(&self, manifest_dir: &Path, readme: Option<&String>, deb: &CargoDeb, listener: &dyn Listener) {
+    fn check_config(&self, manifest_dir: &Path, readme: Option<&str>, deb: &CargoDeb, listener: &dyn Listener) {
         if self.package.description.is_none() {
             listener.warning("description field is missing in Cargo.toml".to_owned());
         }
@@ -777,7 +777,7 @@ impl Cargo {
         }
     }
 
-    fn extended_description(&self, desc: Option<String>, desc_file: Option<&String>) -> CDResult<Option<String>> {
+    fn extended_description(&self, desc: Option<String>, desc_file: Option<&str>) -> CDResult<Option<String>> {
         Ok(if desc.is_some() {
             desc
         } else if let Some(desc_file) = desc_file {
@@ -808,7 +808,7 @@ impl Cargo {
         })
     }
 
-    fn take_assets(&self, options: &Config, assets: Option<Vec<Vec<String>>>, targets: &[CargoMetadataTarget], readme: Option<&String>) -> CDResult<Assets> {
+    fn take_assets(&self, options: &Config, assets: Option<Vec<Vec<String>>>, targets: &[CargoMetadataTarget], readme: Option<&str>) -> CDResult<Assets> {
         Ok(if let Some(assets) = assets {
             // Treat all explicit assets as unresolved until after the build step
             let mut unresolved_assets = vec![];
@@ -1261,32 +1261,7 @@ mod tests {
 #[test]
 fn deb_ver() {
     let mut c = Cargo {
-        package: cargo_toml::Package {
-            version: "1.2.3-1".into(),
-            authors: vec![],
-            autobenches: false,
-            autobins: false,
-            autotests: false,
-            autoexamples: false,
-            categories: vec![],
-            name: "test".into(),
-            edition: Default::default(),
-            homepage: None,
-            keywords: vec![],
-            publish: Default::default(),
-            repository: None,
-            workspace: None,
-            license: None,
-            license_file: None,
-            links: None,
-            metadata: None,
-            readme: None,
-            documentation: None,
-            description: Default::default(),
-            build: None,
-            default_run: None,
-            resolver: None,
-        },
+        package: cargo_toml::Package::new("test", "1.2.3-1"),
         profile: None,
     };
     assert_eq!("1.2.3-1", c.version_string(None));
