@@ -20,6 +20,7 @@ struct CliOptions {
     cargo_build_flags: Vec<String>,
     deb_version: Option<String>,
     system_xz: bool,
+    profile: Option<String>,
 }
 
 fn main() {
@@ -45,7 +46,7 @@ fn main() {
     cli_opts.optflag("", "version", "Show the version of cargo-deb");
     cli_opts.optopt("", "deb-version", "Alternate version string for package", "version");
     cli_opts.optflag("", "system-xz", "Compress using command-line xz command instead of built-in");
-
+    cli_opts.optopt("", "profile", "select which project profile to package", "profile");
     let matches = match cli_opts.parse(&args[1..]) {
         Ok(m) => m,
         Err(err) => {
@@ -79,6 +80,7 @@ fn main() {
         manifest_path: matches.opt_str("manifest-path"),
         deb_version: matches.opt_str("deb-version"),
         system_xz: matches.opt_present("system-xz"),
+        profile: matches.opt_str("profile"),
         cargo_build_flags: matches.free,
     }) {
         Ok(()) => {},
@@ -121,6 +123,7 @@ fn process(
         mut cargo_build_flags,
         deb_version,
         system_xz,
+        profile,
     }: CliOptions,
 ) -> CDResult<()> {
     let target = target.as_deref();
@@ -146,6 +149,14 @@ fn process(
         &listener_tmp2
     };
 
+    // The profile is selected based on the given ClI options and then passed to
+    // cargo build accordingly. you could argue that the other way around is
+    // more desireable. However for now we want all commands coming in via the
+    // same `interface`
+    let selected_profile = profile.unwrap_or("release".to_string());
+    cargo_build_flags.push("--profile".to_string());
+    cargo_build_flags.push(selected_profile.clone());
+
     let manifest_path = manifest_path.as_ref().map_or("Cargo.toml", |s| s.as_str());
     let mut options = Config::from_manifest(
         Path::new(manifest_path),
@@ -155,6 +166,7 @@ fn process(
         variant,
         deb_version,
         listener,
+        selected_profile,
     )?;
     reset_deb_temp_directory(&options)?;
 
