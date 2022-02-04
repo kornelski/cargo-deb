@@ -308,7 +308,8 @@ mod tests {
             None,
             None,
             None,
-            &mut mock_listener)
+            &mut mock_listener, 
+        None)
             .unwrap();
 
         // make the absolute manifest dir relative to our crate root dir
