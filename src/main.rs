@@ -48,7 +48,6 @@ fn main() {
     cli_opts.optflag("", "system-xz", "Compress using command-line xz command instead of built-in");
     cli_opts.optflag("", "profile", "select which project profile to package");
 
-
     let matches = match cli_opts.parse(&args[1..]) {
         Ok(m) => m,
         Err(err) => {

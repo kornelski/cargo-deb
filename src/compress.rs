@@ -1,5 +1,5 @@
-use std::io::{Read, Write};
 use crate::error::*;
+use std::io::{Read, Write};
 use std::ops;
 use std::process::{Command, Stdio};
 
@@ -30,7 +30,7 @@ impl Compressed {
 
 fn system_xz(data: &[u8], fast: bool) -> CDResult<Compressed> {
     let mut child = Command::new("xz")
-        .arg(if fast {"-1"} else {"-6"})
+        .arg(if fast { "-1" } else { "-6" })
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::inherit())
@@ -38,7 +38,7 @@ fn system_xz(data: &[u8], fast: bool) -> CDResult<Compressed> {
         .map_err(|e| CargoDebError::CommandFailed(e, "xz"))?;
     let mut stdout = child.stdout.take().unwrap();
 
-    let capacity = data.len()/2;
+    let capacity = data.len() / 2;
     let t = std::thread::spawn(move || {
         let mut buf = Vec::with_capacity(capacity);
         stdout.read_to_end(&mut buf).map(|_| buf)

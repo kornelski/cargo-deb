@@ -244,7 +244,7 @@ pub fn strip_binaries(options: &mut Config, target: Option<&str>, listener: &dyn
             None => {
                 // This is unexpected - emit a warning if we come across it
                 listener.warning(format!("Found built asset with non-path source '{:?}'", asset));
-            }
+            },
         };
         Ok::<_, CargoDebError>(())
     })?;

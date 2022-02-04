@@ -865,7 +865,7 @@ WantedBy=multi-user.target");
                 match options.restart_after_upgrade {
                     true => {
                         match options.no_start {
-                            true  => assert_eq!(1, get_read_count("postinst-systemd-restartnostart")),
+                            true => assert_eq!(1, get_read_count("postinst-systemd-restartnostart")),
                             false => assert_eq!(1, get_read_count("postinst-systemd-restart")),
                         };
                         autoscript_fragments_to_check_for.insert("postinst.service");
@@ -873,7 +873,7 @@ WantedBy=multi-user.target");
                     false => if !options.no_start {
                         assert_eq!(1, get_read_count("postinst-systemd-start"));
                         autoscript_fragments_to_check_for.insert("postinst.service");
-                    }
+                    },
                 }
                 if options.restart_after_upgrade || options.no_stop_on_upgrade {
                     assert_eq!(1, get_read_count("prerm-systemd-restart"));
@@ -884,7 +884,7 @@ WantedBy=multi-user.target");
                 }
                 assert_eq!(1, get_read_count("postrm-systemd-reload-only"));
                 autoscript_fragments_to_check_for.insert("postrm.debhelper");
-            }
+            },
             _ => unreachable!(),
         }
 
