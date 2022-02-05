@@ -358,7 +358,7 @@ impl Config {
     /// Makes a new config from `Cargo.toml` in the current working directory.
     ///
     /// `None` target means the host machine's architecture.
-    pub fn from_manifest(manifest_path: &Path, package_name: Option<&str>, output_path: Option<String>, target: Option<&str>, variant: Option<&str>, deb_version: Option<String>, listener: &dyn Listener, profile: Option<String>) -> CDResult<Config> {
+    pub fn from_manifest(manifest_path: &Path, package_name: Option<&str>, output_path: Option<String>, target: Option<&str>, variant: Option<&str>, deb_version: Option<String>, listener: &dyn Listener, selected_profile: String) -> CDResult<Config> {
         let metadata = cargo_metadata(manifest_path)?;
         let available_package_names = || {
             metadata.packages.iter()
@@ -383,7 +383,7 @@ impl Config {
         let manifest_dir = manifest_path.parent().unwrap();
         let content = fs::read(&manifest_path)
             .map_err(|e| CargoDebError::IoFile("unable to read Cargo.toml", e, manifest_path.to_owned()))?;
-        toml::from_slice::<Cargo>(&content)?.into_config(root_package, manifest_dir, output_path, target_dir, target, variant, deb_version, listener, profile)
+        toml::from_slice::<Cargo>(&content)?.into_config(root_package, manifest_dir, output_path, target_dir, target, variant, deb_version, listener, selected_profile)
     }
 
     pub(crate) fn get_dependencies(&self, listener: &dyn Listener) -> CDResult<String> {
@@ -595,6 +595,11 @@ impl Config {
     }
 
     pub(crate) fn path_in_build<P: AsRef<Path>>(&self, rel_path: P, profile: &str) -> PathBuf {
+        let profile = match profile {
+            "dev" => "debug",
+            p => p
+         };
+
         let path = self.target_dir.join(profile);
         path.join(rel_path)
     }
@@ -653,7 +658,7 @@ impl Cargo {
         variant: Option<&str>,
         deb_version: Option<String>,
         listener: &dyn Listener,
-        profile: Option<String>,
+        selected_profile: String,
     ) -> CDResult<Config> {
         // Cargo cross-compiles to a dir
         let target_dir = if let Some(target) = target {
@@ -746,8 +751,7 @@ impl Cargo {
             systemd_units: deb.systemd_units.take(),
             _use_constructor_to_make_this_struct_: (),
         };
-        let profile = profile.unwrap_or("release".to_string());
-        let assets = self.take_assets(&config, deb.assets.take(), &root_package.targets, readme, profile)?;
+        let assets = self.take_assets(&config, deb.assets.take(), &root_package.targets, readme, selected_profile)?;
         if assets.is_empty() {
             return Err("No binaries or cdylibs found. The package is empty. Please specify some assets to package in Cargo.toml".into());
         }
@@ -1205,7 +1209,7 @@ mod tests {
         // supply a systemd unit file as if it were available on disk
         let _g = add_test_fs_paths(&vec![to_canon_static_str("cargo-deb.service")]);
 
-        let config = Config::from_manifest(Path::new("Cargo.toml"), None, None, None, None, None, &mut mock_listener, None).unwrap();
+        let config = Config::from_manifest(Path::new("Cargo.toml"), None, None, None, None, None, &mut mock_listener, "release".to_string()).unwrap();
 
         let num_unit_assets = config.assets.resolved
             .iter()
@@ -1223,7 +1227,7 @@ mod tests {
         // supply a systemd unit file as if it were available on disk
         let _g = add_test_fs_paths(&vec![to_canon_static_str("cargo-deb.service")]);
 
-        let mut config = Config::from_manifest(Path::new("Cargo.toml"), None, None, None, None, None, &mut mock_listener, None).unwrap();
+        let mut config = Config::from_manifest(Path::new("Cargo.toml"), None, None, None, None, None, &mut mock_listener, "release".to_string()).unwrap();
 
         config.systemd_units.get_or_insert(SystemdUnitsConfig::default());
         config.maintainer_scripts.get_or_insert(PathBuf::new());
