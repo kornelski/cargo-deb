@@ -351,6 +351,8 @@ pub struct Config {
     pub preserve_symlinks: bool,
     /// Details of how to install any systemd units
     pub(crate) systemd_units: Option<SystemdUnitsConfig>,
+    /// Arguements to pass to dpkg_shlibdeps.
+    pub dpkg_shlibdeps_args: Option<Vec<String>>,
     _use_constructor_to_make_this_struct_: (),
 }
 
@@ -388,13 +390,15 @@ impl Config {
 
     pub(crate) fn get_dependencies(&self, listener: &dyn Listener) -> CDResult<String> {
         let mut deps = HashSet::new();
+        let args = Vec::new();
+        let dpkg_shlibdeps_args = self.dpkg_shlibdeps_args.as_ref().unwrap_or(&args);
         for word in self.depends.split(',') {
             let word = word.trim();
             if word == "$auto" {
                 let bin = self.all_binaries();
                 let resolved = bin.par_iter()
                     .filter_map(|p| p.path())
-                    .filter_map(|bname| match resolve(bname) {
+                    .filter_map(|bname| match resolve(bname, &dpkg_shlibdeps_args) {
                         Ok(bindeps) => Some(bindeps),
                         Err(err) => {
                             listener.warning(format!("{} (no auto deps for {})", err, bname.display()));
@@ -749,6 +753,7 @@ impl Cargo {
                 }),
             preserve_symlinks: deb.preserve_symlinks.unwrap_or(false),
             systemd_units: deb.systemd_units.take(),
+            dpkg_shlibdeps_args: deb.dpkg_shlibdeps_args,
             _use_constructor_to_make_this_struct_: (),
         };
         let assets = self.take_assets(&config, deb.assets.take(), &root_package.targets, readme, selected_profile)?;
@@ -948,6 +953,7 @@ struct CargoDeb {
     pub preserve_symlinks: Option<bool>,
     pub systemd_units: Option<SystemdUnitsConfig>,
     pub variants: Option<HashMap<String, CargoDeb>>,
+    pub dpkg_shlibdeps_args: Option<Vec<String>>,
 }
 
 impl CargoDeb {
@@ -982,6 +988,7 @@ impl CargoDeb {
             preserve_symlinks: self.preserve_symlinks.or(parent.preserve_symlinks),
             systemd_units: self.systemd_units.or(parent.systemd_units),
             variants: self.variants.or(parent.variants),
+            dpkg_shlibdeps_args: self.dpkg_shlibdeps_args.or(parent.dpkg_shlibdeps_args),
         }
     }
 }

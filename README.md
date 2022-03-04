@@ -103,6 +103,10 @@ There can be multiple variants of the metadata in one `Cargo.toml` file. `--vari
 
 Cross-compilation can be run from any host, including macOS and Windows, provided that Debian-compatible linker and system libraries are available to Rust. The target has to be [installed for Rust](https://github.com/rust-lang-nursery/rustup.rs#cross-compilation) (e.g. `rustup target add i686-unknown-linux-gnu`) and has to be [installed for the host system (e.g. Debian)](https://wiki.debian.org/ToolChain/Cross) (e.g. `apt-get install libc6-dev-i386`). Note that Rust's and [Debian's architecture names](https://www.debian.org/ports/) are different.
 
+`package.metadata.deb.dpkg-shlibdeps-args` can be used to pass extra arguments for dependency resolution. In particular `-l` and `-x` are useful to change the library search path or exclude architecture-specific names. For example, to crosscompile for aarch64:
+
+    dpkg-shlibdeps-args = ["-l/usr/aarch64-linux-gnu/lib"]
+
 ```sh
 cargo deb --target=i686-unknown-linux-gnu
 ```
