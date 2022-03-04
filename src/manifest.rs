@@ -351,7 +351,7 @@ pub struct Config {
     pub preserve_symlinks: bool,
     /// Details of how to install any systemd units
     pub(crate) systemd_units: Option<SystemdUnitsConfig>,
-    /// Arguements to pass to dpkg_shlibdeps.
+    /// Arguments to pass to dpkg_shlibdeps.
     pub dpkg_shlibdeps_args: Option<Vec<String>>,
     _use_constructor_to_make_this_struct_: (),
 }
@@ -696,6 +696,13 @@ impl Cargo {
         let (license_file, license_file_skip_lines) = self.license_file(deb.license_file.as_ref())?;
         let readme = self.package.readme.as_ref();
         self.check_config(manifest_dir, readme, &deb, listener);
+        let dpkg_shlibdeps_args = if let Some(target) = target {
+            let map = deb.dpkg_shlibdeps_args.unwrap_or(HashMap::new());
+            map.get(target).cloned()
+        } else {
+            None
+        };
+
         let mut config = Config {
             manifest_dir: manifest_dir.to_owned(),
             deb_output_path,
@@ -753,7 +760,7 @@ impl Cargo {
                 }),
             preserve_symlinks: deb.preserve_symlinks.unwrap_or(false),
             systemd_units: deb.systemd_units.take(),
-            dpkg_shlibdeps_args: deb.dpkg_shlibdeps_args,
+            dpkg_shlibdeps_args,
             _use_constructor_to_make_this_struct_: (),
         };
         let assets = self.take_assets(&config, deb.assets.take(), &root_package.targets, readme, selected_profile)?;
@@ -953,7 +960,7 @@ struct CargoDeb {
     pub preserve_symlinks: Option<bool>,
     pub systemd_units: Option<SystemdUnitsConfig>,
     pub variants: Option<HashMap<String, CargoDeb>>,
-    pub dpkg_shlibdeps_args: Option<Vec<String>>,
+    pub dpkg_shlibdeps_args: Option<HashMap<String, Vec<String>>>,
 }
 
 impl CargoDeb {
