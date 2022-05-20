@@ -37,7 +37,8 @@ pub(crate) fn read_file_to_bytes(path: &PathBuf) -> std::io::Result<Vec<u8>> {
 /// # Usage
 ///
 /// Any types supported by HashMap for keys and values are supported:
-/// ```
+///
+/// ```rust,ignore
 /// let mut one = std::collections::HashMap::new();
 /// one.insert(1, 'a');
 /// assert_eq!(one, map!{ 1 => 'a' });
