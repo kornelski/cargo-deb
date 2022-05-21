@@ -308,6 +308,7 @@ mod tests {
             None,
             None,
             None,
+            None,
             &mut mock_listener,
             "release".to_string())
             .unwrap();
