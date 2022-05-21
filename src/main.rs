@@ -19,6 +19,7 @@ struct CliOptions {
     manifest_path: Option<String>,
     cargo_build_flags: Vec<String>,
     deb_version: Option<String>,
+    deb_revision: Option<String>,
     system_xz: bool,
     profile: Option<String>,
 }
@@ -45,6 +46,7 @@ fn main() {
     cli_opts.optflag("h", "help", "Print this help menu");
     cli_opts.optflag("", "version", "Show the version of cargo-deb");
     cli_opts.optopt("", "deb-version", "Alternate version string for package", "version");
+    cli_opts.optopt("", "deb-revision", "Alternate revision string for package", "revision");
     cli_opts.optflag("", "system-xz", "Compress using command-line xz command instead of built-in");
     cli_opts.optopt("", "profile", "select which project profile to package", "profile");
 
@@ -80,6 +82,7 @@ fn main() {
         package_name: matches.opt_str("package"),
         manifest_path: matches.opt_str("manifest-path"),
         deb_version: matches.opt_str("deb-version"),
+        deb_revision: matches.opt_str("deb-revision"),
         system_xz: matches.opt_present("system-xz"),
         profile: matches.opt_str("profile"),
         cargo_build_flags: matches.free,
@@ -123,6 +126,7 @@ fn process(
         verbose,
         mut cargo_build_flags,
         deb_version,
+        deb_revision,
         system_xz,
         profile,
     }: CliOptions,
@@ -166,6 +170,7 @@ fn process(
         target,
         variant,
         deb_version,
+        deb_revision,
         listener,
         selected_profile,
     )?;

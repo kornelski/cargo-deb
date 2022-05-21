@@ -358,7 +358,7 @@ impl Config {
     /// Makes a new config from `Cargo.toml` in the current working directory.
     ///
     /// `None` target means the host machine's architecture.
-    pub fn from_manifest(manifest_path: &Path, package_name: Option<&str>, output_path: Option<String>, target: Option<&str>, variant: Option<&str>, deb_version: Option<String>, listener: &dyn Listener, selected_profile: String) -> CDResult<Config> {
+    pub fn from_manifest(manifest_path: &Path, package_name: Option<&str>, output_path: Option<String>, target: Option<&str>, variant: Option<&str>, deb_version: Option<String>, deb_revision: Option<String>, listener: &dyn Listener, selected_profile: String) -> CDResult<Config> {
         let metadata = cargo_metadata(manifest_path)?;
         let available_package_names = || {
             metadata.packages.iter()
@@ -383,7 +383,7 @@ impl Config {
         let manifest_dir = manifest_path.parent().unwrap();
         let content = fs::read(&manifest_path)
             .map_err(|e| CargoDebError::IoFile("unable to read Cargo.toml", e, manifest_path.to_owned()))?;
-        toml::from_slice::<Cargo>(&content)?.into_config(root_package, manifest_dir, output_path, target_dir, target, variant, deb_version, listener, selected_profile)
+        toml::from_slice::<Cargo>(&content)?.into_config(root_package, manifest_dir, output_path, target_dir, target, variant, deb_version, deb_revision, listener, selected_profile)
     }
 
     pub(crate) fn get_dependencies(&self, listener: &dyn Listener) -> CDResult<String> {
@@ -657,6 +657,7 @@ impl Cargo {
         target: Option<&str>,
         variant: Option<&str>,
         deb_version: Option<String>,
+        deb_revision: Option<String>,
         listener: &dyn Listener,
         selected_profile: String,
     ) -> CDResult<Config> {
@@ -699,7 +700,7 @@ impl Cargo {
             target_dir,
             name: self.package.name.clone(),
             deb_name: deb.name.take().unwrap_or_else(|| self.package.name.clone()),
-            deb_version: deb_version.unwrap_or(self.version_string(deb.revision)),
+            deb_version: deb_version.unwrap_or(self.version_string(deb_revision.or(deb.revision))),
             license: self.package.license.take(),
             license_file,
             license_file_skip_lines,
