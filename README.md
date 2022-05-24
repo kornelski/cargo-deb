@@ -109,6 +109,8 @@ cargo deb --target=i686-unknown-linux-gnu
 
 Cross-compiled archives are saved in `target/<target triple>/debian/*.deb`. The actual archive path is printed on success.
 
+This option works well for crates that either have no library dependencies or don't want to target an older release.  To cross-compile with support for a release older than the host's, consider using a container or VM.
+
 In `.cargo/config` you can add `[target.<target triple>] strip = { path = "…" } objcopy = { path = "…" }` to specify a path to the architecture-specific `strip` and `objcopy` commands, or use `--no-strip`.
 
 ### Separate debug info
