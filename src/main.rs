@@ -156,7 +156,7 @@ fn process(
 
     // The profile is selected based on the given ClI options and then passed to
     // cargo build accordingly. you could argue that the other way around is
-    // more desireable. However for now we want all commands coming in via the
+    // more desirable. However for now we want all commands coming in via the
     // same `interface`
     let selected_profile = profile.unwrap_or("release".to_string());
     cargo_build_flags.push("--profile".to_string());
@@ -196,7 +196,7 @@ fn process(
 
     deb_contents.add_data("debian-binary", system_time, b"2.0\n")?;
 
-    // Initailize the contents of the data archive (files that go into the filesystem).
+    // Initialize the contents of the data archive (files that go into the filesystem).
     let (data_archive, asset_hashes) = data::generate_archive(&options, system_time, listener)?;
     let original = data_archive.len();
 
