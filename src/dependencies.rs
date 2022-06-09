@@ -48,7 +48,8 @@ pub fn resolve(path: &Path, target: &Option<String>) -> CDResult<Vec<String>> {
         .trim_start_matches("shlibs:Depends=")
         .split(',')
         .map(|dep| dep.trim().to_string())
-        .filter(|dep| !dep.starts_with("libgcc-")) // libgcc guaranteed by LSB to always be present
+        // libgcc guaranteed by LSB to always be present
+        .filter(|dep| !dep.starts_with("libgcc-") && !dep.starts_with("libgcc1-"))
         .collect();
 
     Ok(deps)
