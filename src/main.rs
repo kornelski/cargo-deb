@@ -243,5 +243,5 @@ fn warn_if_not_linux() {}
 
 #[cfg(not(target_os = "linux"))]
 fn warn_if_not_linux() {
-    eprintln!("warning: This command is for Linux only, and will not make sense when run on other systems");
+    eprintln!("warning: You're creating a package for your current operating system only, and not for Linux. Use --target if you want to cross-compile.");
 }
