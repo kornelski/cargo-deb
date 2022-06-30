@@ -24,10 +24,11 @@ pub fn generate_archive(options: &Config, time: u64, asset_hashes: HashMap<PathB
     }
     generate_scripts(&mut archive, options, listener)?;
     if let Some(ref file) = options.triggers_file {
-        if !file.exists() {
+        let triggers_file = &options.manifest_dir.as_path().join(file);
+        if !triggers_file.exists() {
             return Err(CargoDebError::AssetFileNotFound(file.to_path_buf()));
         }
-        generate_triggers_file(&mut archive, file)?;
+        generate_triggers_file(&mut archive, triggers_file)?;
     }
     Ok(archive.into_inner()?)
 }
