@@ -406,7 +406,7 @@ impl Config {
                     deps.insert(dep);
                 }
             } else {
-                let (dep, arch_spec) = get_architecture_specification(&word)?;
+                let (dep, arch_spec) = get_architecture_specification(word)?;
                 if let Some(spec) = arch_spec {
                     if match_architecture(spec, &self.architecture)? {
                         deps.insert(dep);
@@ -522,11 +522,7 @@ impl Config {
             if let Some(unit_dir) = units_dir_option {
                 let search_path = self.path_in_workspace(unit_dir);
                 let package = &self.name;
-                let unit_name = if let Some(ref unit_name) = config.unit_name {
-                    Some(unit_name.as_str())
-                } else {
-                    None
-                };
+                let unit_name = config.unit_name.as_deref();
 
                 let units = dh_installsystemd::find_units(&search_path, package, unit_name);
 
@@ -675,8 +671,7 @@ impl Cargo {
             let mut deb = self.package
                 .metadata
                 .take()
-                .and_then(|m| m.deb)
-                .unwrap_or_else(CargoDeb::default);
+                .and_then(|m| m.deb).unwrap_or_default();
             let variant = deb.variants
                 .as_mut()
                 .and_then(|v| v.remove(variant))
@@ -687,7 +682,7 @@ impl Cargo {
                 .metadata
                 .take()
                 .and_then(|m| m.deb)
-                .unwrap_or_else(CargoDeb::default)
+                .unwrap_or_default()
         };
 
         let (license_file, license_file_skip_lines) = self.license_file(deb.license_file.as_ref())?;
@@ -700,7 +695,7 @@ impl Cargo {
             target_dir,
             name: self.package.name.clone(),
             deb_name: deb.name.take().unwrap_or_else(|| self.package.name.clone()),
-            deb_version: deb_version.unwrap_or(self.version_string(deb_revision.or(deb.revision))),
+            deb_version: deb_version.unwrap_or_else(|| self.version_string(deb_revision.or(deb.revision))),
             license: self.package.license.take(),
             license_file,
             license_file_skip_lines,

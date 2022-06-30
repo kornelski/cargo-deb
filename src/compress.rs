@@ -14,7 +14,7 @@ impl ops::Deref for Compressed {
     fn deref(&self) -> &Self::Target {
         match self {
             Self::Gz(data) |
-            Self::Xz(data) => &data,
+            Self::Xz(data) => data,
         }
     }
 }
@@ -86,12 +86,12 @@ pub fn xz_or_gz(data: &[u8], fast: bool, with_system_xz: bool) -> CDResult<Compr
         .threads(num_cpus::get() as u32)
         .preset(if fast { 1 } else { 6 })
         .encoder()
-        .map_err(|e| CargoDebError::LzmaCompressionError(e))?;
+        .map_err(CargoDebError::LzmaCompressionError)?;
 
     let mut writer = XzEncoder::new_stream(buf, encoder);
-    writer.write_all(data).map_err(|e| CargoDebError::Io(e))?;
+    writer.write_all(data).map_err(CargoDebError::Io)?;
 
-    let compressed = writer.finish().map_err(|e| CargoDebError::Io(e))?;
+    let compressed = writer.finish().map_err(CargoDebError::Io)?;
 
     Ok(Compressed::Xz(compressed))
 }

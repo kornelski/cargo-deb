@@ -102,7 +102,7 @@ pub fn compress_assets(options: &mut Config, listener: &dyn Listener) -> CDResul
     for (idx, asset) in options.assets.resolved.iter().enumerate() {
         let target_path_str = asset.target_path.to_string_lossy();
         if needs_compression(&target_path_str) {
-            listener.info(format!("Compressing '{}'", asset.source.path().unwrap_or(Path::new("-")).display()));
+            listener.info(format!("Compressing '{}'", asset.source.path().unwrap_or_else(|| Path::new("-")).display()));
 
             let content = asset.source.data()?;
             let mut compressed = Vec::with_capacity(content.len());
@@ -171,8 +171,8 @@ fn human_size(len: u64) -> (u64, &'static str) {
     if len < 1000 {
         return (len, "B");
     }
-    if len < 1000_000 {
+    if len < 1_000_000 {
         return ((len + 999) / 1000, "KB");
     }
-    return ((len + 999_999) / 1000_000, "MB");
+    ((len + 999_999) / 1_000_000, "MB")
 }

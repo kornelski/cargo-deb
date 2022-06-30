@@ -125,10 +125,10 @@ pub(crate) fn get_embedded_autoscript(snippet_filename: &str) -> String {
     // else load from embedded strings
     let mut snippet = snippet.unwrap_or_else(|| {
         let (_, snippet_bytes) = AUTOSCRIPTS.iter().find(|(s, _)| *s == snippet_filename)
-            .expect(&format!("Unknown autoscript '{}'", snippet_filename));
+            .unwrap_or_else(|| panic!("Unknown autoscript '{}'", snippet_filename));
 
         // convert to string
-        String::from_utf8_lossy(&snippet_bytes).into_owned()
+        String::from_utf8_lossy(snippet_bytes).into_owned()
     });
 
     // normalize

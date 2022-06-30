@@ -158,7 +158,7 @@ fn process(
     // cargo build accordingly. you could argue that the other way around is
     // more desirable. However for now we want all commands coming in via the
     // same `interface`
-    let selected_profile = profile.unwrap_or("release".to_string());
+    let selected_profile = profile.unwrap_or_else(|| "release".to_string());
     cargo_build_flags.push("--profile".to_string());
     cargo_build_flags.push(selected_profile.clone());
 
@@ -230,7 +230,7 @@ fn process(
         println!("{}", generated.display());
     }
 
-    remove_deb_temp_directory(&options);
+    remove_deb_temp_directory(options);
 
     if install {
         install_deb(&generated)?;

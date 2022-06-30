@@ -12,7 +12,7 @@ pub(crate) fn fname_from_path(path: &Path) -> String {
 pub(crate) use tests::is_path_file;
 
 #[cfg(not(test))]
-pub(crate) fn is_path_file(path: &PathBuf) -> bool {
+pub(crate) fn is_path_file(path: &Path) -> bool {
     path.is_file()
 }
 
