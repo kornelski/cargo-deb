@@ -16,7 +16,7 @@ impl CargoConfig {
 
     #[allow(deprecated)]
     fn new_(project_path: &Path) -> CDResult<Option<Self>> {
-        let mut project_path = project_path.as_ref();
+        let mut project_path = project_path;
         loop {
             if let Some(conf) = Self::try_parse(project_path)? {
                 return Ok(Some(conf));

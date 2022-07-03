@@ -21,7 +21,7 @@ pub fn resolve(path: &Path, target: &Option<String>) -> CDResult<Vec<String>> {
     let mut args = Vec::from([String::from("-O")]);
     // determine library search path from target
     if let Some(target) = target {
-        let libpath_arg = format!("-l/usr/{}/lib", debian_triple(&target));
+        let libpath_arg = format!("-l/usr/{}/lib", debian_triple(target));
         args.push(libpath_arg);
     }
     const DPKG_SHLIBDEPS_COMMAND: &str = "dpkg-shlibdeps";

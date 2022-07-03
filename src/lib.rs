@@ -74,10 +74,8 @@ pub fn reset_deb_temp_directory(options: &Config) -> io::Result<()> {
     // but this time only debs from other versions of the same package
     let g = deb_dir.join(DebArchive::filename_glob(options));
     if let Ok(old_files) = glob::glob(g.to_str().expect("utf8 path")) {
-        for old_file in old_files {
-            if let Ok(old_file) = old_file {
-                let _ = fs::remove_file(old_file);
-            }
+        for old_file in old_files.flatten() {
+            let _ = fs::remove_file(old_file);
         }
     }
     fs::create_dir_all(deb_temp_dir)

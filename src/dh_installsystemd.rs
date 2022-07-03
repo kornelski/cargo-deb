@@ -179,10 +179,7 @@ pub fn find_units(dir: &Path, main_package: &str, unit_name: Option<&str>) -> Pa
 /// See:
 ///   <https://www.freedesktop.org/software/systemd/man/systemd.syntax.html#Introduction>
 fn is_comment(s: &str) -> bool {
-    match s.chars().next() {
-        Some('#') | Some(';') => true,
-        _ => false,
-    }
+    matches!(s.chars().next(), Some('#') | Some(';'))
 }
 
 /// Strip off any first layer of outer quotes according to systemd quoting
