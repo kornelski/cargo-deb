@@ -30,10 +30,9 @@ impl Archive {
         if !path_str.ends_with('/') {
             path_str += "/";
         }
-        header.set_path(&path_str)?;
         header.set_entry_type(EntryType::Directory);
         header.set_cksum();
-        self.tar.append(&header, &mut io::empty())
+        self.tar.append_data(&mut header, path_str, &mut io::empty())
     }
 
     fn add_parent_directories(&mut self, path: &Path) -> CDResult<()> {
@@ -64,11 +63,10 @@ impl Archive {
 
         let mut header = TarHeader::new_gnu();
         header.set_mtime(self.time);
-        header.set_path(path)?;
         header.set_mode(chmod);
         header.set_size(out_data.len() as u64);
         header.set_cksum();
-        self.tar.append(&header, out_data)?;
+        self.tar.append_data(&mut header, path, out_data)?;
         Ok(())
     }
 
@@ -78,12 +76,10 @@ impl Archive {
         let mut header = TarHeader::new_gnu();
         header.set_mtime(self.time);
         header.set_entry_type(EntryType::Symlink);
-        header.set_path(&path)?;
-        header.set_link_name(&link_name)?;
         header.set_size(0);
         header.set_mode(0o777);
         header.set_cksum();
-        self.tar.append(&header, &mut io::empty())?;
+        self.tar.append_link(&mut header, path, link_name)?;
         Ok(())
     }
 
