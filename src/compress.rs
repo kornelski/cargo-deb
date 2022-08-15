@@ -50,14 +50,10 @@ fn system_xz(data: &[u8], fast: bool) -> CDResult<Compressed> {
 /// Compresses data using the [native Rust implementation of Zopfli](https://github.com/carols10cents/zopfli).
 #[cfg(not(feature = "lzma"))]
 pub fn xz_or_gz(data: &[u8], fast: bool, with_system_xz: bool) -> CDResult<Compressed> {
-    match system_xz(data, fast) {
-        Ok(compressed) => return Ok(compressed),
-        Err(err) if with_system_xz => return Err(err),
-        Err(err) => {
-            log::debug!("couldn't use system xz: {}", err);
-            // not explicitly enabled
-        },
-    };
+    // Very old dpkg doesn't support LZMA, so use it only if expliclty enabled
+    if with_system_xz {
+        return system_xz(data, fast);
+    }
 
     use zopfli::{Format, Options};
 
