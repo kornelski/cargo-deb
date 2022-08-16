@@ -9,7 +9,7 @@ homepage = "https://github.com/kornelski/cargo-deb#readme"
 keywords = ["debian", "ubuntu", "deploy", "cargo-subcommand"]
 repository = "https://github.com/kornelski/cargo-deb"
 readme = "README.md"
-version = "1.38.3"
+version = "1.38.4"
 edition = "2021"
 rust-version = "1.56"
 
