@@ -24,7 +24,7 @@ pub(crate) fn generate_changelog_asset(options: &Config) -> CDResult<Option<Vec<
             .and_then(|content| {
                 // The input is plaintext, but the debian package should contain gzipped one.
                 let mut compressed = Vec::with_capacity(content.len());
-                zopfli::compress(&Options::default(), &Format::Gzip, &*content, content.len() as _, &mut compressed)?;
+                zopfli::compress(&Options::default(), &Format::Gzip, &*content, &mut compressed)?;
                 compressed.shrink_to_fit();
                 Ok(compressed)
             })
@@ -106,7 +106,7 @@ pub fn compress_assets(options: &mut Config, listener: &dyn Listener) -> CDResul
 
             let content = asset.source.data()?;
             let mut compressed = Vec::with_capacity(content.len());
-            zopfli::compress(&Options::default(), &Format::Gzip, &*content, content.len() as _, &mut compressed)?;
+            zopfli::compress(&Options::default(), &Format::Gzip, &*content, &mut compressed)?;
             compressed.shrink_to_fit();
 
             new_assets.push(Asset::new(
