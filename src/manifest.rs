@@ -479,7 +479,7 @@ impl Config {
 
     pub fn add_debug_assets(&mut self) {
         let mut assets_to_add: Vec<Asset> = Vec::new();
-        for asset in self.built_binaries().into_iter().filter(|a| a.source.path().is_some()) {
+        for asset in self.built_binaries_mut().into_iter().filter(|a| a.source.path().is_some()) {
             let debug_source = asset.source.debug_source().expect("debug asset");
             if debug_source.exists() {
                 log::debug!("added debug file {}", debug_source.display());
@@ -543,22 +543,21 @@ impl Config {
 
     /// Executables AND dynamic libraries
     fn all_binaries(&self) -> Vec<&AssetSource> {
-        self.binaries(false).iter().map(|asset| &asset.source).collect()
+        self.assets.resolved.iter()
+            .filter(|asset| {
+                // Assumes files in build dir which have executable flag set are binaries
+                asset.is_dynamic_library() || asset.is_executable()
+            })
+            .map(|asset| &asset.source)
+            .collect()
     }
 
     /// Executables AND dynamic libraries, but only in `target/release`
-    pub(crate) fn built_binaries(&self) -> Vec<&Asset> {
-        self.binaries(true)
-    }
-
-    fn binaries(&self, built_only: bool) -> Vec<&Asset> {
-        self.assets
-            .resolved
-            .iter()
-            .filter(|asset| {
+    pub(crate) fn built_binaries_mut(&mut self) -> Vec<&mut Asset> {
+        self.assets.resolved.iter_mut()
+            .filter(move |asset| {
                 // Assumes files in build dir which have executable flag set are binaries
-                (!built_only || asset.is_built)
-                    && (asset.is_dynamic_library() || asset.is_executable())
+                asset.is_built && (asset.is_dynamic_library() || asset.is_executable())
             })
             .collect()
     }

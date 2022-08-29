@@ -43,6 +43,7 @@ mod tararchive;
 mod wordsplit;
 
 use crate::listener::Listener;
+use crate::manifest::AssetSource;
 use rayon::prelude::*;
 use std::env;
 use std::fs;
@@ -181,20 +182,23 @@ pub fn strip_binaries(options: &mut Config, target: Option<&str>, listener: &dyn
         }
     }
 
-    options.built_binaries().par_iter().try_for_each(|asset| {
-        match asset.source.path() {
+    let stripped_binaries_output_dir = options.default_deb_output_dir();
+
+    options.built_binaries_mut().par_iter_mut().enumerate().try_for_each(|(i, asset)| {
+        let new_source = match asset.source.path() {
             Some(path) => {
-                // We always strip the symbols to a separate file,  but they will only be included if specified
+                if !path.exists() {
+                    return Err(CargoDebError::StripFailed(path.to_owned(), "The file doesn't exist".into()));
+                }
 
                 // The debug_path and debug_filename should never return None if we have an AssetSource::Path
                 let debug_path = asset.source.debug_source().expect("Failed to compute debug source path");
-                let conf_path = cargo_config
-                    .as_ref()
-                    .map(|c| c.path())
+                let conf_path = cargo_config.as_ref().map(|c| c.path())
                     .unwrap_or_else(|| Path::new(".cargo/config"));
 
                 if separate_file {
                     log::debug!("extracting debug info of {} with {}", path.display(), objcopy_cmd.display());
+                    let _ = std::fs::remove_file(&debug_path);
                     Command::new(objcopy_cmd)
                         .arg("--only-keep-debug")
                         .arg(path)
@@ -210,9 +214,16 @@ pub fn strip_binaries(options: &mut Config, target: Option<&str>, listener: &dyn
                         })?;
                 }
 
+                let file_name = path.file_name().ok_or(CargoDebError::Str("bad path"))?;
+                let file_name = format!("{}.tmp{}-stripped", file_name.to_string_lossy(), i);
+                let stripped_temp_path = stripped_binaries_output_dir.join(file_name);
+                let _ = std::fs::remove_file(&stripped_temp_path);
+
                 log::debug!("stripping {} with {}", path.display(), strip_cmd.display());
                 Command::new(strip_cmd)
                    .arg("--strip-unneeded")
+                   .arg("-o")
+                   .arg(&stripped_temp_path)
                    .arg(path)
                    .status()
                    .and_then(ensure_success)
@@ -223,6 +234,11 @@ pub fn strip_binaries(options: &mut Config, target: Option<&str>, listener: &dyn
                             CargoDebError::CommandFailed(err, "strip")
                         }
                     })?;
+
+                if !stripped_temp_path.exists() {
+                    return Err(CargoDebError::StripFailed(path.to_owned(), format!("{} command failed to create output '{}'", strip_cmd.display(), stripped_temp_path.display())));
+                }
+
                 if separate_file {
                     log::debug!("linking debug info to {} with {}", debug_path.display(), objcopy_cmd.display());
                     let debug_filename = debug_path.file_name().expect("Built binary has no filename");
@@ -232,18 +248,21 @@ pub fn strip_binaries(options: &mut Config, target: Option<&str>, listener: &dyn
                             "--add-gnu-debuglink={}",
                             debug_filename.to_str().expect("Debug source file had no filename")
                         ))
-                        .arg(path)
+                        .arg(&stripped_temp_path)
                         .status()
                         .and_then(ensure_success)
                         .map_err(|err| CargoDebError::CommandFailed(err, "objcopy"))?;
                 }
                 listener.info(format!("Stripped '{}'", path.display()));
+                AssetSource::Path(stripped_temp_path)
             },
             None => {
                 // This is unexpected - emit a warning if we come across it
                 listener.warning(format!("Found built asset with non-path source '{:?}'", asset));
+                return Ok(());
             },
         };
+        asset.source = new_source;
         Ok::<_, CargoDebError>(())
     })?;
 
