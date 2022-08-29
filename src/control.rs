@@ -306,14 +306,14 @@ mod tests {
         mock_listener.expect_info().return_const(());
 
         let mut config = Config::from_manifest(
-            &Path::new("test-resources/testroot/Cargo.toml"),
+            Path::new("test-resources/testroot/Cargo.toml"),
             package_name,
             None,
             None,
             None,
             None,
             None,
-            &mut mock_listener,
+            &mock_listener,
             "release".to_string())
             .unwrap();
 
@@ -334,13 +334,13 @@ mod tests {
 
     #[test]
     fn generate_scripts_does_nothing_if_maintainer_scripts_is_not_set() {
-        let (config, mut mock_listener, mut in_ar) = prepare(None);
+        let (config, mock_listener, mut in_ar) = prepare(None);
 
         // supply a maintainer script as if it were available on disk
-        let _g = add_test_fs_paths(&vec!["debian/postinst"]);
+        let _g = add_test_fs_paths(&["debian/postinst"]);
 
         // generate scripts and store them in the given archive
-        generate_scripts(&mut in_ar, &config, &mut mock_listener).unwrap();
+        generate_scripts(&mut in_ar, &config, &mock_listener).unwrap();
 
         // finish the archive and unwrap it as a byte vector
         let archive_bytes = in_ar.into_inner().unwrap();
@@ -384,7 +384,7 @@ mod tests {
         package_name: Option<&str>,
         maintainer_script_paths: &Vec<&'static str>
     ) {
-        let (mut config, mut mock_listener, mut in_ar) = prepare(package_name);
+        let (mut config, mock_listener, mut in_ar) = prepare(package_name);
 
         // supply a maintainer script as if it were available on disk
         // provide file content that we can easily verify
@@ -399,7 +399,7 @@ mod tests {
         config.maintainer_scripts.get_or_insert(PathBuf::from("debian"));
 
         // generate scripts and store them in the given archive
-        generate_scripts(&mut in_ar, &config, &mut mock_listener).unwrap();
+        generate_scripts(&mut in_ar, &config, &mock_listener).unwrap();
 
         // finish the archive and unwrap it as a byte vector
         let archive_bytes = in_ar.into_inner().unwrap();
@@ -477,10 +477,10 @@ mod tests {
     //   - if Some(...) then pretend when creating the archive that a file at that path exists with the given content
     fn generate_scripts_for_package_with_systemd_unit(
         package_name: Option<&str>,
-        maintainer_scripts: &Vec<(&'static str, Option<&'static str>)>,
+        maintainer_scripts: &[(&'static str, Option<&'static str>)],
         service_file: &'static str,
     ) {
-        let (mut config, mut mock_listener, mut in_ar) = prepare(package_name);
+        let (mut config, mock_listener, mut in_ar) = prepare(package_name);
 
         // supply a maintainer script as if it were available on disk
         // provide file content that we can easily verify
@@ -507,7 +507,7 @@ mod tests {
         config.systemd_units.get_or_insert(SystemdUnitsConfig::default());
 
         // generate scripts and store them in the given archive
-        generate_scripts(&mut in_ar, &config, &mut mock_listener).unwrap();
+        generate_scripts(&mut in_ar, &config, &mock_listener).unwrap();
 
         // finish the archive and unwrap it as a byte vector
         let archive_bytes = in_ar.into_inner().unwrap();
@@ -542,6 +542,6 @@ mod tests {
             })
             .any(|v| v.contains("#DEBHELPER#"));
 
-        assert_eq!(unreplaced_placeholders, false);
+        assert!(!unreplaced_placeholders);
     }
 }

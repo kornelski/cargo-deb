@@ -116,9 +116,9 @@ pub(crate) fn get_embedded_autoscript(snippet_filename: &str) -> String {
 
     // load from test data if defined
     if cfg!(test) {
-        let path_buf = PathBuf::from(snippet_filename);
-        if is_path_file(&path_buf) {
-            snippet = read_file_to_string(path_buf).ok();
+        let path = Path::new(snippet_filename);
+        if is_path_file(path) {
+            snippet = read_file_to_string(path).ok();
         }
     }
 
@@ -184,11 +184,12 @@ pub(crate) fn autoscript(
             let existing_text = std::str::from_utf8(scripts.get(&outfile).unwrap())?;
 
             // prepend new text to existing script fragment
-            let mut new_text = String::new();
-            new_text.push_str(&format!("# Automatically added by {}\n", bin_name));
-            new_text.push_str(&autoscript_sed(snippet_filename, replacements));
-            new_text.push_str("# End automatically added section\n");
-            new_text.push_str(existing_text);
+            let new_text = [
+                &format!("# Automatically added by {}\n", bin_name),
+                &autoscript_sed(snippet_filename, replacements),
+                "# End automatically added section\n",
+                existing_text,
+            ].concat();
             scripts.insert(outfile, new_text.into());
         } else {
             // We don't support sed commands yet.
@@ -196,10 +197,12 @@ pub(crate) fn autoscript(
         }
     } else if !replacements.is_empty() {
         // append to existing script fragment (if any)
-        let mut new_text = String::from(std::str::from_utf8(scripts.get(&outfile).unwrap_or(&Vec::new()))?);
-        new_text.push_str(&format!("# Automatically added by {}\n", bin_name));
-        new_text.push_str(&autoscript_sed(snippet_filename, replacements));
-        new_text.push_str("# End automatically added section\n");
+        let new_text = [
+            std::str::from_utf8(scripts.get(&outfile).unwrap_or(&Vec::new()))?,
+            &format!("# Automatically added by {}\n", bin_name),
+            &autoscript_sed(snippet_filename, replacements),
+            "# End automatically added section\n",
+        ].concat();
         scripts.insert(outfile, new_text.into());
     } else {
         // We don't support sed commands yet.
@@ -275,7 +278,7 @@ fn debhelper_script_subst(user_scripts_dir: &Path, scripts: &mut ScriptFragments
         // merge the generated scripts if they exist into the user script
         // if no generated script exists, we still need to remove #DEBHELPER# if
         // present otherwise the script will be syntactically invalid
-        let user_text = read_file_to_string(user_file_path.clone())?;
+        let user_text = read_file_to_string(&user_file_path)?;
         let new_text = user_text.replace("#DEBHELPER#", &generated_text);
         if new_text == user_text {
             return Err(CargoDebError::DebHelperReplaceFailed(user_file_path));
@@ -339,7 +342,7 @@ mod tests {
 
     #[test]
     fn pkgfile_finds_most_specific_match_with_pkg_unit_file() {
-        let _g = add_test_fs_paths(&vec![
+        let _g = add_test_fs_paths(&[
             "/parent/dir/postinst",
             "/parent/dir/myunit.postinst",
             "/parent/dir/mypkg.postinst",
@@ -357,7 +360,7 @@ mod tests {
 
     #[test]
     fn pkgfile_finds_most_specific_match_without_unit_file() {
-        let _g = add_test_fs_paths(&vec![
+        let _g = add_test_fs_paths(&[
             "/parent/dir/postinst",
             "/parent/dir/mypkg.postinst",
         ]);
@@ -371,7 +374,7 @@ mod tests {
 
     #[test]
     fn pkgfile_finds_most_specific_match_without_pkg_file() {
-        let _g = add_test_fs_paths(&vec![
+        let _g = add_test_fs_paths(&[
             "/parent/dir/postinst",
             "/parent/dir/myunit.postinst",
         ]);
@@ -385,7 +388,7 @@ mod tests {
 
     #[test]
     fn pkgfile_finds_a_fallback_match() {
-        let _g = add_test_fs_paths(&vec![
+        let _g = add_test_fs_paths(&[
             "/parent/dir/postinst",
             "/parent/dir/myunit.postinst",
             "/parent/dir/mypkg.postinst",
@@ -403,7 +406,7 @@ mod tests {
 
     #[test]
     fn pkgfile_fails_to_find_a_match() {
-        let _g = add_test_fs_paths(&vec![
+        let _g = add_test_fs_paths(&[
             "/parent/dir/postinst",
             "/parent/dir/myunit.postinst",
             "/parent/dir/mypkg.postinst",
@@ -422,10 +425,10 @@ mod tests {
     fn autoscript_test_wrapper(pkg: &str, script: &str, snippet: &str, unit: &str, scripts: Option<ScriptFragments>) -> ScriptFragments {
         let mut mock_listener = crate::listener::MockListener::new();
         mock_listener.expect_info().times(1).return_const(());
-        let mut scripts = scripts.unwrap_or(ScriptFragments::new());
+        let mut scripts = scripts.unwrap_or_default();
         let replacements = map! { "UNITFILES" => unit.to_owned() };
-        autoscript(&mut scripts, pkg, script, snippet, &replacements, false, &mut mock_listener).unwrap();
-        return scripts;
+        autoscript(&mut scripts, pkg, script, snippet, &replacements, false, &mock_listener).unwrap();
+        scripts
     }
 
     #[test]
@@ -444,7 +447,7 @@ mod tests {
         // sed mode is when no search -> replacement pairs are defined
         let sed_mode = &HashMap::new();
 
-        autoscript(&mut scripts, "mypkg", "somescript", "idontexist", sed_mode, false, &mut mock_listener).unwrap();
+        autoscript(&mut scripts, "mypkg", "somescript", "idontexist", sed_mode, false, &mock_listener).unwrap();
     }
 
     #[test]
@@ -486,7 +489,7 @@ mod tests {
 
         // Populate an autoscript template and add the result to a
         // collection of scripts and return it to us.
-        let scripts = autoscript_test_wrapper("mypkg", maintainer_script, &autoscript_name, "dummyunit", None);
+        let scripts = autoscript_test_wrapper("mypkg", maintainer_script, autoscript_name, "dummyunit", None);
 
         // Expect autoscript() to have created one temporary script
         // fragment called <package>.<script>.debhelper.
@@ -511,7 +514,7 @@ mod tests {
 
         // Verify the content of the added comment lines
         let mut lines = created_text.lines();
-        assert!(lines.nth(0).unwrap().starts_with("# Automatically added by"));
+        assert!(lines.next().unwrap().starts_with("# Automatically added by"));
         assert_eq!(lines.nth_back(0).unwrap(), "# End automatically added section");
 
         // Check that the autoscript fragment lines were properly copied
@@ -529,7 +532,7 @@ mod tests {
         // populated but this time with the different value, and pass in
         // the existing set of created scripts to check how it gets
         // modified.
-        let scripts = autoscript_test_wrapper("mypkg", maintainer_script, &autoscript_name, "otherunit", Some(scripts));
+        let scripts = autoscript_test_wrapper("mypkg", maintainer_script, autoscript_name, "otherunit", Some(scripts));
 
         // The number and name of the output scripts should remain the same
         assert_eq!(1, scripts.len());
@@ -542,7 +545,7 @@ mod tests {
         assert_eq!((autoscript_line_count + 2) * 2, created_line_count);
 
         let mut lines = created_text.lines();
-        assert!(lines.nth(0).unwrap().starts_with("# Automatically added by"));
+        assert!(lines.next().unwrap().starts_with("# Automatically added by"));
         assert_eq!(lines.nth_back(0).unwrap(), "# End automatically added section");
 
         // The content should be different
@@ -574,7 +577,7 @@ mod tests {
 
         for (service_order, expected_ext) in in_out.into_iter() {
             let mut scripts = ScriptFragments::new();
-            autoscript(&mut scripts, "mypkg", "prerm", "postrm-systemd", &replacements, service_order, &mut mock_listener).unwrap();
+            autoscript(&mut scripts, "mypkg", "prerm", "postrm-systemd", &replacements, service_order, &mock_listener).unwrap();
 
             assert_eq!(1, scripts.len());
 
@@ -601,7 +604,7 @@ mod tests {
         let mut scripts = ScriptFragments::new();
 
         assert_eq!(0, scripts.len());
-        debhelper_script_subst(Path::new(""), &mut scripts, "mypkg", "myscript", None, &mut mock_listener).unwrap();
+        debhelper_script_subst(Path::new(""), &mut scripts, "mypkg", "myscript", None, &mock_listener).unwrap();
         assert_eq!(0, scripts.len());
     }
 
@@ -616,7 +619,7 @@ mod tests {
 
         let mut scripts = ScriptFragments::new();
 
-        match debhelper_script_subst(Path::new(""), &mut scripts, "mypkg", "myscript", None, &mut mock_listener) {
+        match debhelper_script_subst(Path::new(""), &mut scripts, "mypkg", "myscript", None, &mock_listener) {
             Ok(_) => (),
             Err(CargoDebError::DebHelperReplaceFailed(_)) => panic!("Test failed as expected"),
             Err(err) => panic!("Unexpected error {:?}", err),
@@ -635,7 +638,7 @@ mod tests {
         let mut scripts = ScriptFragments::new();
 
         assert_eq!(0, scripts.len());
-        debhelper_script_subst(Path::new(""), &mut scripts, "mypkg", "myscript", None, &mut mock_listener).unwrap();
+        debhelper_script_subst(Path::new(""), &mut scripts, "mypkg", "myscript", None, &mock_listener).unwrap();
         assert_eq!(1, scripts.len());
         assert!(scripts.contains_key("myscript"));
     }
@@ -654,7 +657,7 @@ mod tests {
         scripts.insert("mypkg.myscript.debhelper".to_owned(), "injected".as_bytes().to_vec());
 
         assert_eq!(1, scripts.len());
-        debhelper_script_subst(Path::new(""), &mut scripts, "mypkg", "myscript", None, &mut mock_listener).unwrap();
+        debhelper_script_subst(Path::new(""), &mut scripts, "mypkg", "myscript", None, &mock_listener).unwrap();
         assert_eq!(2, scripts.len());
         assert!(scripts.contains_key("mypkg.myscript.debhelper"));
         assert!(scripts.contains_key("myscript"));
@@ -667,7 +670,7 @@ mod tests {
     #[test]
     fn debhelper_script_subst_with_user_and_generated_file(valid_user_file: String) {
         let _g = add_test_fs_paths(&[]);
-        set_test_fs_path_content("myscript", valid_user_file.clone());
+        set_test_fs_path_content("myscript", valid_user_file);
 
         let mut mock_listener = crate::listener::MockListener::new();
         mock_listener.expect_info().times(1).return_const(());
@@ -676,7 +679,7 @@ mod tests {
         scripts.insert("mypkg.myscript.debhelper".to_owned(), "injected".as_bytes().to_vec());
 
         assert_eq!(1, scripts.len());
-        debhelper_script_subst(Path::new(""), &mut scripts, "mypkg", "myscript", None, &mut mock_listener).unwrap();
+        debhelper_script_subst(Path::new(""), &mut scripts, "mypkg", "myscript", None, &mock_listener).unwrap();
         assert_eq!(2, scripts.len());
         assert!(scripts.contains_key("mypkg.myscript.debhelper"));
         assert!(scripts.contains_key("myscript"));
@@ -698,7 +701,7 @@ mod tests {
         service_order: bool,
     ) {
         let _g = add_test_fs_paths(&[]);
-        set_test_fs_path_content(maintainer_script, valid_user_file.clone());
+        set_test_fs_path_content(maintainer_script, valid_user_file);
 
         let mut mock_listener = crate::listener::MockListener::new();
         mock_listener.expect_info().times(1).return_const(());
@@ -708,7 +711,7 @@ mod tests {
         scripts.insert(format!("mypkg.{}.service", maintainer_script), "second".as_bytes().to_vec());
 
         assert_eq!(2, scripts.len());
-        debhelper_script_subst(Path::new(""), &mut scripts, "mypkg", maintainer_script, None, &mut mock_listener).unwrap();
+        debhelper_script_subst(Path::new(""), &mut scripts, "mypkg", maintainer_script, None, &mock_listener).unwrap();
         assert_eq!(3, scripts.len());
         assert!(scripts.contains_key(&format!("mypkg.{}.debhelper", maintainer_script)));
         assert!(scripts.contains_key(&format!("mypkg.{}.service", maintainer_script)));
@@ -733,7 +736,7 @@ mod tests {
     #[test]
     fn debhelper_script_subst_with_user_file_access_error(error: &str) {
         let _g = add_test_fs_paths(&[]);
-        set_test_fs_path_content("myscript", format!("error:{}", error).to_owned());
+        set_test_fs_path_content("myscript", format!("error:{}", error));
 
         let mut mock_listener = crate::listener::MockListener::new();
         mock_listener.expect_info().times(1).return_const(());
@@ -741,7 +744,7 @@ mod tests {
         let mut scripts = ScriptFragments::new();
 
         assert_eq!(0, scripts.len());
-        let result = debhelper_script_subst(Path::new(""), &mut scripts, "mypkg", "myscript", None, &mut mock_listener);
+        let result = debhelper_script_subst(Path::new(""), &mut scripts, "mypkg", "myscript", None, &mock_listener);
 
         assert!(matches!(result, Err(CargoDebError::Io(_))));
         if let CargoDebError::Io(err) = result.unwrap_err() {
@@ -755,7 +758,7 @@ mod tests {
     fn apply_with_no_matching_files() {
         let mut mock_listener = crate::listener::MockListener::new();
         mock_listener.expect_info().times(0).return_const(());
-        apply(Path::new(""), &mut ScriptFragments::new(), "mypkg", None, &mut mock_listener).unwrap();
+        apply(Path::new(""), &mut ScriptFragments::new(), "mypkg", None, &mock_listener).unwrap();
     }
 
     #[rstest]
@@ -771,6 +774,6 @@ mod tests {
         let mut mock_listener = crate::listener::MockListener::new();
         mock_listener.expect_info().times(scripts.len()).return_const(());
 
-        apply(Path::new(""), &mut ScriptFragments::new(), "mypkg", None, &mut mock_listener).unwrap();
+        apply(Path::new(""), &mut ScriptFragments::new(), "mypkg", None, &mock_listener).unwrap();
     }
 }

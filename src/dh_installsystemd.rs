@@ -56,7 +56,7 @@ const SYSTEMD_UNIT_FILE_INSTALL_MAPPINGS: [(&str, &str, &str); 12] = [
     ("",  "tmpfile", USR_LIB_TMPFILES_D_DIR),
 ];
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Eq)]
 pub struct InstallRecipe {
     pub path: PathBuf,
     pub mode: u32,
@@ -306,7 +306,7 @@ pub fn generate(package: &str, assets: &[Asset], options: &Options, listener: &d
                     .next_tuple();
                 if let Some((key, value)) = possible_kv_pair {
                     let other_unit = unquote(value).to_string();
-                    match &key[..] {
+                    match key {
                         "Also" => {
                             // The seen lookup prevents us from looping forever over
                             // unit files that refer to each other. An actual
@@ -484,7 +484,7 @@ mod tests {
         // one of each valid pattern (without a specific unit) and one
         // additional valid pattern with a unit (which should not be matched
         // as we don't specify a specific unit name to match)
-        let _g = add_test_fs_paths(&vec![
+        let _g = add_test_fs_paths(&[
             "debian/mypkg.mount",
             "debian/mypkg@.path",
             "debian/service", // demonstrates the main package fallback
@@ -510,7 +510,7 @@ mod tests {
         // one of each valid pattern (with a specific unit) and one additional
         // valid pattern without a unit (which should not be matched if there is
         // match with the correctly named unit).
-        let _g = add_test_fs_paths(&vec![
+        let _g = add_test_fs_paths(&[
             "debian/mypkg.myunit.mount",
             "debian/mypkg@.myunit.path",
             "debian/service", // main package match should be ignored
@@ -522,7 +522,7 @@ mod tests {
         ]);
 
         // add some paths that should not be matched
-        let _g = add_test_fs_paths(&vec![
+        let _g = add_test_fs_paths(&[
             "debian/nested/dir/mykpg.myunit.mount",
             "debian/README.md",
             "mypkg.myunit.mount",
@@ -553,7 +553,7 @@ mod tests {
         let mut mock_listener = crate::listener::MockListener::new();
         mock_listener.expect_info().times(0).return_const(());
 
-        let fragments = generate("", &vec![], &Options::default(), &mut mock_listener).unwrap();
+        let fragments = generate("", &[], &Options::default(), &mock_listener).unwrap();
 
         assert!(fragments.is_empty());
     }
@@ -570,7 +570,7 @@ mod tests {
             false,
         )];
 
-        let fragments = generate("mypkg", &assets, &Options::default(), &mut mock_listener).unwrap();
+        let fragments = generate("mypkg", &assets, &Options::default(), &mock_listener).unwrap();
         assert!(fragments.is_empty());
     }
 
@@ -587,7 +587,7 @@ mod tests {
             false,
         )];
 
-        let fragments = generate("mypkg", &assets, &Options::default(), &mut mock_listener).unwrap();
+        let fragments = generate("mypkg", &assets, &Options::default(), &mock_listener).unwrap();
         assert!(fragments.is_empty());
     }
 
@@ -604,7 +604,7 @@ mod tests {
             false,
         )];
 
-        let fragments = generate("mypkg", &assets, &Options::default(), &mut mock_listener).unwrap();
+        let fragments = generate("mypkg", &assets, &Options::default(), &mock_listener).unwrap();
         assert!(fragments.is_empty());
     }
 
@@ -623,7 +623,7 @@ mod tests {
             false,
         )];
 
-        let fragments = generate("mypkg", &assets, &Options::default(), &mut mock_listener).unwrap();
+        let fragments = generate("mypkg", &assets, &Options::default(), &mock_listener).unwrap();
         assert_eq!(1, fragments.len());
 
         let (fragment_name, fragment_bytes) = fragments.into_iter().next().unwrap();
@@ -644,7 +644,7 @@ mod tests {
 
         // Verify the content of the added comment lines
         let mut lines = created_text.lines();
-        assert!(lines.nth(0).unwrap().starts_with("# Automatically added by"));
+        assert!(lines.next().unwrap().starts_with("# Automatically added by"));
         assert_eq!(lines.nth_back(0).unwrap(), "# End automatically added section");
 
         // Check that the autoscript fragment lines were properly copied
@@ -673,7 +673,7 @@ mod tests {
             false,
         )];
 
-        let fragments = generate("mypkg", &assets, &Options::default(), &mut mock_listener).unwrap();
+        let fragments = generate("mypkg", &assets, &Options::default(), &mock_listener).unwrap();
         assert_eq!(0, fragments.len());
     }
 
@@ -690,7 +690,7 @@ mod tests {
             false,
         )];
 
-        let fragments = generate("mypkg", &assets, &Options::default(), &mut mock_listener).unwrap();
+        let fragments = generate("mypkg", &assets, &Options::default(), &mock_listener).unwrap();
         assert_eq!(0, fragments.len());
     }
 
@@ -785,7 +785,7 @@ WantedBy=multi-user.target");
 
         // Add all Autoscript paths to the in-memory test file system so that
         // we can track whether they are read or not.
-        let _g = add_test_fs_paths(&vec![
+        let _g = add_test_fs_paths(&[
             "postinst-init-tmpfiles",
             "postinst-systemd-dont-enable",
             "postinst-systemd-enable",
@@ -799,7 +799,7 @@ WantedBy=multi-user.target");
         ]);
 
         // generate!
-        let fragments = generate("mypkg", &assets, &options, &mut mock_listener).unwrap();
+        let fragments = generate("mypkg", &assets, &options, &mock_listener).unwrap();
 
         // verify, though don't verify creation of autoscript fragments as that
         // is verified in tests of the lower level functionality, instead verify

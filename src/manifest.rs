@@ -1214,9 +1214,9 @@ mod tests {
         mock_listener.expect_info().return_const(());
 
         // supply a systemd unit file as if it were available on disk
-        let _g = add_test_fs_paths(&vec![to_canon_static_str("cargo-deb.service")]);
+        let _g = add_test_fs_paths(&[to_canon_static_str("cargo-deb.service")]);
 
-        let config = Config::from_manifest(Path::new("Cargo.toml"), None, None, None, None, None, None, &mut mock_listener, "release".to_string()).unwrap();
+        let config = Config::from_manifest(Path::new("Cargo.toml"), None, None, None, None, None, None, &mock_listener, "release".to_string()).unwrap();
 
         let num_unit_assets = config.assets.resolved
             .iter()
@@ -1232,9 +1232,9 @@ mod tests {
         mock_listener.expect_info().return_const(());
 
         // supply a systemd unit file as if it were available on disk
-        let _g = add_test_fs_paths(&vec![to_canon_static_str("cargo-deb.service")]);
+        let _g = add_test_fs_paths(&[to_canon_static_str("cargo-deb.service")]);
 
-        let mut config = Config::from_manifest(Path::new("Cargo.toml"), None, None, None, None, None, None, &mut mock_listener, "release".to_string()).unwrap();
+        let mut config = Config::from_manifest(Path::new("Cargo.toml"), None, None, None, None, None, None, &mock_listener, "release".to_string()).unwrap();
 
         config.systemd_units.get_or_insert(SystemdUnitsConfig::default());
         config.maintainer_scripts.get_or_insert(PathBuf::new());

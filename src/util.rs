@@ -1,5 +1,5 @@
 use std::collections::BTreeSet;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 /// Get the filename from a path.
 /// Note: Due to the way the Path type works the final component is returned
@@ -20,7 +20,7 @@ pub(crate) fn is_path_file(path: &Path) -> bool {
 pub(crate) use tests::read_file_to_string;
 
 #[cfg(not(test))]
-pub(crate) fn read_file_to_string(path: PathBuf) -> std::io::Result<String> {
+pub(crate) fn read_file_to_string(path: &Path) -> std::io::Result<String> {
     std::fs::read_to_string(path)
 }
 
@@ -28,7 +28,7 @@ pub(crate) fn read_file_to_string(path: PathBuf) -> std::io::Result<String> {
 pub(crate) use tests::read_file_to_bytes;
 
 #[cfg(not(test))]
-pub(crate) fn read_file_to_bytes(path: &PathBuf) -> std::io::Result<Vec<u8>> {
+pub(crate) fn read_file_to_bytes(path: &Path) -> std::io::Result<Vec<u8>> {
     std::fs::read(path)
 }
 
@@ -141,7 +141,7 @@ pub(crate) mod tests {
         fn new(filename: &'static str, contents: String) -> Self {
             TestPath {
                 _filename: filename,
-                contents: contents,
+                contents,
                 read_count: 0,
             }
         }
@@ -195,7 +195,7 @@ pub(crate) mod tests {
         MOCK_FS.with(|fs| callback(&mut fs.lock().unwrap()))
     }
 
-    pub(crate) fn is_path_file(path: &PathBuf) -> bool {
+    pub(crate) fn is_path_file(path: &Path) -> bool {
         with_test_fs(|fs| {
             fs.contains_key(&path.to_str().unwrap())
         })
@@ -207,7 +207,7 @@ pub(crate) mod tests {
         })
     }
 
-    pub(crate) fn read_file_to_string(path: PathBuf) -> std::io::Result<String> {
+    pub(crate) fn read_file_to_string(path: &Path) -> std::io::Result<String> {
         fn str_to_err(str: &str) -> std::io::Result<String> {
             Err(std::io::Error::from(match str {
                 "InvalidInput"     => std::io::ErrorKind::InvalidInput,
@@ -237,8 +237,8 @@ pub(crate) mod tests {
         })
     }
 
-    pub(crate) fn read_file_to_bytes(path: &PathBuf) -> std::io::Result<Vec<u8>> {
-        match read_file_to_string(path.clone()) {
+    pub(crate) fn read_file_to_bytes(path: &Path) -> std::io::Result<Vec<u8>> {
+        match read_file_to_string(path) {
             Ok(contents) => Ok(Vec::from(contents.as_bytes())),
             Err(x) => Err(x),
         }
