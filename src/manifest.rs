@@ -460,6 +460,8 @@ impl Config {
                 ));
             }
         }
+
+        self.sort_assets_by_type();
         Ok(())
     }
 
@@ -628,6 +630,16 @@ impl Config {
 
     pub(crate) fn cargo_config(&self) -> CDResult<Option<CargoConfig>> {
         CargoConfig::new(&self.target_dir)
+    }
+
+    /// similar files next to each other improve tarball compression
+    pub(crate) fn sort_assets_by_type(&mut self) {
+        self.assets.resolved.sort_by(|a,b| {
+            a.is_executable().cmp(&b.is_executable())
+            .then(a.is_dynamic_library().cmp(&b.is_dynamic_library()))
+            .then(a.target_path.extension().cmp(&b.target_path.extension()))
+            .then(a.target_path.parent().cmp(&b.target_path.parent()))
+        });
     }
 }
 
