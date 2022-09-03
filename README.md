@@ -129,7 +129,7 @@ Flags after `--` are passed to `cargo build`, so you can use options such as `-Z
 
 ### Workspaces
 
-Cargo-deb understands workspaces, but doesn't have sophisticated control for packags in the workspace. [Please leave feedback if you're interested in workspace support](https://github.com/mmstick/cargo-deb/issues/49).
+Cargo-deb understands workspaces, but doesn't have sophisticated control for packages in the workspace. [Please leave feedback if you're interested in workspace support](https://github.com/mmstick/cargo-deb/issues/49).
 
 It's possible to build a project in another directory with `cargo deb --manifest-path=<path/to/Cargo.toml>`.
 
