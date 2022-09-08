@@ -246,7 +246,7 @@ pub fn generate(package: &str, assets: &[Asset], options: &Options, listener: &d
     installed_non_template_units.extend(
         assets
             .iter()
-            .filter(|v| v.target_path.starts_with(LIB_SYSTEMD_SYSTEM_DIR))
+            .filter(|v| v.target_path.parent() == Some(LIB_SYSTEMD_SYSTEM_DIR.as_ref()))
             .map(|v| fname_from_path(v.target_path.as_path()))
             .filter(|fname| !fname.contains('@')),
     );
@@ -669,6 +669,22 @@ mod tests {
         let assets = vec![Asset::new(
             AssetSource::Path(PathBuf::from("debian/my_unit@.service")),
             Path::new("lib/systemd/system/").to_path_buf(),
+            0o0,
+            false,
+        )];
+
+        let fragments = generate("mypkg", &assets, &Options::default(), &mock_listener).unwrap();
+        assert_eq!(0, fragments.len());
+    }
+
+    #[test]
+    fn generate_filters_out_subdir() {
+        let mut mock_listener = crate::listener::MockListener::new();
+        mock_listener.expect_info().times(0).return_const(());
+
+        let assets = vec![Asset::new(
+            AssetSource::Path(PathBuf::from("debian/10-extra-hardening.conf")),
+            Path::new("lib/systemd/system/foobar.service.d/").to_path_buf(),
             0o0,
             false,
         )];
