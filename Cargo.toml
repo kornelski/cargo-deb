@@ -9,7 +9,7 @@ homepage = "https://github.com/kornelski/cargo-deb#readme"
 keywords = ["debian", "ubuntu", "deploy", "cargo-subcommand"]
 repository = "https://github.com/kornelski/cargo-deb"
 readme = "README.md"
-version = "1.39.1"
+version = "1.39.2"
 edition = "2021"
 rust-version = "1.56"
 
@@ -47,13 +47,13 @@ serde = { version = "1.0.144", features = ["derive"] }
 serde_json = "1.0.85"
 tar = "0.4.38"
 toml = "0.5.9"
-zopfli = "0.7.0"
+zopfli = "0.7.1"
 glob = "0.3.0"
 ar = "0.9.0"
-cargo_toml = "0.11.5"
+cargo_toml = "0.11.6"
 rayon = "1.5.3"
 regex = { version = "1.6.0", default-features = false, features = ["std"] }
-itertools = "0.10.3"
+itertools = "0.10.4"
 num_cpus = { version = "1.13.1", optional = true }
 tempfile = "3.3.0"
 env_logger = "0.9.0"
