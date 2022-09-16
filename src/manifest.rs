@@ -36,6 +36,16 @@ impl AssetSource {
         }
     }
 
+    pub fn is_symbolic_link(&self) -> bool {
+        if let AssetSource::Path(path) = self {
+            let meta = fs::symlink_metadata(path);
+            if let Ok(meta) = meta {
+                return meta.is_symlink();
+            }
+        }
+        false
+    }
+
     #[must_use]
     pub fn len(&self) -> Option<u64> {
         match *self {
@@ -173,17 +183,6 @@ impl Asset {
             chmod,
             is_built,
         }
-    }
-
-    fn is_symbolic_link(&self) -> bool {
-        if let AssetSource::Path(path) = &self.source {
-            let meta = fs::symlink_metadata(path);
-            if let Ok(meta) = meta {
-                return meta.is_symlink();
-            }
-        }
-
-        false
     }
 
     fn is_executable(&self) -> bool {
@@ -404,6 +403,7 @@ impl Config {
             if word == "$auto" {
                 let bin = self.all_binaries();
                 let resolved = bin.par_iter()
+                    .filter(|bin| !bin.is_symbolic_link())
                     .filter_map(|p| p.path())
                     .filter_map(|bname| match resolve(bname, &self.target) {
                         Ok(bindeps) => Some(bindeps),
@@ -554,12 +554,12 @@ impl Config {
         Ok(())
     }
 
-    /// Executables AND dynamic libraries
+    /// Executables AND dynamic libraries. May include symlinks.
     fn all_binaries(&self) -> Vec<&AssetSource> {
         self.assets.resolved.iter()
             .filter(|asset| {
                 // Assumes files in build dir which have executable flag set are binaries
-                !asset.is_symbolic_link() && (asset.is_dynamic_library() || asset.is_executable())
+                asset.is_dynamic_library() || asset.is_executable()
             })
             .map(|asset| &asset.source)
             .collect()
