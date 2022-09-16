@@ -92,6 +92,7 @@ pub fn compress_assets(options: &mut Config, listener: &dyn Listener) -> CDResul
     let mut new_assets = Vec::new();
 
     fn needs_compression(path: &str) -> bool {
+
         !path.ends_with(".gz")
             && (path.starts_with("usr/share/man/")
                 || (path.starts_with("usr/share/doc/")
@@ -134,8 +135,6 @@ pub fn compress_assets(options: &mut Config, listener: &dyn Listener) -> CDResul
 fn archive_files(archive: &mut Archive, options: &Config, listener: &dyn Listener) -> CDResult<HashMap<PathBuf, Digest>> {
     let mut hashes = HashMap::new();
     for asset in &options.assets.resolved {
-        let out_data = asset.source.data()?;
-
         let mut log_line = format!(
             "{} -> {}",
             asset.source.path().unwrap_or_else(|| Path::new("-")).display(),
@@ -160,6 +159,7 @@ fn archive_files(archive: &mut Archive, options: &Config, listener: &dyn Listene
         }
 
         if !archived {
+            let out_data = asset.source.data()?;
             hashes.insert(asset.target_path.clone(), md5::compute(&out_data));
             archive.file(&asset.target_path, &out_data, asset.chmod)?;
         }
