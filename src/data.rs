@@ -92,7 +92,6 @@ pub fn compress_assets(options: &mut Config, listener: &dyn Listener) -> CDResul
     let mut new_assets = Vec::new();
 
     fn needs_compression(path: &str) -> bool {
-
         !path.ends_with(".gz")
             && (path.starts_with("usr/share/man/")
                 || (path.starts_with("usr/share/doc/")
