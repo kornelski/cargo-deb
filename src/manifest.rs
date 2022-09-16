@@ -175,8 +175,19 @@ impl Asset {
         }
     }
 
+    fn is_symbolic_link(&self) -> bool {
+        if let AssetSource::Path(path) = &self.source {
+            let meta = fs::symlink_metadata(path);
+            if let Ok(meta) = meta {
+                return meta.is_symlink();
+            }
+        }
+
+        false
+    }
+
     fn is_executable(&self) -> bool {
-        0 != (self.chmod & 0o111)
+        0 != self.chmod & 0o111
     }
 
     fn is_dynamic_library(&self) -> bool {
@@ -548,7 +559,7 @@ impl Config {
         self.assets.resolved.iter()
             .filter(|asset| {
                 // Assumes files in build dir which have executable flag set are binaries
-                asset.is_dynamic_library() || asset.is_executable()
+                !asset.is_symbolic_link() && (asset.is_dynamic_library() || asset.is_executable())
             })
             .map(|asset| &asset.source)
             .collect()
