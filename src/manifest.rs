@@ -179,9 +179,7 @@ impl Asset {
         if let AssetSource::Path(path) = &self.source {
             let meta = fs::symlink_metadata(path);
             if let Ok(meta) = meta {
-                if meta.is_symlink() {
-                    return true
-                }
+                return meta.is_symlink();
             }
         }
 
