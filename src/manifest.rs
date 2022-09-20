@@ -365,6 +365,8 @@ pub struct Config {
 }
 
 impl Config {
+
+
     /// Makes a new config from `Cargo.toml` in the current working directory.
     ///
     /// `None` target means the host machine's architecture.
@@ -393,7 +395,128 @@ impl Config {
         let manifest_dir = manifest_path.parent().unwrap();
         let content = fs::read(&manifest_path)
             .map_err(|e| CargoDebError::IoFile("unable to read Cargo.toml", e, manifest_path.to_owned()))?;
-        toml::from_slice::<Cargo>(&content)?.into_config(root_package, manifest_dir, output_path, target_dir, target, variant, deb_version, deb_revision, listener, selected_profile)
+        let meta = toml::from_slice::<CargoMetadataContext>(&content)?;
+        Self::from_manifest_inner(meta, root_package, manifest_dir, output_path, target_dir, target, variant, deb_version, deb_revision, listener, selected_profile)
+    }
+
+    /// Convert Cargo.toml/metadata information into internal configu structure
+    ///
+    /// **IMPORTANT**: This function must not create or expect to see any files on disk!
+    /// It's run before destination directory is cleaned up, and before the build start!
+    ///
+    fn from_manifest_inner(
+        mut meta: CargoMetadataContext,
+        root_package: &CargoMetadataPackage,
+        manifest_dir: &Path,
+        deb_output_path: Option<String>,
+        target_dir: &Path,
+        target: Option<&str>,
+        variant: Option<&str>,
+        deb_version: Option<String>,
+        deb_revision: Option<String>,
+        listener: &dyn Listener,
+        selected_profile: String,
+    ) -> CDResult<Self> {
+        // Cargo cross-compiles to a dir
+        let target_dir = if let Some(target) = target {
+            target_dir.join(target)
+        } else {
+            target_dir.to_owned()
+        };
+
+        // If we build against a variant use that config and change the package name
+        let mut deb = if let Some(variant) = variant {
+            // Use dash as underscore is not allowed in package names
+            meta.package.name = format!("{}-{}", meta.package.name, variant);
+            let mut deb = meta.package
+                .metadata
+                .take()
+                .and_then(|m| m.deb).unwrap_or_default();
+            let variant = deb.variants
+                .as_mut()
+                .and_then(|v| v.remove(variant))
+                .ok_or_else(|| CargoDebError::VariantNotFound(variant.to_string()))?;
+            variant.inherit_from(deb)
+        } else {
+            meta.package
+                .metadata
+                .take()
+                .and_then(|m| m.deb)
+                .unwrap_or_default()
+        };
+
+        let (license_file, license_file_skip_lines) = meta.license_file(deb.license_file.as_ref())?;
+        let readme = meta.package.readme.as_ref();
+        meta.check_config(manifest_dir, readme, &deb, listener);
+        let mut config = Config {
+            manifest_dir: manifest_dir.to_owned(),
+            deb_output_path,
+            target: target.map(|t| t.to_string()),
+            target_dir,
+            name: meta.package.name.clone(),
+            deb_name: deb.name.take().unwrap_or_else(|| meta.package.name.clone()),
+            deb_version: deb_version.unwrap_or_else(|| meta.version_string(deb_revision.or(deb.revision))),
+            license: meta.package.license.take(),
+            license_file,
+            license_file_skip_lines,
+            copyright: deb.copyright.take().ok_or_then(|| {
+                if meta.package.authors.is_empty() {
+                    return Err("The package must have a copyright or authors property".into());
+                }
+                Ok(meta.package.authors.join(", "))
+            })?,
+            homepage: meta.package.homepage.clone(),
+            documentation: meta.package.documentation.clone(),
+            repository: meta.package.repository.take(),
+            description: meta.package.description.take().unwrap_or_else(||format!("[generated from Rust crate {}]", meta.package.name)),
+            extended_description: meta.extended_description(
+                deb.extended_description.take(),
+                deb.extended_description_file.as_deref().or(readme))?,
+            maintainer: deb.maintainer.take().ok_or_then(|| {
+                Ok(meta.package.authors.get(0)
+                    .ok_or("The package must have a maintainer or authors property")?.to_owned())
+            })?,
+            depends: deb.depends.take().unwrap_or_else(|| "$auto".to_owned()),
+            pre_depends: deb.pre_depends.take(),
+            recommends: deb.recommends.take(),
+            suggests: deb.suggests.take(),
+            enhances: deb.enhances.take(),
+            conflicts: deb.conflicts.take(),
+            breaks: deb.breaks.take(),
+            replaces: deb.replaces.take(),
+            provides: deb.provides.take(),
+            section: deb.section.take(),
+            priority: deb.priority.take().unwrap_or_else(|| "optional".to_owned()),
+            architecture: get_arch(target.unwrap_or(crate::DEFAULT_TARGET)).to_owned(),
+            conf_files: deb.conf_files.map(|x| format_conffiles(&x)),
+            assets: Assets::new(),
+            triggers_file: deb.triggers_file.map(PathBuf::from),
+            changelog: deb.changelog.take(),
+            maintainer_scripts: deb.maintainer_scripts.map(PathBuf::from),
+            features: deb.features.take().unwrap_or_default(),
+            default_features: deb.default_features.unwrap_or(true),
+            separate_debug_symbols: deb.separate_debug_symbols.unwrap_or(false),
+            debug_enabled: meta.profile.as_ref().and_then(|p|p.release.as_ref())
+                .and_then(|r| r.debug.as_ref())
+                .map_or(false, |debug| match *debug {
+                    toml::Value::Integer(0) => false,
+                    toml::Value::Boolean(value) => value,
+                    _ => true,
+                }),
+            preserve_symlinks: deb.preserve_symlinks.unwrap_or(false),
+            systemd_units: deb.systemd_units.take(),
+            _use_constructor_to_make_this_struct_: (),
+        };
+        let assets = meta.take_assets(&config, deb.assets.take(), &root_package.targets, readme, selected_profile)?;
+        if assets.is_empty() {
+            return Err("No binaries or cdylibs found. The package is empty. Please specify some assets to package in Cargo.toml".into());
+        }
+        config.assets = assets;
+        config.add_copyright_asset()?;
+        config.add_changelog_asset()?;
+        config.add_systemd_assets()?;
+
+        Ok(config)
     }
 
     pub(crate) fn get_dependencies(&self, listener: &dyn Listener) -> CDResult<String> {
@@ -655,131 +778,12 @@ impl Config {
 }
 
 #[derive(Clone, Debug, Deserialize)]
-struct Cargo {
+struct CargoMetadataContext {
     pub package: cargo_toml::Package<CargoPackageMetadata>,
     pub profile: Option<cargo_toml::Profiles>,
 }
 
-impl Cargo {
-    /// Convert Cargo.toml/metadata information into internal configu structure
-    ///
-    /// **IMPORTANT**: This function must not create or expect to see any files on disk!
-    /// It's run before destination directory is cleaned up, and before the build start!
-    ///
-    fn into_config(
-        mut self,
-        root_package: &CargoMetadataPackage,
-        manifest_dir: &Path,
-        deb_output_path: Option<String>,
-        target_dir: &Path,
-        target: Option<&str>,
-        variant: Option<&str>,
-        deb_version: Option<String>,
-        deb_revision: Option<String>,
-        listener: &dyn Listener,
-        selected_profile: String,
-    ) -> CDResult<Config> {
-        // Cargo cross-compiles to a dir
-        let target_dir = if let Some(target) = target {
-            target_dir.join(target)
-        } else {
-            target_dir.to_owned()
-        };
-
-        // If we build against a variant use that config and change the package name
-        let mut deb = if let Some(variant) = variant {
-            // Use dash as underscore is not allowed in package names
-            self.package.name = format!("{}-{}", self.package.name, variant);
-            let mut deb = self.package
-                .metadata
-                .take()
-                .and_then(|m| m.deb).unwrap_or_default();
-            let variant = deb.variants
-                .as_mut()
-                .and_then(|v| v.remove(variant))
-                .ok_or_else(|| CargoDebError::VariantNotFound(variant.to_string()))?;
-            variant.inherit_from(deb)
-        } else {
-            self.package
-                .metadata
-                .take()
-                .and_then(|m| m.deb)
-                .unwrap_or_default()
-        };
-
-        let (license_file, license_file_skip_lines) = self.license_file(deb.license_file.as_ref())?;
-        let readme = self.package.readme.as_ref();
-        self.check_config(manifest_dir, readme, &deb, listener);
-        let mut config = Config {
-            manifest_dir: manifest_dir.to_owned(),
-            deb_output_path,
-            target: target.map(|t| t.to_string()),
-            target_dir,
-            name: self.package.name.clone(),
-            deb_name: deb.name.take().unwrap_or_else(|| self.package.name.clone()),
-            deb_version: deb_version.unwrap_or_else(|| self.version_string(deb_revision.or(deb.revision))),
-            license: self.package.license.take(),
-            license_file,
-            license_file_skip_lines,
-            copyright: deb.copyright.take().ok_or_then(|| {
-                if self.package.authors.is_empty() {
-                    return Err("The package must have a copyright or authors property".into());
-                }
-                Ok(self.package.authors.join(", "))
-            })?,
-            homepage: self.package.homepage.clone(),
-            documentation: self.package.documentation.clone(),
-            repository: self.package.repository.take(),
-            description: self.package.description.take().unwrap_or_else(||format!("[generated from Rust crate {}]", self.package.name)),
-            extended_description: self.extended_description(
-                deb.extended_description.take(),
-                deb.extended_description_file.as_deref().or(readme))?,
-            maintainer: deb.maintainer.take().ok_or_then(|| {
-                Ok(self.package.authors.get(0)
-                    .ok_or("The package must have a maintainer or authors property")?.to_owned())
-            })?,
-            depends: deb.depends.take().unwrap_or_else(|| "$auto".to_owned()),
-            pre_depends: deb.pre_depends.take(),
-            recommends: deb.recommends.take(),
-            suggests: deb.suggests.take(),
-            enhances: deb.enhances.take(),
-            conflicts: deb.conflicts.take(),
-            breaks: deb.breaks.take(),
-            replaces: deb.replaces.take(),
-            provides: deb.provides.take(),
-            section: deb.section.take(),
-            priority: deb.priority.take().unwrap_or_else(|| "optional".to_owned()),
-            architecture: get_arch(target.unwrap_or(crate::DEFAULT_TARGET)).to_owned(),
-            conf_files: deb.conf_files.map(|x| format_conffiles(&x)),
-            assets: Assets::new(),
-            triggers_file: deb.triggers_file.map(PathBuf::from),
-            changelog: deb.changelog.take(),
-            maintainer_scripts: deb.maintainer_scripts.map(PathBuf::from),
-            features: deb.features.take().unwrap_or_default(),
-            default_features: deb.default_features.unwrap_or(true),
-            separate_debug_symbols: deb.separate_debug_symbols.unwrap_or(false),
-            debug_enabled: self.profile.as_ref().and_then(|p|p.release.as_ref())
-                .and_then(|r| r.debug.as_ref())
-                .map_or(false, |debug| match *debug {
-                    toml::Value::Integer(0) => false,
-                    toml::Value::Boolean(value) => value,
-                    _ => true,
-                }),
-            preserve_symlinks: deb.preserve_symlinks.unwrap_or(false),
-            systemd_units: deb.systemd_units.take(),
-            _use_constructor_to_make_this_struct_: (),
-        };
-        let assets = self.take_assets(&config, deb.assets.take(), &root_package.targets, readme, selected_profile)?;
-        if assets.is_empty() {
-            return Err("No binaries or cdylibs found. The package is empty. Please specify some assets to package in Cargo.toml".into());
-        }
-        config.assets = assets;
-        config.add_copyright_asset()?;
-        config.add_changelog_asset()?;
-        config.add_systemd_assets()?;
-
-        Ok(config)
-    }
+impl CargoMetadataContext {
 
     fn check_config(&self, manifest_dir: &Path, readme: Option<&str>, deb: &CargoDeb, listener: &dyn Listener) {
         if self.package.description.is_none() {
@@ -1285,7 +1289,7 @@ mod tests {
 
 #[test]
 fn deb_ver() {
-    let mut c = Cargo {
+    let mut c = CargoMetadataContext {
         package: cargo_toml::Package::new("test", "1.2.3-1"),
         profile: None,
     };
