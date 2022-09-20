@@ -111,7 +111,7 @@ pub fn compress_assets(options: &mut Config, listener: &dyn Listener) -> CDResul
 
             new_assets.push(Asset::new(
                 crate::manifest::AssetSource::Data(compressed),
-                Path::new(&format!("{}.gz", target_path_str)).into(),
+                Path::new(&format!("{target_path_str}.gz")).into(),
                 asset.chmod,
                 false,
             ));
@@ -139,7 +139,7 @@ fn archive_files(archive: &mut Archive, options: &Config, listener: &dyn Listene
             asset.source.path().unwrap_or_else(|| Path::new("-")).display(),
             asset.target_path.display()
         );
-        if let Some(len) = asset.source.len() {
+        if let Some(len) = asset.source.file_size() {
             let (size, unit) = human_size(len);
             let _ = fmt::Write::write_fmt(&mut log_line, format_args!(" ({}{})", size, unit));
         }

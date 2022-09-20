@@ -158,9 +158,9 @@ fn process(
     // cargo build accordingly. you could argue that the other way around is
     // more desirable. However for now we want all commands coming in via the
     // same `interface`
-    let selected_profile = profile.unwrap_or_else(|| "release".to_string());
+    let selected_profile = profile.as_deref().unwrap_or("release");
     cargo_build_flags.push("--profile".to_string());
-    cargo_build_flags.push(selected_profile.clone());
+    cargo_build_flags.push(selected_profile.to_owned());
 
     let manifest_path = manifest_path.as_ref().map_or("Cargo.toml", |s| s.as_str());
     let mut options = Config::from_manifest(
@@ -217,9 +217,7 @@ fn process(
     drop(control_compressed);
     let compressed = data_compressed.len();
     listener.info(format!(
-        "compressed/original ratio {}/{} ({}%)",
-        compressed,
-        original,
+        "compressed/original ratio {compressed}/{original} ({}%)",
         compressed * 100 / original
     ));
     deb_contents.add_data(&format!("data.tar.{}", data_compressed.extension()), system_time, &data_compressed)?;

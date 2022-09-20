@@ -52,7 +52,7 @@ pub fn generate_archive(options: &Config, time: u64, asset_hashes: HashMap<PathB
 /// should be inserted.
 fn generate_scripts(archive: &mut Archive, option: &Config, listener: &dyn Listener) -> CDResult<()> {
     if let Some(ref maintainer_scripts_dir) = option.maintainer_scripts {
-        let maintainer_scripts_dir = option.manifest_dir.as_path().join(&maintainer_scripts_dir);
+        let maintainer_scripts_dir = option.manifest_dir.as_path().join(maintainer_scripts_dir);
         let mut scripts;
 
         if let Some(systemd_units_config) = &option.systemd_units {
@@ -154,7 +154,7 @@ fn generate_control(archive: &mut Archive, options: &Config, listener: &dyn List
 
     let installed_size = options.assets.resolved
         .iter()
-        .map(|m| (m.source.len().unwrap_or(0)+2047)/1024) // assume 1KB of fs overhead per file
+        .map(|m| (m.source.file_size().unwrap_or(0)+2047)/1024) // assume 1KB of fs overhead per file
         .sum::<u64>();
 
     writeln!(&mut control, "Installed-Size: {}", installed_size)?;
@@ -314,7 +314,7 @@ mod tests {
             None,
             None,
             &mock_listener,
-            "release".to_string(),
+            "release",
         )
         .unwrap();
 
@@ -384,7 +384,7 @@ mod tests {
         // provide file content that we can easily verify
         let mut maintainer_script_contents = Vec::new();
         for script in maintainer_script_paths.iter() {
-            let content = format!("some contents: {}", script);
+            let content = format!("some contents: {script}");
             set_test_fs_path_content(script, content.clone());
             maintainer_script_contents.push(content);
         }
@@ -408,7 +408,7 @@ mod tests {
 
         // verify that the content we supplied was faithfully archived
         for script in maintainer_script_paths.iter() {
-            let expected_content = &format!("some contents: {}", script);
+            let expected_content = &format!("some contents: {script}");
             let filename = filename_from_path_str(script);
             let actual_content = archived_content.get(&filename).unwrap();
             assert_eq!(expected_content, actual_content);

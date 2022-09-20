@@ -48,7 +48,7 @@ impl AssetSource {
     }
 
     #[must_use]
-    pub fn len(&self) -> Option<u64> {
+    pub fn file_size(&self) -> Option<u64> {
         match *self {
             // FIXME: may not be accurate if the executable is not stripped yet?
             AssetSource::Path(ref p) => fs::metadata(p).ok().map(|m| m.len()),
@@ -259,7 +259,7 @@ fn match_architecture(spec: ArchSpec, target_arch: &str) -> CDResult<bool> {
         ArchSpec::Require(pkg) => (false, pkg),
     };
     let output = Command::new("dpkg-architecture")
-        .args(&["-a", target_arch, "-i", &spec])
+        .args(["-a", target_arch, "-i", &spec])
         .output()
         .map_err(|e| CargoDebError::CommandFailed(e, "dpkg-architecture"))?;
     if neg {
@@ -270,6 +270,7 @@ fn match_architecture(spec: ArchSpec, target_arch: &str) -> CDResult<bool> {
 }
 
 #[derive(Debug)]
+#[non_exhaustive]
 /// Cargo deb configuration read from the manifest and cargo metadata
 pub struct Config {
     /// Root directory where `Cargo.toml` is located. It's a subdirectory in workspaces.
@@ -362,14 +363,13 @@ pub struct Config {
     pub preserve_symlinks: bool,
     /// Details of how to install any systemd units
     pub(crate) systemd_units: Option<SystemdUnitsConfig>,
-    _use_constructor_to_make_this_struct_: (),
 }
 
 impl Config {
-    /// Makes a new config from `Cargo.toml` in the current working directory.
+    /// Makes a new config from `Cargo.toml` in the `manifest_path`
     ///
     /// `None` target means the host machine's architecture.
-    pub fn from_manifest(manifest_path: &Path, package_name: Option<&str>, output_path: Option<String>, target: Option<&str>, variant: Option<&str>, deb_version: Option<String>, deb_revision: Option<String>, listener: &dyn Listener, selected_profile: String) -> CDResult<Config> {
+    pub fn from_manifest(manifest_path: &Path, package_name: Option<&str>, output_path: Option<String>, target: Option<&str>, variant: Option<&str>, deb_version: Option<String>, deb_revision: Option<String>, listener: &dyn Listener, selected_profile: &str) -> CDResult<Config> {
         let metadata = cargo_metadata(manifest_path)?;
         let available_package_names = || {
             metadata.packages.iter()
@@ -411,7 +411,7 @@ impl Config {
         deb_version: Option<String>,
         deb_revision: Option<String>,
         listener: &dyn Listener,
-        selected_profile: String,
+        selected_profile: &str,
     ) -> CDResult<Self> {
         // Cargo cross-compiles to a dir
         let target_dir = if let Some(target) = target {
@@ -424,7 +424,7 @@ impl Config {
         // If we build against a variant use that config and change the package name
         let mut deb = if let Some(variant) = variant {
             // Use dash as underscore is not allowed in package names
-            package.name = format!("{}-{}", package.name, variant);
+            package.name = format!("{}-{variant}", package.name);
             let mut deb = package.metadata.take()
                 .and_then(|m| m.deb).unwrap_or_default();
             let variant = deb.variants
@@ -436,9 +436,9 @@ impl Config {
             package.metadata.take().and_then(|m| m.deb).unwrap_or_default()
         };
 
-        let (license_file, license_file_skip_lines) = manifest_license_file(&package, deb.license_file.as_ref())?;
+        let (license_file, license_file_skip_lines) = manifest_license_file(package, deb.license_file.as_ref())?;
 
-        manifest_check_config(&package, manifest_dir, &deb, listener);
+        manifest_check_config(package, manifest_dir, &deb, listener);
         let extended_description = manifest_extended_description(
             deb.extended_description.take(),
             deb.extended_description_file.as_deref().or(package.readme.as_ref()),
@@ -450,7 +450,7 @@ impl Config {
             target_dir,
             name: package.name.clone(),
             deb_name: deb.name.take().unwrap_or_else(|| package.name.clone()),
-            deb_version: deb_version.unwrap_or_else(|| manifest_version_string(&package, deb_revision.or(deb.revision))),
+            deb_version: deb_version.unwrap_or_else(|| manifest_version_string(package, deb_revision.or(deb.revision))),
             license: package.license.take(),
             license_file,
             license_file_skip_lines,
@@ -776,12 +776,12 @@ fn manifest_check_config(package: &cargo_toml::Package<CargoPackageMetadata>, ma
     }
     if let Some(readme) = readme {
         if deb.extended_description.is_none() && deb.extended_description_file.is_none() && (readme.ends_with(".md") || readme.ends_with(".markdown")) {
-            listener.info(format!("extended-description field missing. Using {}, but markdown may not render well.", readme));
+            listener.info(format!("extended-description field missing. Using {readme}, but markdown may not render well."));
         }
     } else {
         for p in &["README.md", "README.markdown", "README.txt", "README"] {
             if manifest_dir.join(p).exists() {
-                listener.warning(format!("{} file exists, but is not specified in `readme` Cargo.toml field", p));
+                listener.warning(format!("{p} file exists, but is not specified in `readme` Cargo.toml field"));
                 break;
             }
         }
@@ -819,16 +819,16 @@ fn manifest_license_file(package: &cargo_toml::Package<CargoPackageMetadata>, li
     })
 }
 
-fn manifest_take_assets(package: &cargo_toml::Package<CargoPackageMetadata>, options: &Config, assets: Option<Vec<Vec<String>>>, targets: &[CargoMetadataTarget], profile: String) -> CDResult<Assets> {
+fn manifest_take_assets(package: &cargo_toml::Package<CargoPackageMetadata>, options: &Config, assets: Option<Vec<Vec<String>>>, targets: &[CargoMetadataTarget], profile: &str) -> CDResult<Assets> {
     Ok(if let Some(assets) = assets {
         // Treat all explicit assets as unresolved until after the build step
-        let mut unresolved_assets = vec![];
+        let mut unresolved_assets = Vec::with_capacity(assets.len());
         for mut asset_line in assets {
             let mut asset_parts = asset_line.drain(..);
             let source_path = PathBuf::from(asset_parts.next()
                 .ok_or("missing path (first array entry) for asset in Cargo.toml")?);
             let (is_built, source_path) = if let Ok(rel_path) = source_path.strip_prefix(format!("target/{}", profile)) {
-                (true, options.path_in_build(rel_path, &profile))
+                (true, options.path_in_build(rel_path, profile))
             } else {
                 (false, options.path_in_workspace(&source_path))
             };
@@ -845,21 +845,20 @@ fn manifest_take_assets(package: &cargo_toml::Package<CargoPackageMetadata>, opt
         }
         Assets::with_unresolved_assets(unresolved_assets)
     } else {
-        let mut implied_assets: Vec<_> = targets
-            .iter()
+        let mut implied_assets: Vec<_> = targets.iter()
             .filter_map(|t| {
                 if t.crate_types.iter().any(|ty| ty == "bin") && t.kind.iter().any(|k| k == "bin") {
                     Some(Asset::new(
-                        AssetSource::Path(options.path_in_build(&t.name, &profile)),
+                        AssetSource::Path(options.path_in_build(&t.name, profile)),
                         Path::new("usr/bin").join(&t.name),
                         0o755,
                         true,
                     ))
                 } else if t.crate_types.iter().any(|ty| ty == "cdylib") && t.kind.iter().any(|k| k == "cdylib") {
                     // FIXME: std has constants for the host arch, but not for cross-compilation
-                    let lib_name = format!("{}{}{}", DLL_PREFIX, t.name, DLL_SUFFIX);
+                    let lib_name = format!("{DLL_PREFIX}{}{DLL_SUFFIX}", t.name);
                     Some(Asset::new(
-                        AssetSource::Path(options.path_in_build(&lib_name, &profile)),
+                        AssetSource::Path(options.path_in_build(&lib_name, profile)),
                         Path::new("usr/lib").join(lib_name),
                         0o644,
                         true,
@@ -1023,7 +1022,7 @@ fn cargo_metadata(manifest_path: &Path) -> CDResult<CargoMetadata> {
     let mut cmd = Command::new("cargo");
     cmd.arg("metadata");
     cmd.arg("--format-version=1");
-    cmd.arg(format!("--manifest-path={}", manifest_path.display()));
+    cmd.arg("--manifest-path"); cmd.arg(manifest_path);
 
     let output = cmd.output()
         .map_err(|e| CargoDebError::CommandFailed(e, "cargo (is it in your PATH?)"))?;
@@ -1212,7 +1211,7 @@ mod tests {
         // supply a systemd unit file as if it were available on disk
         let _g = add_test_fs_paths(&[to_canon_static_str("cargo-deb.service")]);
 
-        let config = Config::from_manifest(Path::new("Cargo.toml"), None, None, None, None, None, None, &mock_listener, "release".to_string()).unwrap();
+        let config = Config::from_manifest(Path::new("Cargo.toml"), None, None, None, None, None, None, &mock_listener, "release").unwrap();
 
         let num_unit_assets = config.assets.resolved
             .iter()
@@ -1230,7 +1229,7 @@ mod tests {
         // supply a systemd unit file as if it were available on disk
         let _g = add_test_fs_paths(&[to_canon_static_str("cargo-deb.service")]);
 
-        let mut config = Config::from_manifest(Path::new("Cargo.toml"), None, None, None, None, None, None, &mock_listener, "release".to_string()).unwrap();
+        let mut config = Config::from_manifest(Path::new("Cargo.toml"), None, None, None, None, None, None, &mock_listener, "release").unwrap();
 
         config.systemd_units.get_or_insert(SystemdUnitsConfig::default());
         config.maintainer_scripts.get_or_insert(PathBuf::new());

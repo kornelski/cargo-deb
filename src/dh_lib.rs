@@ -86,25 +86,19 @@ pub(crate) fn pkgfile(dir: &Path, main_package: &str, package: &str, filename: &
     //     would be installed as foo.service).
     //     ...
     if let Some(str) = unit_name {
-        let named_filename = format!("{}.{}", str, filename);
-        paths_to_try.push(dir.join(format!("{}.{}", package, named_filename)));
+        let named_filename = format!("{str}.{filename}");
+        paths_to_try.push(dir.join(format!("{package}.{named_filename}")));
         if is_main_package {
             paths_to_try.push(dir.join(named_filename));
         }
     }
 
-    paths_to_try.push(dir.join(format!("{}.{}", package, filename)));
+    paths_to_try.push(dir.join(format!("{package}.{filename}")));
     if is_main_package {
         paths_to_try.push(dir.join(filename));
     }
 
-    for path_to_try in paths_to_try {
-        if is_path_file(&path_to_try) {
-            return Some(path_to_try);
-        }
-    }
-
-    None
+    paths_to_try.into_iter().find(|p| is_path_file(p))
 }
 
 /// Get the bytes for the specified filename whose contents were embedded in our
@@ -175,9 +169,9 @@ pub(crate) fn autoscript(
     let bin_name = bin_name.file_name().unwrap();
     let bin_name = bin_name.to_str().unwrap();
     let outfile_ext = if service_order { "service" } else { "debhelper" };
-    let outfile = format!("{}.{}.{}", package, script, outfile_ext);
+    let outfile = format!("{package}.{script}.{outfile_ext}");
 
-    listener.info(format!("Maintainer script {} will be augmented with autoscript {}", &script, snippet_filename));
+    listener.info(format!("Maintainer script {script} will be augmented with autoscript {snippet_filename}"));
 
     if scripts.contains_key(&outfile) && (script == "postrm" || script == "prerm") {
         if !replacements.is_empty() {
@@ -199,7 +193,7 @@ pub(crate) fn autoscript(
         // append to existing script fragment (if any)
         let new_text = [
             std::str::from_utf8(scripts.get(&outfile).unwrap_or(&Vec::new()))?,
-            &format!("# Automatically added by {}\n", bin_name),
+            &format!("# Automatically added by {bin_name}\n"),
             &autoscript_sed(snippet_filename, replacements),
             "# End automatically added section\n",
         ].concat();
@@ -227,7 +221,7 @@ fn autoscript_sed(snippet_filename: &str, replacements: &HashMap<&str, String>) 
     let mut snippet = get_embedded_autoscript(snippet_filename);
 
     for (from, to) in replacements {
-        snippet = snippet.replace(&format!("#{}#", from), to);
+        snippet = snippet.replace(&format!("#{from}#"), to);
     }
 
     snippet
@@ -256,8 +250,8 @@ fn debhelper_script_subst(user_scripts_dir: &Path, scripts: &mut ScriptFragments
 {
     let user_file = pkgfile(user_scripts_dir, package, package, script, unit_name);
     let mut generated_scripts: Vec<String> = vec![
-        format!("{}.{}.debhelper", package, script),
-        format!("{}.{}.service", package, script),
+        format!("{package}.{script}.debhelper"),
+        format!("{package}.{script}.service"),
     ];
 
     if let "prerm" | "postrm" = script {
@@ -575,7 +569,7 @@ mod tests {
 
             assert_eq!(1, scripts.len());
 
-            let expected_path = &format!("mypkg.prerm.{}", expected_ext);
+            let expected_path = &format!("mypkg.prerm.{expected_ext}");
             let actual_path = scripts.keys().next().unwrap();
             assert_eq!(expected_path, actual_path);
         }
@@ -701,8 +695,8 @@ mod tests {
         mock_listener.expect_info().times(1).return_const(());
 
         let mut scripts = ScriptFragments::new();
-        scripts.insert(format!("mypkg.{}.debhelper", maintainer_script), "first".as_bytes().to_vec());
-        scripts.insert(format!("mypkg.{}.service", maintainer_script), "second".as_bytes().to_vec());
+        scripts.insert(format!("mypkg.{maintainer_script}.debhelper"), "first".as_bytes().to_vec());
+        scripts.insert(format!("mypkg.{maintainer_script}.service"), "second".as_bytes().to_vec());
 
         assert_eq!(2, scripts.len());
         debhelper_script_subst(Path::new(""), &mut scripts, "mypkg", maintainer_script, None, &mock_listener).unwrap();

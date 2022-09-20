@@ -138,7 +138,7 @@ pub fn find_units(dir: &Path, main_package: &str, unit_name: Option<&str>) -> Pa
     let mut installables = HashMap::new();
 
     for (package_suffix, unit_type, install_dir) in SYSTEMD_UNIT_FILE_INSTALL_MAPPINGS.iter() {
-        let package = &format!("{}{}", main_package, package_suffix);
+        let package = &format!("{main_package}{package_suffix}");
         if let Some(src_path) = pkgfile(dir, main_package, package, unit_type, unit_name) {
             // .tmpfile files should be installed in a different directory and
             // with a different extension. See:
@@ -151,8 +151,8 @@ pub fn find_units(dir: &Path, main_package: &str, unit_name: Option<&str>) -> Pa
             // Determine the file name that the unit file should be installed as
             // which depends on whether or not a unit name was provided.
             let install_filename = match unit_name {
-                Some(name) => format!("{}{}.{}", name, package_suffix, actual_suffix),
-                None => format!("{}.{}", package, actual_suffix),
+                Some(name) => format!("{name}{package_suffix}.{actual_suffix}"),
+                None => format!("{package}.{actual_suffix}"),
             };
 
             // Construct the full install path for this unit file.
@@ -608,7 +608,7 @@ mod tests {
     #[test]
     fn generate_with_empty_tmp_file_asset() {
         const TMP_FILE_NAME: &str = "my_tmp_file";
-        let tmp_file_path = PathBuf::from(format!("debian/{}", TMP_FILE_NAME));
+        let tmp_file_path = PathBuf::from(format!("debian/{TMP_FILE_NAME}"));
 
         let mut mock_listener = crate::listener::MockListener::new();
         mock_listener.expect_info().times(1).return_const(());

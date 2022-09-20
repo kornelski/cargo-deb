@@ -92,7 +92,7 @@ pub fn remove_deb_temp_directory(options: &Config) {
 pub fn cargo_build(options: &Config, target: Option<&str>, other_flags: &[String], verbose: bool) -> CDResult<()> {
     let mut cmd = Command::new("cargo");
     cmd.current_dir(&options.manifest_dir);
-    cmd.arg("build").args(&["--all"]);
+    cmd.arg("build").args(["--all"]);
 
     for flag in other_flags {
         cmd.arg(flag);
@@ -102,7 +102,7 @@ pub fn cargo_build(options: &Config, target: Option<&str>, other_flags: &[String
         cmd.arg("--verbose");
     }
     if let Some(target) = target {
-        cmd.arg(format!("--target={}", target));
+        cmd.args(["--target", target]);
         // Set helpful defaults for cross-compiling
         if env::var_os("PKG_CONFIG_ALLOW_CROSS").is_none() && env::var_os("PKG_CONFIG_PATH").is_none() {
             let pkg_config_path = format!("/usr/lib/{}/pkgconfig", debian_triple(target));
@@ -117,7 +117,7 @@ pub fn cargo_build(options: &Config, target: Option<&str>, other_flags: &[String
     }
     let features = &options.features;
     if !features.is_empty() {
-        cmd.arg(format!("--features={}", features.join(",")));
+        cmd.args(["--features", &features.join(",")]);
     }
 
     let status = cmd.status()
@@ -146,14 +146,14 @@ fn debian_triple(rust_target_triple: &str) -> String {
         (risc, _) if risc.starts_with("riscv64") => ("riscv64", "gnu"),
         (arch, abi) => (arch, abi),
     };
-    format!("{}-linux-{}", darch, dabi)
+    format!("{darch}-linux-{dabi}")
 }
 
 fn ensure_success(status: ExitStatus) -> io::Result<()> {
     if status.success() {
         Ok(())
     } else {
-        Err(io::Error::new(io::ErrorKind::Other, format!("{}", status)))
+        Err(io::Error::new(io::ErrorKind::Other, status.to_string()))
     }
 }
 
@@ -169,13 +169,13 @@ pub fn strip_binaries(options: &mut Config, target: Option<&str>, listener: &dyn
         cargo_config = options.cargo_config()?;
         if let Some(ref conf) = cargo_config {
             if let Some(cmd) = conf.objcopy_command(target) {
-                listener.info(format!("Using '{}' for '{}'", cmd.display(), target));
+                listener.info(format!("Using '{}' for '{target}'", cmd.display()));
                 objcopy_tmp = cmd;
                 objcopy_cmd = &objcopy_tmp;
             }
 
             if let Some(cmd) = conf.strip_command(target) {
-                listener.info(format!("Using '{}' for '{}'", cmd.display(), target));
+                listener.info(format!("Using '{}' for '{target}'", cmd.display()));
                 strip_tmp = cmd;
                 strip_cmd = &strip_tmp;
             }

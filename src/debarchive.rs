@@ -36,7 +36,7 @@ impl DebArchive {
 
     pub fn add_path(&mut self, path: &Path) -> CDResult<()> {
         let dest_path = path.strip_prefix(&self.prefix).map_err(|_| "invalid path")?;
-        let mut file = File::open(&path)?;
+        let mut file = File::open(path)?;
         self.ar_builder.append_file(&dest_path.as_unix_path(), &mut file)?;
         Ok(())
     }
