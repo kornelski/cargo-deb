@@ -366,8 +366,6 @@ pub struct Config {
 }
 
 impl Config {
-
-
     /// Makes a new config from `Cargo.toml` in the current working directory.
     ///
     /// `None` target means the host machine's architecture.
@@ -435,9 +433,7 @@ impl Config {
                 .ok_or_else(|| CargoDebError::VariantNotFound(variant.to_string()))?;
             variant.inherit_from(deb)
         } else {
-            package.metadata.take()
-                .and_then(|m| m.deb)
-                .unwrap_or_default()
+            package.metadata.take().and_then(|m| m.deb).unwrap_or_default()
         };
 
         let (license_file, license_file_skip_lines) = manifest_license_file(&package, deb.license_file.as_ref())?;
@@ -445,7 +441,8 @@ impl Config {
         manifest_check_config(&package, manifest_dir, &deb, listener);
         let extended_description = manifest_extended_description(
             deb.extended_description.take(),
-            deb.extended_description_file.as_deref().or(package.readme.as_ref()))?;
+            deb.extended_description_file.as_deref().or(package.readme.as_ref()),
+        )?;
         let mut config = Config {
             manifest_dir: manifest_dir.to_owned(),
             deb_output_path,
@@ -600,9 +597,7 @@ impl Config {
         log::debug!("added copyright");
         self.assets.resolved.push(Asset::new(
             AssetSource::Data(copyright_file),
-            Path::new("usr/share/doc")
-                .join(&self.deb_name)
-                .join("copyright"),
+            Path::new("usr/share/doc").join(&self.deb_name).join("copyright"),
             0o644,
             false,
         ));
@@ -636,9 +631,7 @@ impl Config {
                 log::debug!("added changelog");
                 self.assets.resolved.push(Asset::new(
                     AssetSource::Data(changelog_file),
-                    Path::new("usr/share/doc")
-                        .join(&self.deb_name)
-                        .join("changelog.Debian.gz"),
+                    Path::new("usr/share/doc").join(&self.deb_name).join("changelog.Debian.gz"),
                     0o644,
                     false,
                 ));
@@ -724,8 +717,8 @@ impl Config {
     pub(crate) fn path_in_build<P: AsRef<Path>>(&self, rel_path: P, profile: &str) -> PathBuf {
         let profile = match profile {
             "dev" => "debug",
-            p => p
-         };
+            p => p,
+        };
 
         let path = self.target_dir.join(profile);
         path.join(rel_path)
@@ -773,147 +766,144 @@ impl Config {
     }
 }
 
-    fn manifest_check_config(package: &cargo_toml::Package<CargoPackageMetadata>, manifest_dir: &Path, deb: &CargoDeb, listener: &dyn Listener) {
-        let readme = package.readme.as_ref();
-        if package.description.is_none() {
-            listener.warning("description field is missing in Cargo.toml".to_owned());
+fn manifest_check_config(package: &cargo_toml::Package<CargoPackageMetadata>, manifest_dir: &Path, deb: &CargoDeb, listener: &dyn Listener) {
+    let readme = package.readme.as_ref();
+    if package.description.is_none() {
+        listener.warning("description field is missing in Cargo.toml".to_owned());
+    }
+    if package.license.is_none() && package.license_file.is_none() {
+        listener.warning("license field is missing in Cargo.toml".to_owned());
+    }
+    if let Some(readme) = readme {
+        if deb.extended_description.is_none() && deb.extended_description_file.is_none() && (readme.ends_with(".md") || readme.ends_with(".markdown")) {
+            listener.info(format!("extended-description field missing. Using {}, but markdown may not render well.", readme));
         }
-        if package.license.is_none() && package.license_file.is_none() {
-            listener.warning("license field is missing in Cargo.toml".to_owned());
-        }
-        if let Some(readme) = readme {
-            if deb.extended_description.is_none() && deb.extended_description_file.is_none() && (readme.ends_with(".md") || readme.ends_with(".markdown")) {
-                listener.info(format!("extended-description field missing. Using {}, but markdown may not render well.", readme));
-            }
-        } else {
-            for p in &["README.md", "README.markdown", "README.txt", "README"] {
-                if manifest_dir.join(p).exists() {
-                    listener.warning(format!("{} file exists, but is not specified in `readme` Cargo.toml field", p));
-                    break;
-                }
+    } else {
+        for p in &["README.md", "README.markdown", "README.txt", "README"] {
+            if manifest_dir.join(p).exists() {
+                listener.warning(format!("{} file exists, but is not specified in `readme` Cargo.toml field", p));
+                break;
             }
         }
     }
+}
 
-    fn manifest_extended_description(desc: Option<String>, desc_file: Option<&str>) -> CDResult<Option<String>> {
-        Ok(if desc.is_some() {
-            desc
-        } else if let Some(desc_file) = desc_file {
-            Some(fs::read_to_string(desc_file)
-                .map_err(|err| CargoDebError::IoFile(
-                        "unable to read extended description from file", err, PathBuf::from(desc_file)))?)
-        } else {
-            None
-        })
-    }
+fn manifest_extended_description(desc: Option<String>, desc_file: Option<&str>) -> CDResult<Option<String>> {
+    Ok(if desc.is_some() {
+        desc
+    } else if let Some(desc_file) = desc_file {
+        Some(fs::read_to_string(desc_file)
+            .map_err(|err| CargoDebError::IoFile(
+                    "unable to read extended description from file", err, PathBuf::from(desc_file)))?)
+    } else {
+        None
+    })
+}
 
-    fn manifest_license_file(package: &cargo_toml::Package<CargoPackageMetadata>, license_file: Option<&LicenseFile>) -> CDResult<(Option<PathBuf>, usize)> {
-        Ok(match license_file {
-            Some(LicenseFile::Vec(args)) => {
-                let mut args = args.iter();
-                let file = args.next();
-                let lines = if let Some(lines) = args.next() {
-                    lines.parse().map_err(|e| CargoDebError::NumParse("invalid number of lines", e))?
-                } else {0};
-                (file.map(|s|s.into()), lines)
-            },
-            Some(LicenseFile::String(s)) => {
-                (Some(s.into()), 0)
-            }
-            None => {
-                (package.license_file.as_ref().map(|s| s.into()), 0)
-            }
-        })
-    }
+fn manifest_license_file(package: &cargo_toml::Package<CargoPackageMetadata>, license_file: Option<&LicenseFile>) -> CDResult<(Option<PathBuf>, usize)> {
+    Ok(match license_file {
+        Some(LicenseFile::Vec(args)) => {
+            let mut args = args.iter();
+            let file = args.next();
+            let lines = if let Some(lines) = args.next() {
+                lines.parse().map_err(|e| CargoDebError::NumParse("invalid number of lines", e))?
+            } else {0};
+            (file.map(|s|s.into()), lines)
+        },
+        Some(LicenseFile::String(s)) => {
+            (Some(s.into()), 0)
+        }
+        None => {
+            (package.license_file.as_ref().map(|s| s.into()), 0)
+        }
+    })
+}
 
-    fn manifest_take_assets(package: &cargo_toml::Package<CargoPackageMetadata>, options: &Config, assets: Option<Vec<Vec<String>>>, targets: &[CargoMetadataTarget], profile: String) -> CDResult<Assets> {
-        Ok(if let Some(assets) = assets {
-            // Treat all explicit assets as unresolved until after the build step
-            let mut unresolved_assets = vec![];
-            for mut asset_line in assets {
-                let mut asset_parts = asset_line.drain(..);
-                let source_path = PathBuf::from(asset_parts.next()
-                    .ok_or("missing path (first array entry) for asset in Cargo.toml")?);
-                let (is_built, source_path) = if let Ok(rel_path) = source_path.strip_prefix(format!("target/{}", profile)) {
-                    (true, options.path_in_build(rel_path, &profile))
+fn manifest_take_assets(package: &cargo_toml::Package<CargoPackageMetadata>, options: &Config, assets: Option<Vec<Vec<String>>>, targets: &[CargoMetadataTarget], profile: String) -> CDResult<Assets> {
+    Ok(if let Some(assets) = assets {
+        // Treat all explicit assets as unresolved until after the build step
+        let mut unresolved_assets = vec![];
+        for mut asset_line in assets {
+            let mut asset_parts = asset_line.drain(..);
+            let source_path = PathBuf::from(asset_parts.next()
+                .ok_or("missing path (first array entry) for asset in Cargo.toml")?);
+            let (is_built, source_path) = if let Ok(rel_path) = source_path.strip_prefix(format!("target/{}", profile)) {
+                (true, options.path_in_build(rel_path, &profile))
+            } else {
+                (false, options.path_in_workspace(&source_path))
+            };
+            let target_path = PathBuf::from(asset_parts.next().ok_or("missing target (second array entry) for asset in Cargo.toml")?);
+            let chmod = u32::from_str_radix(&asset_parts.next().ok_or("missing chmod (third array entry) for asset in Cargo.toml")?, 8)
+                .map_err(|e| CargoDebError::NumParse("unable to parse chmod argument", e))?;
+
+            unresolved_assets.push(UnresolvedAsset {
+                source_path,
+                target_path,
+                chmod,
+                is_built,
+            })
+        }
+        Assets::with_unresolved_assets(unresolved_assets)
+    } else {
+        let mut implied_assets: Vec<_> = targets
+            .iter()
+            .filter_map(|t| {
+                if t.crate_types.iter().any(|ty| ty == "bin") && t.kind.iter().any(|k| k == "bin") {
+                    Some(Asset::new(
+                        AssetSource::Path(options.path_in_build(&t.name, &profile)),
+                        Path::new("usr/bin").join(&t.name),
+                        0o755,
+                        true,
+                    ))
+                } else if t.crate_types.iter().any(|ty| ty == "cdylib") && t.kind.iter().any(|k| k == "cdylib") {
+                    // FIXME: std has constants for the host arch, but not for cross-compilation
+                    let lib_name = format!("{}{}{}", DLL_PREFIX, t.name, DLL_SUFFIX);
+                    Some(Asset::new(
+                        AssetSource::Path(options.path_in_build(&lib_name, &profile)),
+                        Path::new("usr/lib").join(lib_name),
+                        0o644,
+                        true,
+                    ))
                 } else {
-                    (false, options.path_in_workspace(&source_path))
-                };
-                let target_path = PathBuf::from(asset_parts.next().ok_or("missing target (second array entry) for asset in Cargo.toml")?);
-                let chmod = u32::from_str_radix(&asset_parts.next().ok_or("missing chmod (third array entry) for asset in Cargo.toml")?, 8)
-                    .map_err(|e| CargoDebError::NumParse("unable to parse chmod argument", e))?;
-
-                unresolved_assets.push(UnresolvedAsset {
-                    source_path,
-                    target_path,
-                    chmod,
-                    is_built,
-                })
-            }
-            Assets::with_unresolved_assets(unresolved_assets)
-        } else {
-            let mut implied_assets: Vec<_> = targets
-                .iter()
-                .filter_map(|t| {
-                    if t.crate_types.iter().any(|ty| ty == "bin") && t.kind.iter().any(|k| k == "bin") {
-                        Some(Asset::new(
-                            AssetSource::Path(options.path_in_build(&t.name, &profile)),
-                            Path::new("usr/bin").join(&t.name),
-                            0o755,
-                            true,
-                        ))
-                    } else if t.crate_types.iter().any(|ty| ty == "cdylib") && t.kind.iter().any(|k| k == "cdylib") {
-                        // FIXME: std has constants for the host arch, but not for cross-compilation
-                        let lib_name = format!("{}{}{}", DLL_PREFIX, t.name, DLL_SUFFIX);
-                        Some(Asset::new(
-                            AssetSource::Path(options.path_in_build(&lib_name, &profile)),
-                            Path::new("usr/lib").join(lib_name),
-                            0o644,
-                            true,
-                        ))
-                    } else {
-                        None
-                    }
-                })
-                .collect();
-            if let OptionalFile::Path(readme) = &package.readme {
-                let path = PathBuf::from(readme);
-                let target_path = Path::new("usr/share/doc").join(&package.name).join(path.file_name().ok_or("bad README path")?);
-                implied_assets.push(Asset::new(
-                    AssetSource::Path(path),
-                    target_path,
-                    0o644,
-                    false,
-                ));
-            }
-            Assets::with_resolved_assets(implied_assets)
-        })
-    }
-
-    /// Debian-compatible version of the semver version
-    fn manifest_version_string(package: &cargo_toml::Package<CargoPackageMetadata>, revision: Option<String>) -> String {
-        let debianized_version;
-        let mut version = &package.version;
-
-        // Make debian's version ordering (newer versions) more compatible with semver's.
-        // Keep "semver-1" and "semver-xxx" as-is (assuming these are irrelevant, or debian revision already),
-        // but change "semver-beta.1" to "semver~beta.1"
-        let mut parts = version.splitn(2, '-');
-        let semver_main = parts.next().unwrap();
-        if let Some(semver_pre) = parts.next() {
-            let pre_ascii = semver_pre.as_bytes();
-            if pre_ascii.iter().any(|c| !c.is_ascii_digit()) && pre_ascii.iter().any(|c| c.is_ascii_digit()) {
-                debianized_version = format!("{}~{}", semver_main, semver_pre);
-                version = &debianized_version;
-            }
+                    None
+                }
+            })
+            .collect();
+        if let OptionalFile::Path(readme) = &package.readme {
+            let path = PathBuf::from(readme);
+            let target_path = Path::new("usr/share/doc")
+                .join(&package.name)
+                .join(path.file_name().ok_or("bad README path")?);
+            implied_assets.push(Asset::new(AssetSource::Path(path), target_path, 0o644, false));
         }
+        Assets::with_resolved_assets(implied_assets)
+    })
+}
 
-        if let Some(revision) = revision {
-            format!("{}-{}", version, revision)
-        } else {
-            version.to_owned()
+/// Debian-compatible version of the semver version
+fn manifest_version_string(package: &cargo_toml::Package<CargoPackageMetadata>, revision: Option<String>) -> String {
+    let debianized_version;
+    let mut version = &package.version;
+
+    // Make debian's version ordering (newer versions) more compatible with semver's.
+    // Keep "semver-1" and "semver-xxx" as-is (assuming these are irrelevant, or debian revision already),
+    // but change "semver-beta.1" to "semver~beta.1"
+    let mut parts = version.splitn(2, '-');
+    let semver_main = parts.next().unwrap();
+    if let Some(semver_pre) = parts.next() {
+        let pre_ascii = semver_pre.as_bytes();
+        if pre_ascii.iter().any(|c| !c.is_ascii_digit()) && pre_ascii.iter().any(|c| c.is_ascii_digit()) {
+            debianized_version = format!("{}~{}", semver_main, semver_pre);
+            version = &debianized_version;
         }
     }
+
+    if let Some(revision) = revision {
+        format!("{}-{}", version, revision)
+    } else {
+        version.to_owned()
+    }
+}
 
 #[derive(Clone, Debug, Deserialize, Default)]
 struct CargoPackageMetadata {
@@ -1269,10 +1259,7 @@ mod tests {
 
     #[test]
     fn format_conffiles_multiple() {
-        let actual = format_conffiles(&[
-            "/etc/my-pkg/conf.toml",
-            "etc/my-pkg/conf2.toml"
-        ]);
+        let actual = format_conffiles(&["/etc/my-pkg/conf.toml", "etc/my-pkg/conf2.toml"]);
 
         assert_eq!("/etc/my-pkg/conf.toml\n/etc/my-pkg/conf2.toml\n", actual);
     }

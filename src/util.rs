@@ -196,15 +196,11 @@ pub(crate) mod tests {
     }
 
     pub(crate) fn is_path_file(path: &Path) -> bool {
-        with_test_fs(|fs| {
-            fs.contains_key(&path.to_str().unwrap())
-        })
+        with_test_fs(|fs| fs.contains_key(&path.to_str().unwrap()))
     }
 
     pub(crate) fn get_read_count(path: &str) -> u16 {
-        with_test_fs(|fs| {
-            fs.get(path).unwrap().count()
-        })
+        with_test_fs(|fs| fs.get(path).unwrap().count())
     }
 
     pub(crate) fn read_file_to_string(path: &Path) -> std::io::Result<String> {
@@ -219,19 +215,19 @@ pub(crate) mod tests {
             }))
         }
 
-        with_test_fs(|fs| {
-            match fs.get_mut(path.to_str().unwrap()) {
-                None => Err(std::io::Error::new(std::io::ErrorKind::NotFound,
-                    format!("Test filesystem path {:?} does not exist", path))),
-                Some(test_path) => {
-                    let contents = test_path.read();
-                    match ERROR_REGEX.captures(&contents) {
-                        None       => Ok(contents),
-                        Some(caps) => match caps.name("error_name") {
-                            None           => Ok(contents),
-                            Some(re_match) => str_to_err(re_match.as_str()),
-                        },
-                    }
+        with_test_fs(|fs| match fs.get_mut(path.to_str().unwrap()) {
+            None => Err(std::io::Error::new(
+                std::io::ErrorKind::NotFound,
+                format!("Test filesystem path {:?} does not exist", path),
+            )),
+            Some(test_path) => {
+                let contents = test_path.read();
+                match ERROR_REGEX.captures(&contents) {
+                    None => Ok(contents),
+                    Some(caps) => match caps.name("error_name") {
+                        None => Ok(contents),
+                        Some(re_match) => str_to_err(re_match.as_str()),
+                    },
                 }
             }
         })

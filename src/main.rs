@@ -201,13 +201,14 @@ fn process(
     let original = data_archive.len();
 
     let options = &options;
-    let (control_compressed, data_compressed) = rayon::join(move || {
-        // The control archive is the metadata for the package manager
-        let control_archive = control::generate_archive(options, system_time, asset_hashes, listener)?;
-        compress::xz_or_gz(&control_archive, fast, system_xz)
-    }, move || {
-        compress::xz_or_gz(&data_archive, fast, system_xz)
-    });
+    let (control_compressed, data_compressed) = rayon::join(
+        move || {
+            // The control archive is the metadata for the package manager
+            let control_archive = control::generate_archive(options, system_time, asset_hashes, listener)?;
+            compress::xz_or_gz(&control_archive, fast, system_xz)
+        },
+        move || compress::xz_or_gz(&data_archive, fast, system_xz),
+    );
     let control_compressed = control_compressed?;
     let data_compressed = data_compressed?;
 

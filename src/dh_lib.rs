@@ -360,10 +360,7 @@ mod tests {
 
     #[test]
     fn pkgfile_finds_most_specific_match_without_unit_file() {
-        let _g = add_test_fs_paths(&[
-            "/parent/dir/postinst",
-            "/parent/dir/mypkg.postinst",
-        ]);
+        let _g = add_test_fs_paths(&["/parent/dir/postinst", "/parent/dir/mypkg.postinst"]);
 
         let r = pkgfile(Path::new("/parent/dir/"), "mypkg", "mypkg", "postinst", Some("myunit"));
         assert_eq!("/parent/dir/mypkg.postinst", LocalOptionPathBuf(r));
@@ -374,10 +371,7 @@ mod tests {
 
     #[test]
     fn pkgfile_finds_most_specific_match_without_pkg_file() {
-        let _g = add_test_fs_paths(&[
-            "/parent/dir/postinst",
-            "/parent/dir/myunit.postinst",
-        ]);
+        let _g = add_test_fs_paths(&["/parent/dir/postinst", "/parent/dir/myunit.postinst"]);
 
         let r = pkgfile(Path::new("/parent/dir/"), "mypkg", "mypkg", "postinst", Some("myunit"));
         assert_eq!("/parent/dir/myunit.postinst", LocalOptionPathBuf(r));

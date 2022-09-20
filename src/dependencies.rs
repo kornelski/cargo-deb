@@ -1,8 +1,8 @@
+use crate::debian_triple;
 use crate::error::*;
 use std::io::BufRead;
 use std::path::Path;
 use std::process::Command;
-use crate::debian_triple;
 
 /// Resolves the dependencies based on the output of dpkg-shlibdeps on the binary.
 pub fn resolve(path: &Path, target: &Option<String>) -> CDResult<Vec<String>> {

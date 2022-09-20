@@ -300,10 +300,7 @@ pub fn generate(package: &str, assets: &[Asset], options: &Options, listener: &d
             // that's what the actual dh_installsystemd code does:
             //   https://git.launchpad.net/ubuntu/+source/debhelper/tree/dh_installsystemd?h=applied/12.10ubuntu1#n210
             for line in reader.lines().map(|line| line.unwrap()).filter(|s| !is_comment(s)) {
-                let possible_kv_pair = line
-                    .splitn(2, '=')
-                    .map(|s| s.trim())
-                    .next_tuple();
+                let possible_kv_pair = line.splitn(2, '=').map(|s| s.trim()).next_tuple();
                 if let Some((key, value)) = possible_kv_pair {
                     let other_unit = unquote(value).to_string();
                     match key {

@@ -314,19 +314,17 @@ mod tests {
             None,
             None,
             &mock_listener,
-            "release".to_string())
-            .unwrap();
+            "release".to_string(),
+        )
+        .unwrap();
 
         // make the absolute manifest dir relative to our crate root dir
         // as the static paths we receive from the caller cannot be set
         // to the absolute path we find ourselves in at test run time, but
         // instead have to match exactly the paths looked up based on the
         // value of the manifest dir.
-        config.manifest_dir = config.manifest_dir
-            .strip_prefix(env!("CARGO_MANIFEST_DIR"))
-            .unwrap()
-            .to_path_buf();
- 
+        config.manifest_dir = config.manifest_dir.strip_prefix(env!("CARGO_MANIFEST_DIR")).unwrap().to_path_buf();
+
         let ar = Archive::new(0);
 
         (config, mock_listener, ar)
@@ -376,14 +374,10 @@ mod tests {
             "test-resources/testroot/testchild/debian/postrm",
             "test-resources/testroot/testchild/debian/templates",
         ];
-        generate_scripts_for_package_without_systemd_unit(
-            Some("testchild"), &maintainer_script_paths);
+        generate_scripts_for_package_without_systemd_unit(Some("testchild"), &maintainer_script_paths);
     }
 
-    fn generate_scripts_for_package_without_systemd_unit(
-        package_name: Option<&str>,
-        maintainer_script_paths: &Vec<&'static str>
-    ) {
+    fn generate_scripts_for_package_without_systemd_unit(package_name: Option<&str>, maintainer_script_paths: &Vec<&'static str>) {
         let (mut config, mock_listener, mut in_ar) = prepare(package_name);
 
         // supply a maintainer script as if it were available on disk
@@ -431,8 +425,7 @@ mod tests {
             ("test-resources/testroot/debian/postrm", Some("dummy content\n#DEBHELPER#")),
             ("test-resources/testroot/debian/templates", Some("dummy content")),
         ];
-        generate_scripts_for_package_with_systemd_unit(
-            None, &maintainer_scripts, "test-resources/testroot/debian/some.service");
+        generate_scripts_for_package_with_systemd_unit(None, &maintainer_scripts, "test-resources/testroot/debian/some.service");
     }
 
     #[test]
@@ -446,7 +439,10 @@ mod tests {
             ("test-resources/testroot/testchild/debian/templates", Some("dummy content")),
         ];
         generate_scripts_for_package_with_systemd_unit(
-            Some("testchild"), &maintainer_scripts, "test-resources/testroot/testchild/debian/some.service");
+            Some("testchild"),
+            &maintainer_scripts,
+            "test-resources/testroot/testchild/debian/some.service",
+        );
     }
 
     #[test]
@@ -456,8 +452,7 @@ mod tests {
             ("test-resources/testroot/debian/prerm", None),
             ("test-resources/testroot/debian/postrm", None),
         ];
-        generate_scripts_for_package_with_systemd_unit(
-            None, &maintainer_scripts, "test-resources/testroot/debian/some.service");
+        generate_scripts_for_package_with_systemd_unit(None, &maintainer_scripts, "test-resources/testroot/debian/some.service");
     }
 
     #[test]
@@ -468,7 +463,10 @@ mod tests {
             ("test-resources/testroot/testchild/debian/postrm", None),
         ];
         generate_scripts_for_package_with_systemd_unit(
-            Some("testchild"), &maintainer_scripts, "test-resources/testroot/testchild/debian/some.service");
+            Some("testchild"),
+            &maintainer_scripts,
+            "test-resources/testroot/testchild/debian/some.service",
+        );
     }
 
     // `maintainer_scripts` is a collection of file system paths for which:
