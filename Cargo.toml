@@ -50,13 +50,13 @@ toml = "0.5.9"
 zopfli = "0.7.1"
 glob = "0.3.0"
 ar = "0.9.0"
-cargo_toml = "0.11.6"
+cargo_toml = "0.11.7"
 rayon = "1.5.3"
 regex = { version = "1.6.0", default-features = false, features = ["std"] }
-itertools = "0.10.4"
+itertools = "0.10.5"
 num_cpus = { version = "1.13.1", optional = true }
 tempfile = "3.3.0"
-env_logger = "0.9.0"
+env_logger = "0.9.1"
 log = "0.4.17"
 
 [features]

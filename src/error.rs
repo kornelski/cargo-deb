@@ -6,10 +6,16 @@ use std::time;
 
 quick_error! {
     #[derive(Debug)]
+    #[non_exhaustive]
     pub enum CargoDebError {
         Io(err: io::Error) {
             from()
             display("I/O error: {}", err)
+            source(err)
+        }
+        TomlParsing(err: cargo_toml::Error) {
+            from()
+            display("Unable to parse Cargo.toml")
             source(err)
         }
         IoFile(msg: &'static str, err: io::Error, file: PathBuf) {
