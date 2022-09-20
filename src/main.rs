@@ -159,6 +159,11 @@ fn process(
     // more desirable. However for now we want all commands coming in via the
     // same `interface`
     let selected_profile = profile.as_deref().unwrap_or("release");
+    if selected_profile == "dev" {
+        listener.warning("dev profile is not supported and will be a hard error in the future. \
+            cargo-deb is for making releases, and it doesn't make sense to use it with dev profiles.".into());
+        listener.warning("To enable debug symbols set `[profile.release] debug = true` instead.".into());
+    }
     cargo_build_flags.push("--profile".to_string());
     cargo_build_flags.push(selected_profile.to_owned());
 

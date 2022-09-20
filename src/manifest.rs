@@ -387,22 +387,24 @@ impl Config {
             })
             .ok_or_else(|| CargoDebError::NoRootFoundInWorkspace(available_package_names()))
         }?;
+        let workspace_root_manifest_path = Path::new(&metadata.workspace_root).join("Cargo.toml");
+        let workspace_root_manifest = cargo_toml::Manifest::<CargoPackageMetadata>::from_path_with_metadata(workspace_root_manifest_path).ok();
 
         let target_dir = Path::new(&metadata.target_directory);
         let manifest_path = Path::new(&target_package.manifest_path);
         let manifest_dir = manifest_path.parent().unwrap();
         let manifest = cargo_toml::Manifest::<CargoPackageMetadata>::from_path_with_metadata(manifest_path)?;
-        Self::from_manifest_inner(manifest, target_package, manifest_dir, output_path, target_dir, target, variant, deb_version, deb_revision, listener, selected_profile)
+        Self::from_manifest_inner(manifest, workspace_root_manifest.as_ref(), target_package, manifest_dir, output_path, target_dir, target, variant, deb_version, deb_revision, listener, selected_profile)
     }
 
-    /// Convert Cargo.toml/metadata information into internal configu structure
+    /// Convert Cargo.toml/metadata information into internal config structure
     ///
     /// **IMPORTANT**: This function must not create or expect to see any files on disk!
     /// It's run before destination directory is cleaned up, and before the build start!
-    ///
     fn from_manifest_inner(
-        mut meta: cargo_toml::Manifest<CargoPackageMetadata>,
-        root_package: &CargoMetadataPackage,
+        mut manifest: cargo_toml::Manifest<CargoPackageMetadata>,
+        root_manifest: Option<&cargo_toml::Manifest<CargoPackageMetadata>>,
+        cargo_metadata: &CargoMetadataPackage,
         manifest_dir: &Path,
         deb_output_path: Option<String>,
         target_dir: &Path,
@@ -419,7 +421,10 @@ impl Config {
         } else {
             target_dir.to_owned()
         };
-        let package = meta.package.as_mut().unwrap();
+
+        // FIXME: support other named profiles
+        let debug_enabled = if selected_profile == "release" { debug_flag(&manifest) || root_manifest.map_or(false, debug_flag) } else { false };
+        let package = manifest.package.as_mut().unwrap();
 
         // If we build against a variant use that config and change the package name
         let mut deb = if let Some(variant) = variant {
@@ -489,18 +494,11 @@ impl Config {
             features: deb.features.take().unwrap_or_default(),
             default_features: deb.default_features.unwrap_or(true),
             separate_debug_symbols: deb.separate_debug_symbols.unwrap_or(false),
-            debug_enabled: meta.profile.release.as_ref()
-                .and_then(|r| r.debug.as_ref())
-                .map_or(false, |debug| match *debug {
-                    toml::Value::Integer(0) => false,
-                    toml::Value::Boolean(value) => value,
-                    _ => true,
-                }),
+            debug_enabled,
             preserve_symlinks: deb.preserve_symlinks.unwrap_or(false),
             systemd_units: deb.systemd_units.take(),
-            _use_constructor_to_make_this_struct_: (),
         };
-        let assets = manifest_take_assets(&package, &config, deb.assets.take(), &root_package.targets, selected_profile)?;
+        let assets = manifest_take_assets(package, &config, deb.assets.take(), &cargo_metadata.targets, selected_profile)?;
         if assets.is_empty() {
             return Err("No binaries or cdylibs found. The package is empty. Please specify some assets to package in Cargo.toml".into());
         }
@@ -764,6 +762,16 @@ impl Config {
             .then(a.target_path.parent().cmp(&b.target_path.parent()))
         });
     }
+}
+
+fn debug_flag(manifest: &cargo_toml::Manifest<CargoPackageMetadata>) -> bool {
+    manifest.profile.release.as_ref()
+        .and_then(|r| r.debug.as_ref())
+        .map_or(false, |debug| match *debug {
+            toml::Value::Integer(0) => false,
+            toml::Value::Boolean(value) => value,
+            _ => true,
+        })
 }
 
 fn manifest_check_config(package: &cargo_toml::Package<CargoPackageMetadata>, manifest_dir: &Path, deb: &CargoDeb, listener: &dyn Listener) {
