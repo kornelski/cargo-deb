@@ -164,8 +164,7 @@ fn process(
             cargo-deb is for making releases, and it doesn't make sense to use it with dev profiles.".into());
         listener.warning("To enable debug symbols set `[profile.release] debug = true` instead.".into());
     }
-    cargo_build_flags.push("--profile".to_string());
-    cargo_build_flags.push(selected_profile.to_owned());
+    cargo_build_flags.push(format!("--profile={selected_profile}"));
 
     let manifest_path = manifest_path.as_ref().map_or("Cargo.toml", |s| s.as_str());
     let mut options = Config::from_manifest(

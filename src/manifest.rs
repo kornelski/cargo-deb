@@ -718,8 +718,9 @@ impl Config {
             p => p,
         };
 
-        let path = self.target_dir.join(profile);
-        path.join(rel_path)
+        let mut path = self.target_dir.join(profile);
+        path.push(rel_path);
+        path
     }
 
     pub(crate) fn path_in_workspace<P: AsRef<Path>>(&self, rel_path: P) -> PathBuf {
@@ -828,6 +829,7 @@ fn manifest_license_file(package: &cargo_toml::Package<CargoPackageMetadata>, li
 }
 
 fn manifest_take_assets(package: &cargo_toml::Package<CargoPackageMetadata>, options: &Config, assets: Option<Vec<Vec<String>>>, targets: &[CargoMetadataTarget], profile: &str) -> CDResult<Assets> {
+    let profile_target_dir = format!("target/{profile}");
     Ok(if let Some(assets) = assets {
         // Treat all explicit assets as unresolved until after the build step
         let mut unresolved_assets = Vec::with_capacity(assets.len());
@@ -835,7 +837,7 @@ fn manifest_take_assets(package: &cargo_toml::Package<CargoPackageMetadata>, opt
             let mut asset_parts = asset_line.drain(..);
             let source_path = PathBuf::from(asset_parts.next()
                 .ok_or("missing path (first array entry) for asset in Cargo.toml")?);
-            let (is_built, source_path) = if let Ok(rel_path) = source_path.strip_prefix(format!("target/{}", profile)) {
+            let (is_built, source_path) = if let Ok(rel_path) = source_path.strip_prefix(&profile_target_dir) {
                 (true, options.path_in_build(rel_path, profile))
             } else {
                 (false, options.path_in_workspace(&source_path))
