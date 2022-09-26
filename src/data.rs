@@ -100,7 +100,7 @@ pub fn compress_assets(options: &mut Config, listener: &dyn Listener) -> CDResul
     }
 
     for (idx, asset) in options.assets.resolved.iter().enumerate() {
-        let target_path_str = asset.target_path.to_string_lossy();
+        let target_path_str = asset.c.target_path.to_string_lossy();
         if needs_compression(&target_path_str) {
             listener.info(format!("Compressing '{}'", asset.source.path().unwrap_or_else(|| Path::new("-")).display()));
 
@@ -112,7 +112,7 @@ pub fn compress_assets(options: &mut Config, listener: &dyn Listener) -> CDResul
             new_assets.push(Asset::new(
                 crate::manifest::AssetSource::Data(compressed),
                 Path::new(&format!("{target_path_str}.gz")).into(),
-                asset.chmod,
+                asset.c.chmod,
                 false,
             ));
 
@@ -137,7 +137,7 @@ fn archive_files(archive: &mut Archive, options: &Config, listener: &dyn Listene
         let mut log_line = format!(
             "{} -> {}",
             asset.source.path().unwrap_or_else(|| Path::new("-")).display(),
-            asset.target_path.display()
+            asset.c.target_path.display()
         );
         if let Some(len) = asset.source.file_size() {
             let (size, unit) = human_size(len);
@@ -152,15 +152,15 @@ fn archive_files(archive: &mut Archive, options: &Config, listener: &dyn Listene
                 if md.file_type().is_symlink() {
                     archived = true;
                     let link_name = fs::read_link(source_path)?;
-                    archive.symlink(&asset.target_path, &link_name)?;
+                    archive.symlink(&asset.c.target_path, &link_name)?;
                 }
             }
         }
 
         if !archived {
             let out_data = asset.source.data()?;
-            hashes.insert(asset.target_path.clone(), md5::compute(&out_data));
-            archive.file(&asset.target_path, &out_data, asset.chmod)?;
+            hashes.insert(asset.c.target_path.clone(), md5::compute(&out_data));
+            archive.file(&asset.c.target_path, &out_data, asset.c.chmod)?;
         }
     }
     Ok(hashes)

@@ -5,6 +5,7 @@ use std::path::Path;
 
 pub trait AsUnixPathBytes {
     fn as_unix_path(&self) -> Cow<'_, [u8]>;
+    fn to_bytes(&self) -> &[u8];
 }
 
 impl AsUnixPathBytes for Path {
@@ -23,9 +24,19 @@ impl AsUnixPathBytes for Path {
         parts.join(&b'/').into()
     }
 
+    #[cfg(not(unix))]
+    fn to_bytes(&self) -> &[u8] {
+        self.to_str().unwrap()
+    }
+
     #[cfg(unix)]
     fn as_unix_path(&self) -> Cow<'_, [u8]> {
         self.as_os_str().as_bytes().into()
+    }
+
+    #[cfg(unix)]
+    fn to_bytes(&self) -> &[u8] {
+        self.as_os_str().as_bytes()
     }
 }
 

@@ -112,11 +112,11 @@ fn generate_md5sums(archive: &mut Archive, options: &Config, asset_hashes: HashM
 
     // Collect md5sums from each asset in the archive (excludes symlinks).
     for asset in &options.assets.resolved {
-        if let Some(value) = asset_hashes.get(&asset.target_path) {
+        if let Some(value) = asset_hashes.get(&asset.c.target_path) {
             write!(md5sums, "{:x}", value)?;
             md5sums.write_all(b"  ")?;
 
-            md5sums.write_all(&asset.target_path.as_path().as_unix_path())?;
+            md5sums.write_all(&asset.c.target_path.as_path().as_unix_path())?;
             md5sums.write_all(&[b'\n'])?;
         }
     }

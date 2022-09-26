@@ -225,7 +225,7 @@ pub fn generate(package: &str, assets: &[Asset], options: &Options, listener: &d
     // see: https://salsa.debian.org/debian/debhelper/-/blob/master/dh_installsystemd#L305
     let tmp_file_names = assets
         .iter()
-        .filter(|v| v.target_path.starts_with(USR_LIB_TMPFILES_D_DIR))
+        .filter(|a| a.c.target_path.starts_with(USR_LIB_TMPFILES_D_DIR))
         .map(|v| fname_from_path(v.source.path().unwrap()))
         .collect::<Vec<String>>()
         .join(" ");
@@ -246,8 +246,8 @@ pub fn generate(package: &str, assets: &[Asset], options: &Options, listener: &d
     installed_non_template_units.extend(
         assets
             .iter()
-            .filter(|v| v.target_path.parent() == Some(LIB_SYSTEMD_SYSTEM_DIR.as_ref()))
-            .map(|v| fname_from_path(v.target_path.as_path()))
+            .filter(|a| a.c.target_path.parent() == Some(LIB_SYSTEMD_SYSTEM_DIR.as_ref()))
+            .map(|a| fname_from_path(a.c.target_path.as_path()))
             .filter(|fname| !fname.contains('@')),
     );
 
@@ -279,7 +279,7 @@ pub fn generate(package: &str, assets: &[Asset], options: &Options, listener: &d
 
             // get the unit file contents
             let needle = Path::new(LIB_SYSTEMD_SYSTEM_DIR).join(unit);
-            let data = assets.iter().find(move |&item| item.target_path == needle).unwrap().source.data()?;
+            let data = assets.iter().find(move |&item| item.c.target_path == needle).unwrap().source.data()?;
             let reader = data.into_owned();
 
             // for every line in the file look for specific keys that we are

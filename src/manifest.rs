@@ -1,3 +1,4 @@
+use crate::pathbytes::AsUnixPathBytes;
 use crate::config::CargoConfig;
 use crate::dependencies::resolve;
 use crate::dh_installsystemd;
@@ -16,8 +17,8 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-fn is_glob_pattern(s: &str) -> bool {
-    s.contains('*') || s.contains('[') || s.contains(']') || s.contains('!')
+fn is_glob_pattern(s: &Path) -> bool {
+    s.to_bytes().iter().any(|&c| c == b'*' || c == b'[' || c == b']' || c == b'!')
 }
 
 #[derive(Debug, Clone)]
@@ -152,17 +153,20 @@ impl Assets {
 #[derive(Debug, Clone)]
 pub struct UnresolvedAsset {
     pub source_path: PathBuf,
+    pub c: AssetCommon,
+}
+
+#[derive(Debug, Clone)]
+pub struct AssetCommon {
     pub target_path: PathBuf,
     pub chmod: u32,
-    pub is_built: bool,
+    is_built: bool,
 }
 
 #[derive(Debug, Clone)]
 pub struct Asset {
     pub source: AssetSource,
-    pub target_path: PathBuf,
-    pub chmod: u32,
-    is_built: bool,
+    pub c: AssetCommon,
 }
 
 impl Asset {
@@ -180,12 +184,14 @@ impl Asset {
 
         Self {
             source,
-            target_path,
-            chmod,
-            is_built,
+            c: AssetCommon {
+                target_path, chmod, is_built,
+            },
         }
     }
+}
 
+impl AssetCommon {
     fn is_executable(&self) -> bool {
         0 != self.chmod & 0o111
     }
@@ -545,11 +551,11 @@ impl Config {
     }
 
     pub fn resolve_assets(&mut self) -> CDResult<()> {
-        for UnresolvedAsset { source_path, target_path, chmod, is_built } in self.assets.unresolved.drain(..) {
+        for UnresolvedAsset { source_path, c: AssetCommon { target_path, chmod, is_built } } in self.assets.unresolved.drain(..) {
             let source_prefix: PathBuf = source_path.iter()
-                .take_while(|part| !is_glob_pattern(part.to_str().unwrap()))
+                .take_while(|part| !is_glob_pattern(part.as_ref()))
                 .collect();
-            let source_is_glob = is_glob_pattern(source_path.to_str().unwrap());
+            let source_is_glob = is_glob_pattern(&source_path);
             let file_matches = glob::glob(source_path.to_str().expect("utf8 path"))?
                 // Remove dirs from globs without throwing away errors
                 .map(|entry| {
@@ -608,7 +614,7 @@ impl Config {
             let debug_source = asset.source.debug_source().expect("debug asset");
             if debug_source.exists() {
                 log::debug!("added debug file {}", debug_source.display());
-                let debug_target = asset.debug_target().expect("debug asset");
+                let debug_target = asset.c.debug_target().expect("debug asset");
                 assets_to_add.push(Asset::new(
                     AssetSource::Path(debug_source),
                     debug_target,
@@ -669,7 +675,7 @@ impl Config {
         self.assets.resolved.iter()
             .filter(|asset| {
                 // Assumes files in build dir which have executable flag set are binaries
-                asset.is_dynamic_library() || asset.is_executable()
+                asset.c.is_dynamic_library() || asset.c.is_executable()
             })
             .map(|asset| &asset.source)
             .collect()
@@ -680,7 +686,7 @@ impl Config {
         self.assets.resolved.iter_mut()
             .filter(move |asset| {
                 // Assumes files in build dir which have executable flag set are binaries
-                asset.is_built && (asset.is_dynamic_library() || asset.is_executable())
+                asset.c.is_built && (asset.c.is_dynamic_library() || asset.c.is_executable())
             })
             .collect()
     }
@@ -757,10 +763,10 @@ impl Config {
     /// similar files next to each other improve tarball compression
     pub(crate) fn sort_assets_by_type(&mut self) {
         self.assets.resolved.sort_by(|a,b| {
-            a.is_executable().cmp(&b.is_executable())
-            .then(a.is_dynamic_library().cmp(&b.is_dynamic_library()))
-            .then(a.target_path.extension().cmp(&b.target_path.extension()))
-            .then(a.target_path.parent().cmp(&b.target_path.parent()))
+            a.c.is_executable().cmp(&b.c.is_executable())
+            .then(a.c.is_dynamic_library().cmp(&b.c.is_dynamic_library()))
+            .then(a.c.target_path.extension().cmp(&b.c.target_path.extension()))
+            .then(a.c.target_path.parent().cmp(&b.c.target_path.parent()))
         });
     }
 }
@@ -848,9 +854,7 @@ fn manifest_take_assets(package: &cargo_toml::Package<CargoPackageMetadata>, opt
 
             unresolved_assets.push(UnresolvedAsset {
                 source_path,
-                target_path,
-                chmod,
-                is_built,
+                c: AssetCommon { target_path, chmod, is_built },
             })
         }
         Assets::with_unresolved_assets(unresolved_assets)
@@ -1124,8 +1128,8 @@ mod tests {
             0o644,
             true,
         );
-        assert_eq!("baz/bar", a.target_path.to_str().unwrap());
-        assert!(a.is_built);
+        assert_eq!("baz/bar", a.c.target_path.to_str().unwrap());
+        assert!(a.c.is_built);
 
         let a = Asset::new(
             AssetSource::Path(PathBuf::from("foo/bar")),
@@ -1133,8 +1137,8 @@ mod tests {
             0o644,
             false,
         );
-        assert_eq!("baz/quz", a.target_path.to_str().unwrap());
-        assert!(!a.is_built);
+        assert_eq!("baz/quz", a.c.target_path.to_str().unwrap());
+        assert!(!a.c.is_built);
     }
 
     /// Tests that getting the debug filename from a path returns the same path
@@ -1155,7 +1159,7 @@ mod tests {
             0o644,
             true,
         );
-        let debug_target = a.debug_target().expect("Got unexpected None");
+        let debug_target = a.c.debug_target().expect("Got unexpected None");
         assert_eq!(debug_target, Path::new("/usr/lib/debug/usr/bin/baz/bar.debug"));
     }
 
@@ -1169,7 +1173,7 @@ mod tests {
             0o644,
             true,
         );
-        let debug_target = a.debug_target().expect("Got unexpected None");
+        let debug_target = a.c.debug_target().expect("Got unexpected None");
         assert_eq!(debug_target, Path::new("/usr/lib/debug/baz/bar.debug"));
     }
 
@@ -1184,7 +1188,7 @@ mod tests {
             false,
         );
 
-        assert_eq!(a.debug_target(), None);
+        assert_eq!(a.c.debug_target(), None);
     }
 
     /// Tests that debug_source() for an AssetSource::Path returns the same path
@@ -1223,9 +1227,8 @@ mod tests {
 
         let config = Config::from_manifest(Path::new("Cargo.toml"), None, None, None, None, None, None, &mock_listener, "release").unwrap();
 
-        let num_unit_assets = config.assets.resolved
-            .iter()
-            .filter(|v| v.target_path.starts_with("lib/systemd/system/"))
+        let num_unit_assets = config.assets.resolved.iter()
+            .filter(|a| a.c.target_path.starts_with("lib/systemd/system/"))
             .count();
 
         assert_eq!(0, num_unit_assets);
@@ -1248,7 +1251,7 @@ mod tests {
 
         let num_unit_assets = config.assets.resolved
             .iter()
-            .filter(|v| v.target_path.starts_with("lib/systemd/system/"))
+            .filter(|a| a.c.target_path.starts_with("lib/systemd/system/"))
             .count();
 
         assert_eq!(1, num_unit_assets);
