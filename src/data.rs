@@ -39,11 +39,11 @@ fn append_copyright_metadata(copyright: &mut Vec<u8>, options: &Config) -> Resul
     writeln!(copyright, "Format: https://www.debian.org/doc/packaging-manuals/copyright-format/1.0/")?;
     writeln!(copyright, "Upstream-Name: {}", options.name)?;
     if let Some(source) = options.repository.as_ref().or(options.homepage.as_ref()) {
-        writeln!(copyright, "Source: {}", source)?;
+        writeln!(copyright, "Source: {source}")?;
     }
     writeln!(copyright, "Copyright: {}", options.copyright)?;
     if let Some(ref license) = options.license {
-        writeln!(copyright, "License: {}", license)?;
+        writeln!(copyright, "License: {license}")?;
     }
     Ok(())
 }
@@ -141,7 +141,7 @@ fn archive_files(archive: &mut Archive, options: &Config, listener: &dyn Listene
         );
         if let Some(len) = asset.source.file_size() {
             let (size, unit) = human_size(len);
-            let _ = fmt::Write::write_fmt(&mut log_line, format_args!(" ({}{})", size, unit));
+            let _ = fmt::Write::write_fmt(&mut log_line, format_args!(" ({size}{unit})"));
         }
         listener.info(log_line);
 

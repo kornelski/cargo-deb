@@ -97,7 +97,7 @@ fn main() {
 #[allow(deprecated)]
 fn err_cause(err: &dyn std::error::Error, max: usize) {
     if let Some(reason) = err.cause() { // we use cause(), not source()
-        eprintln!("  because: {}", reason);
+        eprintln!("  because: {reason}");
         if max > 0 {
             err_cause(reason, max - 1);
         }
@@ -105,7 +105,7 @@ fn err_cause(err: &dyn std::error::Error, max: usize) {
 }
 
 fn err_exit(err: &dyn std::error::Error) -> ! {
-    eprintln!("cargo-deb: {}", err);
+    eprintln!("cargo-deb: {err}");
     err_cause(err, 3);
     process::exit(1);
 }

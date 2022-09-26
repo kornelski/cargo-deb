@@ -17,11 +17,11 @@ pub struct StdErrListener {
 }
 impl Listener for StdErrListener {
     fn warning(&self, s: String) {
-        let _ = writeln!(&mut std::io::stdout().lock(), "warning: {}", s);
+        let _ = writeln!(&mut std::io::stdout().lock(), "warning: {s}");
     }
     fn info(&self, s: String) {
         if self.verbose {
-            let _ = writeln!(&mut std::io::stdout().lock(), "info: {}", s);
+            let _ = writeln!(&mut std::io::stdout().lock(), "info: {s}");
         }
     }
 }

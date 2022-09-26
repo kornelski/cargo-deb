@@ -211,7 +211,7 @@ pub(crate) mod tests {
                 "PermissionDenied" => std::io::ErrorKind::PermissionDenied,
                 "NotFound"         => std::io::ErrorKind::NotFound,
                 "Other"            => std::io::ErrorKind::Other,
-                _                  => panic!("Unknown I/O ErrorKind '{}'", str)
+                _                  => panic!("Unknown I/O ErrorKind '{str}'")
             }))
         }
 

@@ -272,7 +272,7 @@ pub fn generate(package: &str, assets: &[Asset], options: &Options, listener: &d
 
         // for each unit that we have not yet processed
         for unit in units.iter() {
-            listener.info(format!("Determining augmentations needed for systemd unit {}", unit));
+            listener.info(format!("Determining augmentations needed for systemd unit {unit}"));
 
             // the unit has to be started
             start_units.insert(unit.clone());
@@ -757,7 +757,7 @@ mod tests {
         let install_base_path = match ip {
             "ult" => "usr/lib/tmpfiles.d",
             "lss" => "lib/systemd/system",
-            x => panic!("Unsupported install path value '{}'", x),
+            x => panic!("Unsupported install path value '{x}'"),
         };
 
         // setup input for generate()

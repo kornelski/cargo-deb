@@ -1,10 +1,10 @@
-use crate::pathbytes::AsUnixPathBytes;
 use crate::config::CargoConfig;
 use crate::dependencies::resolve;
 use crate::dh_installsystemd;
 use crate::error::*;
 use crate::listener::Listener;
 use crate::ok_or::OkOrThen;
+use crate::pathbytes::AsUnixPathBytes;
 use crate::util::read_file_to_bytes;
 use cargo_toml::OptionalFile;
 use rayon::prelude::*;
@@ -64,9 +64,7 @@ impl AssetSource {
                     .map_err(|e| CargoDebError::IoFile("unable to read asset to add to archive", e, p.to_owned()))?;
                 Cow::Owned(data)
             },
-            AssetSource::Data(ref d) => {
-                Cow::Borrowed(d)
-            },
+            AssetSource::Data(ref d) => Cow::Borrowed(d),
         })
     }
 
@@ -429,7 +427,11 @@ impl Config {
         };
 
         // FIXME: support other named profiles
-        let debug_enabled = if selected_profile == "release" { debug_flag(&manifest) || root_manifest.map_or(false, debug_flag) } else { false };
+        let debug_enabled = if selected_profile == "release" {
+            debug_flag(&manifest) || root_manifest.map_or(false, debug_flag)
+        } else {
+            false
+        };
         let package = manifest.package.as_mut().unwrap();
 
         // If we build against a variant use that config and change the package name

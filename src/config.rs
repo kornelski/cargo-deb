@@ -91,7 +91,7 @@ impl CargoConfig {
                 }
             }
         }
-        let path = PathBuf::from(format!("/usr/bin/{}-{}", debian_target_triple, command_name));
+        let path = PathBuf::from(format!("/usr/bin/{debian_target_triple}-{command_name}"));
         if path.exists() {
             return Some(path.into());
         }

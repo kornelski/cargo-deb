@@ -137,17 +137,17 @@ fn generate_control(archive: &mut Archive, options: &Config, listener: &dyn List
     writeln!(&mut control, "Architecture: {}", options.architecture)?;
     if let Some(ref repo) = options.repository {
         if repo.starts_with("http") {
-            writeln!(&mut control, "Vcs-Browser: {}", repo)?;
+            writeln!(&mut control, "Vcs-Browser: {repo}")?;
         }
         if let Some(kind) = options.repository_type() {
-            writeln!(&mut control, "Vcs-{}: {}", kind, repo)?;
+            writeln!(&mut control, "Vcs-{kind}: {repo}")?;
         }
     }
     if let Some(homepage) = options.homepage.as_ref().or(options.documentation.as_ref()) {
-        writeln!(&mut control, "Homepage: {}", homepage)?;
+        writeln!(&mut control, "Homepage: {homepage}")?;
     }
     if let Some(ref section) = options.section {
-        writeln!(&mut control, "Section: {}", section)?;
+        writeln!(&mut control, "Section: {section}")?;
     }
     writeln!(&mut control, "Priority: {}", options.priority)?;
     writeln!(&mut control, "Maintainer: {}", options.maintainer)?;
@@ -157,18 +157,18 @@ fn generate_control(archive: &mut Archive, options: &Config, listener: &dyn List
         .map(|m| (m.source.file_size().unwrap_or(0)+2047)/1024) // assume 1KB of fs overhead per file
         .sum::<u64>();
 
-    writeln!(&mut control, "Installed-Size: {}", installed_size)?;
+    writeln!(&mut control, "Installed-Size: {installed_size}")?;
 
     let deps = options.get_dependencies(listener)?;
     if !deps.is_empty() {
-        writeln!(&mut control, "Depends: {}", deps)?;
+        writeln!(&mut control, "Depends: {deps}")?;
     }
 
     if let Some(ref pre_depends) = options.pre_depends {
         let pre_depends_normalized = pre_depends.trim();
 
         if !pre_depends_normalized.is_empty() {
-            writeln!(&mut control, "Pre-Depends: {}", pre_depends_normalized)?;
+            writeln!(&mut control, "Pre-Depends: {pre_depends_normalized}")?;
         }
     }
 
@@ -176,7 +176,7 @@ fn generate_control(archive: &mut Archive, options: &Config, listener: &dyn List
         let recommends_normalized = recommends.trim();
 
         if !recommends_normalized.is_empty() {
-            writeln!(&mut control, "Recommends: {}", recommends_normalized)?;
+            writeln!(&mut control, "Recommends: {recommends_normalized}")?;
         }
     }
 
@@ -184,7 +184,7 @@ fn generate_control(archive: &mut Archive, options: &Config, listener: &dyn List
         let suggests_normalized = suggests.trim();
 
         if !suggests_normalized.is_empty() {
-            writeln!(&mut control, "Suggests: {}", suggests_normalized)?;
+            writeln!(&mut control, "Suggests: {suggests_normalized}")?;
         }
     }
 
@@ -192,31 +192,31 @@ fn generate_control(archive: &mut Archive, options: &Config, listener: &dyn List
         let enhances_normalized = enhances.trim();
 
         if !enhances_normalized.is_empty() {
-            writeln!(&mut control, "Enhances: {}", enhances_normalized)?;
+            writeln!(&mut control, "Enhances: {enhances_normalized}")?;
         }
     }
 
     if let Some(ref conflicts) = options.conflicts {
-        writeln!(&mut control, "Conflicts: {}", conflicts)?;
+        writeln!(&mut control, "Conflicts: {conflicts}")?;
     }
     if let Some(ref breaks) = options.breaks {
-        writeln!(&mut control, "Breaks: {}", breaks)?;
+        writeln!(&mut control, "Breaks: {breaks}")?;
     }
     if let Some(ref replaces) = options.replaces {
-        writeln!(&mut control, "Replaces: {}", replaces)?;
+        writeln!(&mut control, "Replaces: {replaces}")?;
     }
     if let Some(ref provides) = options.provides {
-        writeln!(&mut control, "Provides: {}", provides)?;
+        writeln!(&mut control, "Provides: {provides}")?;
     }
 
     write!(&mut control, "Description:")?;
     for line in options.description.split_by_chars(79) {
-        writeln!(&mut control, " {}", line)?;
+        writeln!(&mut control, " {line}")?;
     }
 
     if let Some(ref desc) = options.extended_description {
         for line in desc.split_by_chars(79) {
-            writeln!(&mut control, " {}", line)?;
+            writeln!(&mut control, " {line}")?;
         }
     }
     control.push(10);

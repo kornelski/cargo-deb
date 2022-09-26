@@ -179,7 +179,7 @@ pub(crate) fn autoscript(
 
             // prepend new text to existing script fragment
             let new_text = [
-                &format!("# Automatically added by {}\n", bin_name),
+                &format!("# Automatically added by {bin_name}\n"),
                 &autoscript_sed(snippet_filename, replacements),
                 "# End automatically added section\n",
                 existing_text,
@@ -483,7 +483,7 @@ mod tests {
         // fragment called <package>.<script>.debhelper.
         assert_eq!(1, scripts.len());
 
-        let expected_created_name = &format!("mypkg.{}.debhelper", maintainer_script);
+        let expected_created_name = &format!("mypkg.{maintainer_script}.debhelper");
         let (created_name, created_bytes) = scripts.iter().next().unwrap();
 
         // Verify the created script filename key
@@ -701,12 +701,12 @@ mod tests {
         assert_eq!(2, scripts.len());
         debhelper_script_subst(Path::new(""), &mut scripts, "mypkg", maintainer_script, None, &mock_listener).unwrap();
         assert_eq!(3, scripts.len());
-        assert!(scripts.contains_key(&format!("mypkg.{}.debhelper", maintainer_script)));
-        assert!(scripts.contains_key(&format!("mypkg.{}.service", maintainer_script)));
+        assert!(scripts.contains_key(&format!("mypkg.{maintainer_script}.debhelper")));
+        assert!(scripts.contains_key(&format!("mypkg.{maintainer_script}.service")));
         assert!(scripts.contains_key(maintainer_script));
 
-        assert_eq!(script_to_string(&scripts, &format!("mypkg.{}.debhelper", maintainer_script)), "first");
-        assert_eq!(script_to_string(&scripts, &format!("mypkg.{}.service", maintainer_script)), "second");
+        assert_eq!(script_to_string(&scripts, &format!("mypkg.{maintainer_script}.debhelper")), "first");
+        assert_eq!(script_to_string(&scripts, &format!("mypkg.{maintainer_script}.service")), "second");
         if service_order {
             assert_eq!(script_to_string(&scripts, maintainer_script), "some secondfirst content");
         } else {
@@ -724,7 +724,7 @@ mod tests {
     #[test]
     fn debhelper_script_subst_with_user_file_access_error(error: &str) {
         let _g = add_test_fs_paths(&[]);
-        set_test_fs_path_content("myscript", format!("error:{}", error));
+        set_test_fs_path_content("myscript", format!("error:{error}"));
 
         let mut mock_listener = crate::listener::MockListener::new();
         mock_listener.expect_info().times(1).return_const(());
