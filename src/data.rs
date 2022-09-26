@@ -1,6 +1,6 @@
 use crate::error::*;
 use crate::listener::Listener;
-use crate::manifest::{Asset, Config};
+use crate::manifest::{Asset, Config, IsBuilt};
 use crate::tararchive::Archive;
 use md5::Digest;
 use std::collections::HashMap;
@@ -20,7 +20,7 @@ pub fn generate_archive(options: &Config, time: u64, listener: &dyn Listener) ->
 /// Generates compressed changelog file
 pub(crate) fn generate_changelog_asset(options: &Config) -> CDResult<Option<Vec<u8>>> {
     if let Some(ref path) = options.changelog {
-        let changelog = fs::read(options.path_in_workspace(path))
+        let changelog = fs::read(options.path_in_package(path))
             .and_then(|content| {
                 // The input is plaintext, but the debian package should contain gzipped one.
                 let mut compressed = Vec::with_capacity(content.len());
@@ -52,7 +52,7 @@ fn append_copyright_metadata(copyright: &mut Vec<u8>, options: &Config) -> Resul
 pub(crate) fn generate_copyright_asset(options: &Config) -> CDResult<Vec<u8>> {
     let mut copyright: Vec<u8> = Vec::new();
     if let Some(ref path) = options.license_file {
-        let license_string = fs::read_to_string(options.path_in_workspace(path))
+        let license_string = fs::read_to_string(options.path_in_package(path))
             .map_err(|e| CargoDebError::IoFile("unable to read license file", e, path.to_owned()))?;
         if !has_copyright_metadata(&license_string) {
             append_copyright_metadata(&mut copyright, options)?;
@@ -113,7 +113,7 @@ pub fn compress_assets(options: &mut Config, listener: &dyn Listener) -> CDResul
                 crate::manifest::AssetSource::Data(compressed),
                 Path::new(&format!("{target_path_str}.gz")).into(),
                 asset.c.chmod,
-                false,
+                IsBuilt::No,
             ));
 
             indices_to_remove.push(idx);
@@ -121,7 +121,7 @@ pub fn compress_assets(options: &mut Config, listener: &dyn Listener) -> CDResul
     }
 
     for idx in indices_to_remove.iter().rev() {
-        options.assets.resolved.remove(*idx);
+        options.assets.resolved.swap_remove(*idx);
     }
 
     options.assets.resolved.append(&mut new_assets);

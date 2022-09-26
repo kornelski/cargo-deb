@@ -1,0 +1,2 @@
+[workspace]
+members = ["test-ws1", "test-ws2"]

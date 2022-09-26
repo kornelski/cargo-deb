@@ -180,6 +180,8 @@ fn process(
     )?;
     reset_deb_temp_directory(&options)?;
 
+    options.extend_cargo_build_flags(&mut cargo_build_flags);
+
     if !no_build {
         cargo_build(&options, target, &cargo_build_flags, verbose)?;
     }

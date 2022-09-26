@@ -1,16 +1,30 @@
+use std::env::consts::DLL_PREFIX;
+use std::env::consts::DLL_SUFFIX;
 use std::env;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
+use tempfile::TempDir;
+
 #[test]
-#[cfg(all(feature = "lzma", target_os = "linux"))]
-fn run_cargo_deb_command_on_example_dir() {
+fn build_workspaces() {
+    let (_, ddir) = extract_built_package_from_manifest("tests/test-workspace/test-ws1/Cargo.toml", &["--no-strip"]);
+    assert!(ddir.path().join("usr/local/bin/renamed2").exists());
+    assert!(ddir.path().join("usr/local/bin/decoy").exists());
+
+    let (_, ddir) = extract_built_package_from_manifest("tests/test-workspace/test-ws2/Cargo.toml", &["--no-strip"]);
+    assert!(ddir.path().join("usr/bin/renamed2").exists());
+    assert!(ddir.path().join(format!("usr/lib/{DLL_PREFIX}test2lib{DLL_SUFFIX}")).exists());
+}
+
+fn extract_built_package_from_manifest(manifest_path: &str, args: &[&str]) -> (TempDir, TempDir) {
     let root = PathBuf::from(env::var_os("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR"));
     let cmd_path = root.join(env!("CARGO_BIN_EXE_cargo-deb"));
     assert!(cmd_path.exists());
     let output = Command::new(cmd_path)
-        .arg(format!("--manifest-path={}", root.join("example/Cargo.toml").display()))
+        .arg(format!("--manifest-path={}", root.join(manifest_path).display()))
+        .args(args)
         .output().unwrap();
     if !output.status.success() {
         panic!("Cmd failed: {}\n{}", String::from_utf8_lossy(&output.stdout), String::from_utf8_lossy(&output.stderr));
@@ -40,6 +54,22 @@ fn run_cargo_deb_command_on_example_dir() {
         .arg(ardir.path().join("control.tar.xz"))
         .status().unwrap().success());
 
+    let ddir = tempfile::tempdir().unwrap();
+    assert!(Command::new("tar")
+        .arg("xJf")
+        .current_dir(ddir.path())
+        .arg(ardir.path().join("data.tar.xz"))
+        .status().unwrap().success());
+
+    (cdir, ddir)
+}
+
+#[test]
+#[cfg(all(feature = "lzma", target_os = "linux"))]
+fn run_cargo_deb_command_on_example_dir() {
+
+    let (cdir, ddir) = extract_built_package_from_manifest("example/Cargo.toml", &[]);
+
     let control = fs::read_to_string(cdir.path().join("control")).unwrap();
     assert!(control.contains("Package: example\n"));
     assert!(control.contains("Version: 0.1.0\n"));
@@ -54,13 +84,6 @@ fn run_cargo_deb_command_on_example_dir() {
     assert!(md5sums.contains("591785b794601e212b260e25925636fd  var/lib/example/2.txt\n"));
     assert!(md5sums.contains("1537684900f6b12358c88a612adf1049  var/lib/example/3.txt\n"));
     assert!(md5sums.contains("6f65f1e8907ea8a25171915b3bba45af  usr/share/doc/example/copyright\n"));
-
-    let ddir = tempfile::tempdir().unwrap();
-    assert!(Command::new("tar")
-        .arg("xJf")
-        .current_dir(ddir.path())
-        .arg(ardir.path().join("data.tar.xz"))
-        .status().unwrap().success());
 
     assert!(ddir.path().join("var/lib/example/1.txt").exists());
     assert!(ddir.path().join("var/lib/example/2.txt").exists());

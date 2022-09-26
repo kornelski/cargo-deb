@@ -1,0 +1,16 @@
+[package]
+name = "test1"
+version = "1.39.3"
+edition = "2021"
+authors = ["test1"]
+description = "test1"
+
+[package.metadata.deb]
+assets = [
+    ["target/release/renamed2", "usr/local/bin/", "777"],
+    ["target/release/test1", "usr/local/bin/decoy", "777"]
+]
+
+[[bin]]
+path = "borked_file_not_exists.rs"
+name = "do_not_build_me"

@@ -564,7 +564,7 @@ mod tests {
             AssetSource::Path(PathBuf::new()),
             PathBuf::new(),
             0o0,
-            false,
+            crate::manifest::IsBuilt::No,
         )];
 
         let fragments = generate("mypkg", &assets, &Options::default(), &mock_listener).unwrap();
@@ -581,7 +581,7 @@ mod tests {
             AssetSource::Path(PathBuf::new()), // path source with empty source path makes no sense
             Path::new("usr/lib/tmpfiles.d/blah").to_path_buf(),
             0o0,
-            false,
+            crate::manifest::IsBuilt::No,
         )];
 
         let fragments = generate("mypkg", &assets, &Options::default(), &mock_listener).unwrap();
@@ -598,7 +598,7 @@ mod tests {
             AssetSource::Data(vec![]), // only assets of type Path are currently supported
             Path::new("usr/lib/tmpfiles.d/blah").to_path_buf(),
             0o0,
-            false,
+            crate::manifest::IsBuilt::No,
         )];
 
         let fragments = generate("mypkg", &assets, &Options::default(), &mock_listener).unwrap();
@@ -617,7 +617,7 @@ mod tests {
             AssetSource::Path(tmp_file_path),
             Path::new("usr/lib/tmpfiles.d/blah").to_path_buf(),
             0o0,
-            false,
+            crate::manifest::IsBuilt::No,
         )];
 
         let fragments = generate("mypkg", &assets, &Options::default(), &mock_listener).unwrap();
@@ -667,7 +667,7 @@ mod tests {
             AssetSource::Path(PathBuf::from("debian/my_unit@.service")),
             Path::new("lib/systemd/system/").to_path_buf(),
             0o0,
-            false,
+            crate::manifest::IsBuilt::No,
         )];
 
         let fragments = generate("mypkg", &assets, &Options::default(), &mock_listener).unwrap();
@@ -683,7 +683,7 @@ mod tests {
             AssetSource::Path(PathBuf::from("debian/10-extra-hardening.conf")),
             Path::new("lib/systemd/system/foobar.service.d/").to_path_buf(),
             0o0,
-            false,
+            crate::manifest::IsBuilt::No,
         )];
 
         let fragments = generate("mypkg", &assets, &Options::default(), &mock_listener).unwrap();
@@ -700,7 +700,7 @@ mod tests {
             AssetSource::Path(PathBuf::from("debian/my_unit.service")),
             Path::new("some/other/path/").to_path_buf(),
             0o0,
-            false,
+            crate::manifest::IsBuilt::No,
         )];
 
         let fragments = generate("mypkg", &assets, &Options::default(), &mock_listener).unwrap();
@@ -765,7 +765,7 @@ mod tests {
             AssetSource::Path(PathBuf::from(unit_file_path)),
             Path::new(&format!("{}/mypkg.service", install_base_path)).to_path_buf(),
             0o0,
-            false,
+            crate::manifest::IsBuilt::No,
         )];
 
         let options = Options {

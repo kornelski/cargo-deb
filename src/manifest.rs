@@ -12,6 +12,7 @@ use serde::Deserialize;
 use std::borrow::Cow;
 use std::collections::{HashMap, HashSet};
 use std::convert::From;
+use std::env::consts::EXE_SUFFIX;
 use std::env::consts::{DLL_PREFIX, DLL_SUFFIX};
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -148,6 +149,14 @@ impl Assets {
     }
 }
 
+#[derive(Debug, Copy, Clone, Eq, PartialEq)]
+pub enum IsBuilt {
+    No,
+    SamePackage,
+    /// needs --workspace to build
+    Workspace,
+}
+
 #[derive(Debug, Clone)]
 pub struct UnresolvedAsset {
     pub source_path: PathBuf,
@@ -158,7 +167,7 @@ pub struct UnresolvedAsset {
 pub struct AssetCommon {
     pub target_path: PathBuf,
     pub chmod: u32,
-    is_built: bool,
+    is_built: IsBuilt,
 }
 
 #[derive(Debug, Clone)]
@@ -169,7 +178,7 @@ pub struct Asset {
 
 impl Asset {
     #[must_use]
-    pub fn new(source: AssetSource, mut target_path: PathBuf, chmod: u32, is_built: bool) -> Self {
+    pub fn new(source: AssetSource, mut target_path: PathBuf, chmod: u32, is_built: IsBuilt) -> Self {
         // is_dir() is only for paths that exist
         if target_path.to_string_lossy().ends_with('/') {
             let file_name = source.path().and_then(|p| p.file_name()).expect("source must be a file");
@@ -204,7 +213,7 @@ impl AssetCommon {
     /// /usr/lib/debug/<path-to-executable>.debug
     #[must_use]
     pub fn debug_target(&self) -> Option<PathBuf> {
-        if self.is_built {
+        if self.is_built != IsBuilt::No {
             // Turn an absolute path into one relative to "/"
             let relative = match self.target_path.strip_prefix(Path::new("/")) {
                 Ok(path) => path,
@@ -277,8 +286,8 @@ fn match_architecture(spec: ArchSpec, target_arch: &str) -> CDResult<bool> {
 #[non_exhaustive]
 /// Cargo deb configuration read from the manifest and cargo metadata
 pub struct Config {
-    /// Root directory where `Cargo.toml` is located. It's a subdirectory in workspaces.
-    pub manifest_dir: PathBuf,
+    /// Directory where `Cargo.toml` is located. It's a subdirectory in workspaces.
+    pub pacakge_manifest_dir: PathBuf,
     /// User-configured output path for *.deb
     pub deb_output_path: Option<String>,
     /// Triple. `None` means current machine architecture.
@@ -396,9 +405,9 @@ impl Config {
 
         let target_dir = Path::new(&metadata.target_directory);
         let manifest_path = Path::new(&target_package.manifest_path);
-        let manifest_dir = manifest_path.parent().unwrap();
+        let package_manifest_dir = manifest_path.parent().unwrap();
         let manifest = cargo_toml::Manifest::<CargoPackageMetadata>::from_path_with_metadata(manifest_path)?;
-        Self::from_manifest_inner(manifest, workspace_root_manifest.as_ref(), target_package, manifest_dir, output_path, target_dir, target, variant, deb_version, deb_revision, listener, selected_profile)
+        Self::from_manifest_inner(manifest, workspace_root_manifest.as_ref(), target_package, package_manifest_dir, output_path, target_dir, target, variant, deb_version, deb_revision, listener, selected_profile)
     }
 
     /// Convert Cargo.toml/metadata information into internal config structure
@@ -409,7 +418,7 @@ impl Config {
         mut manifest: cargo_toml::Manifest<CargoPackageMetadata>,
         root_manifest: Option<&cargo_toml::Manifest<CargoPackageMetadata>>,
         cargo_metadata: &CargoMetadataPackage,
-        manifest_dir: &Path,
+        package_manifest_dir: &Path,
         deb_output_path: Option<String>,
         target_dir: &Path,
         target: Option<&str>,
@@ -451,13 +460,13 @@ impl Config {
 
         let (license_file, license_file_skip_lines) = manifest_license_file(package, deb.license_file.as_ref())?;
 
-        manifest_check_config(package, manifest_dir, &deb, listener);
+        manifest_check_config(package, package_manifest_dir, &deb, listener);
         let extended_description = manifest_extended_description(
             deb.extended_description.take(),
             deb.extended_description_file.as_deref().or(package.readme.as_ref()),
         )?;
         let mut config = Config {
-            manifest_dir: manifest_dir.to_owned(),
+            pacakge_manifest_dir: package_manifest_dir.to_owned(),
             deb_output_path,
             target: target.map(|t| t.to_string()),
             target_dir,
@@ -506,11 +515,7 @@ impl Config {
             preserve_symlinks: deb.preserve_symlinks.unwrap_or(false),
             systemd_units: deb.systemd_units.take(),
         };
-        let assets = manifest_take_assets(package, &config, deb.assets.take(), &cargo_metadata.targets, selected_profile)?;
-        if assets.is_empty() {
-            return Err("No binaries or cdylibs found. The package is empty. Please specify some assets to package in Cargo.toml".into());
-        }
-        config.assets = assets;
+        config.take_assets(package, deb.assets.take(), &cargo_metadata.targets, selected_profile)?;
         config.add_copyright_asset()?;
         config.add_changelog_asset()?;
         config.add_systemd_assets()?;
@@ -552,6 +557,53 @@ impl Config {
         Ok(deps.into_iter().collect::<Vec<_>>().join(", "))
     }
 
+    pub fn extend_cargo_build_flags(&self, flags: &mut Vec<String>) {
+        if flags.iter().any(|f| f == "--workspace" || f == "--all") {
+            return;
+        }
+
+        for a in self.assets.unresolved.iter().filter(|a| a.c.is_built != IsBuilt::No) {
+            if is_glob_pattern(&a.source_path) {
+                log::debug!("building entire workspace because of glob {}", a.source_path.display());
+                flags.push("--workspace".into());
+                return;
+            }
+        }
+
+        let mut build_bins = vec![];
+        let mut build_libs = false;
+        let mut same_package = true;
+        let resolved = self.assets.resolved.iter().map(|a| (&a.c, a.source.path()));
+        let unresolved = self.assets.unresolved.iter().map(|a| (&a.c, Some(a.source_path.as_ref())));
+        for (a, source_path) in resolved.chain(unresolved).filter(|(c,_)| c.is_built != IsBuilt::No) {
+            if a.is_built != IsBuilt::SamePackage {
+                log::debug!("building workspace because {} is from another package", source_path.unwrap_or(&a.target_path).display());
+                same_package = false;
+            }
+            if a.is_dynamic_library() {
+                log::debug!("building libs for {}", source_path.unwrap_or(&a.target_path).display());
+                build_libs = true;
+            } else if a.is_executable() {
+                if let Some(source_path) = source_path {
+                    let name = source_path.file_name().unwrap().to_str().expect("utf-8 target name");
+                    let name = name.strip_suffix(EXE_SUFFIX).unwrap_or(name);
+                    build_bins.push(name);
+                }
+            }
+        }
+
+        if !same_package {
+            flags.push("--workspace".into());
+        }
+        flags.extend(build_bins.iter().map(|name| {
+            log::debug!("building bin for {}", name);
+            format!("--bin={name}")
+        }));
+        if build_libs {
+            flags.push("--lib".into());
+        }
+    }
+
     pub fn resolve_assets(&mut self) -> CDResult<()> {
         for UnresolvedAsset { source_path, c: AssetCommon { target_path, chmod, is_built } } in self.assets.unresolved.drain(..) {
             let source_prefix: PathBuf = source_path.iter()
@@ -584,7 +636,7 @@ impl Config {
                 } else {
                     target_path.clone()
                 };
-                log::debug!("asset {} -> {} {} {:o}", source_file.display(), target_file.display(), if is_built {"build"} else {"copy"}, chmod);
+                log::debug!("asset {} -> {} {} {:o}", source_file.display(), target_file.display(), if is_built == IsBuilt::No {"copy"} else {"build"}, chmod);
                 self.assets.resolved.push(Asset::new(
                     AssetSource::Path(source_file),
                     target_file,
@@ -605,7 +657,7 @@ impl Config {
             AssetSource::Data(copyright_file),
             Path::new("usr/share/doc").join(&self.deb_name).join("copyright"),
             0o644,
-            false,
+            IsBuilt::No,
         ));
         Ok(())
     }
@@ -621,7 +673,7 @@ impl Config {
                     AssetSource::Path(debug_source),
                     debug_target,
                     0o644,
-                    false,
+                    IsBuilt::No,
                 ));
             } else {
                 log::debug!("no debug file {}", debug_source.display());
@@ -639,7 +691,7 @@ impl Config {
                     AssetSource::Data(changelog_file),
                     Path::new("usr/share/doc").join(&self.deb_name).join("changelog.Debian.gz"),
                     0o644,
-                    false,
+                    IsBuilt::No,
                 ));
             }
         }
@@ -651,7 +703,7 @@ impl Config {
             let units_dir_option = config.unit_scripts.as_ref()
                 .or(self.maintainer_scripts.as_ref());
             if let Some(unit_dir) = units_dir_option {
-                let search_path = self.path_in_workspace(unit_dir);
+                let search_path = self.path_in_package(unit_dir);
                 let package = &self.name;
                 let unit_name = config.unit_name.as_deref();
 
@@ -662,7 +714,7 @@ impl Config {
                         AssetSource::Path(source.clone()),
                         target.path.clone(),
                         target.mode,
-                        false,
+                        IsBuilt::No,
                     ));
                 }
             }
@@ -688,7 +740,7 @@ impl Config {
         self.assets.resolved.iter_mut()
             .filter(move |asset| {
                 // Assumes files in build dir which have executable flag set are binaries
-                asset.c.is_built && (asset.c.is_dynamic_library() || asset.c.is_executable())
+                asset.c.is_built != IsBuilt::No && (asset.c.is_dynamic_library() || asset.c.is_executable())
             })
             .collect()
     }
@@ -731,8 +783,8 @@ impl Config {
         path
     }
 
-    pub(crate) fn path_in_workspace<P: AsRef<Path>>(&self, rel_path: P) -> PathBuf {
-        self.manifest_dir.join(rel_path)
+    pub(crate) fn path_in_package<P: AsRef<Path>>(&self, rel_path: P) -> PathBuf {
+        self.pacakge_manifest_dir.join(rel_path)
     }
 
     /// Store intermediate files here
@@ -836,9 +888,10 @@ fn manifest_license_file(package: &cargo_toml::Package<CargoPackageMetadata>, li
     })
 }
 
-fn manifest_take_assets(package: &cargo_toml::Package<CargoPackageMetadata>, options: &Config, assets: Option<Vec<Vec<String>>>, targets: &[CargoMetadataTarget], profile: &str) -> CDResult<Assets> {
-    let profile_target_dir = format!("target/{profile}");
-    Ok(if let Some(assets) = assets {
+impl Config {
+fn take_assets(&mut self, package: &cargo_toml::Package<CargoPackageMetadata>, assets: Option<Vec<Vec<String>>>, build_targets: &[CargoMetadataTarget], profile: &str) -> CDResult<()> {
+    let assets = if let Some(assets) = assets {
+        let profile_target_dir = format!("target/{profile}");
         // Treat all explicit assets as unresolved until after the build step
         let mut unresolved_assets = Vec::with_capacity(assets.len());
         for mut asset_line in assets {
@@ -846,12 +899,12 @@ fn manifest_take_assets(package: &cargo_toml::Package<CargoPackageMetadata>, opt
             let source_path = PathBuf::from(asset_parts.next()
                 .ok_or("missing path (first array entry) for asset in Cargo.toml")?);
             let (is_built, source_path) = if let Ok(rel_path) = source_path.strip_prefix(&profile_target_dir) {
-                (true, options.path_in_build(rel_path, profile))
+                (self.is_built_file_in_package(&rel_path, build_targets), self.path_in_build(rel_path, profile))
             } else {
-                (false, options.path_in_workspace(&source_path))
+                (IsBuilt::No, self.path_in_package(&source_path))
             };
-            let target_path = PathBuf::from(asset_parts.next().ok_or("missing target (second array entry) for asset in Cargo.toml")?);
-            let chmod = u32::from_str_radix(&asset_parts.next().ok_or("missing chmod (third array entry) for asset in Cargo.toml")?, 8)
+            let target_path = PathBuf::from(asset_parts.next().ok_or("missing target (second array entry) for asset in Cargo.toml. Use something like \"usr/local/bin/\".")?);
+            let chmod = u32::from_str_radix(&asset_parts.next().ok_or("missing chmod (third array entry) for asset in Cargo.toml. Use an octal string like \"777\".")?, 8)
                 .map_err(|e| CargoDebError::NumParse("unable to parse chmod argument", e))?;
 
             unresolved_assets.push(UnresolvedAsset {
@@ -861,23 +914,23 @@ fn manifest_take_assets(package: &cargo_toml::Package<CargoPackageMetadata>, opt
         }
         Assets::with_unresolved_assets(unresolved_assets)
     } else {
-        let mut implied_assets: Vec<_> = targets.iter()
+        let mut implied_assets: Vec<_> = build_targets.iter()
             .filter_map(|t| {
                 if t.crate_types.iter().any(|ty| ty == "bin") && t.kind.iter().any(|k| k == "bin") {
                     Some(Asset::new(
-                        AssetSource::Path(options.path_in_build(&t.name, profile)),
+                        AssetSource::Path(self.path_in_build(&t.name, profile)),
                         Path::new("usr/bin").join(&t.name),
                         0o755,
-                        true,
+                        self.is_built_file_in_package(t.name.as_ref(), build_targets),
                     ))
                 } else if t.crate_types.iter().any(|ty| ty == "cdylib") && t.kind.iter().any(|k| k == "cdylib") {
                     // FIXME: std has constants for the host arch, but not for cross-compilation
                     let lib_name = format!("{DLL_PREFIX}{}{DLL_SUFFIX}", t.name);
                     Some(Asset::new(
-                        AssetSource::Path(options.path_in_build(&lib_name, profile)),
+                        AssetSource::Path(self.path_in_build(&lib_name, profile)),
                         Path::new("usr/lib").join(lib_name),
                         0o644,
-                        true,
+                        self.is_built_file_in_package(t.name.as_ref(), build_targets),
                     ))
                 } else {
                     None
@@ -889,11 +942,27 @@ fn manifest_take_assets(package: &cargo_toml::Package<CargoPackageMetadata>, opt
             let target_path = Path::new("usr/share/doc")
                 .join(&package.name)
                 .join(path.file_name().ok_or("bad README path")?);
-            implied_assets.push(Asset::new(AssetSource::Path(path), target_path, 0o644, false));
+            implied_assets.push(Asset::new(AssetSource::Path(path), target_path, 0o644, IsBuilt::No));
         }
         Assets::with_resolved_assets(implied_assets)
-    })
+    };
+    if assets.is_empty() {
+        return Err("No binaries or cdylibs found. The package is empty. Please specify some assets to package in Cargo.toml".into());
+    }
+    self.assets = assets;
+    Ok(())
 }
+    fn is_built_file_in_package(&self, rel_path: &Path, build_targets: &[CargoMetadataTarget]) -> IsBuilt {
+        let source_name = rel_path.file_name().expect("asset filename").to_str().expect("utf-8 names");
+        let source_name = source_name.strip_suffix(EXE_SUFFIX).unwrap_or(source_name);
+        if build_targets.iter().filter(|t| t.name == source_name).any(|t| t.src_path.starts_with(&self.pacakge_manifest_dir)) {
+            IsBuilt::SamePackage
+        } else {
+            IsBuilt::Workspace
+        }
+    }
+}
+
 
 /// Debian-compatible version of the semver version
 fn manifest_version_string(package: &cargo_toml::Package<CargoPackageMetadata>, revision: Option<String>) -> String {
@@ -1031,6 +1100,7 @@ struct CargoMetadataTarget {
     pub name: String,
     pub kind: Vec<String>,
     pub crate_types: Vec<String>,
+    pub src_path: PathBuf,
 }
 
 /// Returns the path of the `Cargo.toml` that we want to build.
@@ -1128,19 +1198,19 @@ mod tests {
             AssetSource::Path(PathBuf::from("target/release/bar")),
             PathBuf::from("baz/"),
             0o644,
-            true,
+            IsBuilt::SamePackage,
         );
         assert_eq!("baz/bar", a.c.target_path.to_str().unwrap());
-        assert!(a.c.is_built);
+        assert!(a.c.is_built != IsBuilt::No);
 
         let a = Asset::new(
             AssetSource::Path(PathBuf::from("foo/bar")),
             PathBuf::from("/baz/quz"),
             0o644,
-            false,
+            IsBuilt::No,
         );
         assert_eq!("baz/quz", a.c.target_path.to_str().unwrap());
-        assert!(!a.c.is_built);
+        assert!(a.c.is_built == IsBuilt::No);
     }
 
     /// Tests that getting the debug filename from a path returns the same path
@@ -1159,7 +1229,7 @@ mod tests {
             AssetSource::Path(PathBuf::from("target/release/bar")),
             PathBuf::from("/usr/bin/baz/"),
             0o644,
-            true,
+            IsBuilt::SamePackage,
         );
         let debug_target = a.c.debug_target().expect("Got unexpected None");
         assert_eq!(debug_target, Path::new("/usr/lib/debug/usr/bin/baz/bar.debug"));
@@ -1173,7 +1243,7 @@ mod tests {
             AssetSource::Path(PathBuf::from("target/release/bar")),
             PathBuf::from("baz/"),
             0o644,
-            true,
+            IsBuilt::Workspace,
         );
         let debug_target = a.c.debug_target().expect("Got unexpected None");
         assert_eq!(debug_target, Path::new("/usr/lib/debug/baz/bar.debug"));
@@ -1187,7 +1257,7 @@ mod tests {
             AssetSource::Path(PathBuf::from("target/release/bar")),
             PathBuf::from("baz/"),
             0o644,
-            false,
+            IsBuilt::No,
         );
 
         assert_eq!(a.c.debug_target(), None);

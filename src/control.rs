@@ -24,7 +24,7 @@ pub fn generate_archive(options: &Config, time: u64, asset_hashes: HashMap<PathB
     }
     generate_scripts(&mut archive, options, listener)?;
     if let Some(ref file) = options.triggers_file {
-        let triggers_file = &options.manifest_dir.as_path().join(file);
+        let triggers_file = &options.pacakge_manifest_dir.as_path().join(file);
         if !triggers_file.exists() {
             return Err(CargoDebError::AssetFileNotFound(file.to_path_buf()));
         }
@@ -52,7 +52,7 @@ pub fn generate_archive(options: &Config, time: u64, asset_hashes: HashMap<PathB
 /// should be inserted.
 fn generate_scripts(archive: &mut Archive, option: &Config, listener: &dyn Listener) -> CDResult<()> {
     if let Some(ref maintainer_scripts_dir) = option.maintainer_scripts {
-        let maintainer_scripts_dir = option.manifest_dir.as_path().join(maintainer_scripts_dir);
+        let maintainer_scripts_dir = option.pacakge_manifest_dir.as_path().join(maintainer_scripts_dir);
         let mut scripts;
 
         if let Some(systemd_units_config) = &option.systemd_units {
@@ -268,7 +268,7 @@ mod tests {
     //         Cargo.toml
 
     use super::*;
-    use crate::manifest::{Asset, AssetSource, SystemdUnitsConfig};
+    use crate::manifest::{Asset, AssetSource, SystemdUnitsConfig, IsBuilt};
     use crate::util::tests::{add_test_fs_paths, set_test_fs_path_content};
     use std::io::prelude::Read;
 
@@ -323,7 +323,7 @@ mod tests {
         // to the absolute path we find ourselves in at test run time, but
         // instead have to match exactly the paths looked up based on the
         // value of the manifest dir.
-        config.manifest_dir = config.manifest_dir.strip_prefix(env!("CARGO_MANIFEST_DIR")).unwrap().to_path_buf();
+        config.pacakge_manifest_dir = config.pacakge_manifest_dir.strip_prefix(env!("CARGO_MANIFEST_DIR")).unwrap().to_path_buf();
 
         let ar = Archive::new(0);
 
@@ -495,7 +495,7 @@ mod tests {
         // make the unit file available for systemd unit processing
         let source = AssetSource::Path(PathBuf::from(service_file));
         let target_path = PathBuf::from(format!("lib/systemd/system/{}", filename_from_path_str(service_file)));
-        config.assets.resolved.push(Asset::new(source, target_path, 0o000, false));
+        config.assets.resolved.push(Asset::new(source, target_path, 0o000, IsBuilt::No));
 
         // look in the current dir for maintainer scripts (none, but the systemd
         // unit processing will be skipped if we don't set this)
