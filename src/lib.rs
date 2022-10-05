@@ -89,10 +89,10 @@ pub fn remove_deb_temp_directory(options: &Config) {
 }
 
 /// Builds a binary with `cargo build`
-pub fn cargo_build(options: &Config, target: Option<&str>, build_flags: &[String], verbose: bool) -> CDResult<()> {
+pub fn cargo_build(options: &Config, target: Option<&str>, build_command: &str, build_flags: &[String], verbose: bool) -> CDResult<()> {
     let mut cmd = Command::new("cargo");
     cmd.current_dir(&options.pacakge_manifest_dir);
-    cmd.arg("build");
+    cmd.arg(build_command);
 
     cmd.args(build_flags);
 

@@ -17,6 +17,7 @@ struct CliOptions {
     variant: Option<String>,
     target: Option<String>,
     manifest_path: Option<String>,
+    cargo_build_cmd: String,
     cargo_build_flags: Vec<String>,
     deb_version: Option<String>,
     deb_revision: Option<String>,
@@ -49,12 +50,13 @@ fn main() {
     cli_opts.optopt("", "deb-revision", "Alternate revision string for package", "revision");
     cli_opts.optflag("", "system-xz", "Compress using command-line xz command instead of built-in");
     cli_opts.optopt("", "profile", "select which project profile to package", "profile");
+    cli_opts.optopt("", "cargo-build", "Override cargo build subcommand", "subcommand");
 
     let matches = match cli_opts.parse(&args[1..]) {
         Ok(m) => m,
         Err(err) => {
             err_exit(&err);
-        },
+        }
     };
     if matches.opt_present("h") {
         print!("{}", cli_opts.usage("Usage: cargo deb [options] [-- <cargo build flags>]"));
@@ -85,6 +87,7 @@ fn main() {
         deb_revision: matches.opt_str("deb-revision"),
         system_xz: matches.opt_present("system-xz"),
         profile: matches.opt_str("profile"),
+        cargo_build_cmd: matches.opt_str("cargo-build").unwrap_or("build".to_string()),
         cargo_build_flags: matches.free,
     }) {
         Ok(()) => {},
@@ -124,6 +127,7 @@ fn process(
         quiet,
         fast,
         verbose,
+        cargo_build_cmd,
         mut cargo_build_flags,
         deb_version,
         deb_revision,
@@ -183,7 +187,7 @@ fn process(
     options.extend_cargo_build_flags(&mut cargo_build_flags);
 
     if !no_build {
-        cargo_build(&options, target, &cargo_build_flags, verbose)?;
+        cargo_build(&options, target, &cargo_build_cmd, &cargo_build_flags, verbose)?;
     }
 
     options.resolve_assets()?;
