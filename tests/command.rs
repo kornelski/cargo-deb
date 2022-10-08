@@ -44,21 +44,23 @@ fn extract_built_package_from_manifest(manifest_path: &str, args: &[&str]) -> (T
         .status().unwrap().success());
 
     assert_eq!("2.0\n", fs::read_to_string(ardir.path().join("debian-binary")).unwrap());
-    assert!(ardir.path().join("data.tar.xz").exists());
-    assert!(ardir.path().join("control.tar.xz").exists());
+
+    let ext = if cfg!(feature = "lzma") { "xz" } else { "gz" };
+    assert!(ardir.path().join(format!("data.tar.{ext}")).exists());
+    assert!(ardir.path().join(format!("control.tar.{ext}")).exists());
 
     let cdir = tempfile::tempdir().unwrap();
     assert!(Command::new("tar")
         .arg("xf")
         .current_dir(cdir.path())
-        .arg(ardir.path().join("control.tar.xz"))
+        .arg(ardir.path().join(format!("control.tar.{ext}")))
         .status().unwrap().success());
 
     let ddir = tempfile::tempdir().unwrap();
     assert!(Command::new("tar")
         .arg("xJf")
         .current_dir(ddir.path())
-        .arg(ardir.path().join("data.tar.xz"))
+        .arg(ardir.path().join(format!("data.tar.{ext}")))
         .status().unwrap().success());
 
     (cdir, ddir)
@@ -136,14 +138,15 @@ fn run_cargo_deb_command_on_example_dir_with_variant() {
         .status().unwrap().success());
 
     assert_eq!("2.0\n", fs::read_to_string(ardir.path().join("debian-binary")).unwrap());
-    assert!(ardir.path().join("data.tar.xz").exists());
-    assert!(ardir.path().join("control.tar.xz").exists());
+    let ext = if cfg!(feature = "lzma") { "xz" } else { "gz" };
+    assert!(ardir.path().join(format!("data.tar.{ext}")).exists());
+    assert!(ardir.path().join(format!("control.tar.{ext}")).exists());
 
     let cdir = tempfile::tempdir().unwrap();
     assert!(Command::new("tar")
         .arg("xJf")
         .current_dir(cdir.path())
-        .arg(ardir.path().join("control.tar.xz"))
+        .arg(ardir.path().join(format!("control.tar.{ext}")))
         .status().unwrap().success());
 
     let control = fs::read_to_string(cdir.path().join("control")).unwrap();
@@ -165,7 +168,7 @@ fn run_cargo_deb_command_on_example_dir_with_variant() {
     assert!(Command::new("tar")
         .arg("xJf")
         .current_dir(ddir.path())
-        .arg(ardir.path().join("data.tar.xz"))
+        .arg(ardir.path().join(format!("data.tar.{ext}")))
         .status().unwrap().success());
 
     assert!(ddir.path().join("var/lib/example/1.txt").exists());
@@ -208,15 +211,16 @@ fn run_cargo_deb_command_on_example_dir_with_version() {
         .arg(deb_path)
         .status().unwrap().success());
 
+    let ext = if cfg!(feature = "lzma") { "xz" } else { "gz" };
     assert_eq!("2.0\n", fs::read_to_string(ardir.path().join("debian-binary")).unwrap());
-    assert!(ardir.path().join("data.tar.xz").exists());
-    assert!(ardir.path().join("control.tar.xz").exists());
+    assert!(ardir.path().join(format!("data.tar.{ext}")).exists());
+    assert!(ardir.path().join(format!("control.tar.{ext}")).exists());
 
     let cdir = tempfile::tempdir().unwrap();
     assert!(Command::new("tar")
         .arg("xf")
         .current_dir(cdir.path())
-        .arg(ardir.path().join("control.tar.xz"))
+        .arg(ardir.path().join(format!("control.tar.{ext}")))
         .status().unwrap().success());
 
     let control = fs::read_to_string(cdir.path().join("control")).unwrap();
@@ -238,7 +242,7 @@ fn run_cargo_deb_command_on_example_dir_with_version() {
     assert!(Command::new("tar")
         .arg("xJf")
         .current_dir(ddir.path())
-        .arg(ardir.path().join("data.tar.xz"))
+        .arg(ardir.path().join(format!("data.tar.{ext}")))
         .status().unwrap().success());
 
     assert!(ddir.path().join("var/lib/example/1.txt").exists());
