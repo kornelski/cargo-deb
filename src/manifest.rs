@@ -6,6 +6,7 @@ use crate::listener::Listener;
 use crate::ok_or::OkOrThen;
 use crate::pathbytes::AsUnixPathBytes;
 use crate::util::read_file_to_bytes;
+use cargo_toml::DebugSetting;
 use cargo_toml::OptionalFile;
 use rayon::prelude::*;
 use serde::Deserialize;
@@ -463,7 +464,7 @@ impl Config {
         manifest_check_config(package, package_manifest_dir, &deb, listener);
         let extended_description = manifest_extended_description(
             deb.extended_description.take(),
-            deb.extended_description_file.as_deref().or(package.readme.as_ref()),
+            deb.extended_description_file.as_deref().or(package.readme().as_ref()),
         )?;
         let mut config = Config {
             pacakge_manifest_dir: package_manifest_dir.to_owned(),
@@ -473,22 +474,22 @@ impl Config {
             name: package.name.clone(),
             deb_name: deb.name.take().unwrap_or_else(|| package.name.clone()),
             deb_version: deb_version.unwrap_or_else(|| manifest_version_string(package, deb_revision.or(deb.revision))),
-            license: package.license.take(),
+            license: package.license.take().map(|v| v.unwrap()),
             license_file,
             license_file_skip_lines,
             copyright: deb.copyright.take().ok_or_then(|| {
-                if package.authors.is_empty() {
+                if package.authors().is_empty() {
                     return Err("The package must have a copyright or authors property".into());
                 }
-                Ok(package.authors.join(", "))
+                Ok(package.authors().join(", "))
             })?,
-            homepage: package.homepage.clone(),
-            documentation: package.documentation.clone(),
-            repository: package.repository.take(),
-            description: package.description.take().unwrap_or_else(||format!("[generated from Rust crate {}]", package.name)),
+            homepage: package.homepage().map(From::from),
+            documentation: package.documentation().map(From::from),
+            repository: package.repository.take().map(|v| v.unwrap()),
+            description: package.description.take().map(|v| v.unwrap()).unwrap_or_else(||format!("[generated from Rust crate {}]", package.name)),
             extended_description,
             maintainer: deb.maintainer.take().ok_or_then(|| {
-                Ok(package.authors.get(0)
+                Ok(package.authors().get(0)
                     .ok_or("The package must have a maintainer or authors property")?.to_owned())
             })?,
             depends: deb.depends.take().unwrap_or_else(|| "$auto".to_owned()),
@@ -828,19 +829,18 @@ impl Config {
 fn debug_flag(manifest: &cargo_toml::Manifest<CargoPackageMetadata>) -> bool {
     manifest.profile.release.as_ref()
         .and_then(|r| r.debug.as_ref())
-        .map_or(false, |debug| match *debug {
-            toml::Value::Integer(0) => false,
-            toml::Value::Boolean(value) => value,
+        .map_or(false, |debug| match debug {
+            DebugSetting::None => false,
             _ => true,
         })
 }
 
 fn manifest_check_config(package: &cargo_toml::Package<CargoPackageMetadata>, manifest_dir: &Path, deb: &CargoDeb, listener: &dyn Listener) {
-    let readme = package.readme.as_ref();
-    if package.description.is_none() {
+    let readme = package.readme().as_ref();
+    if package.description().is_none() {
         listener.warning("description field is missing in Cargo.toml".to_owned());
     }
-    if package.license.is_none() && package.license_file.is_none() {
+    if package.license().is_none() && package.license_file().is_none() {
         listener.warning("license field is missing in Cargo.toml".to_owned());
     }
     if let Some(readme) = readme {
@@ -883,7 +883,7 @@ fn manifest_license_file(package: &cargo_toml::Package<CargoPackageMetadata>, li
             (Some(s.into()), 0)
         }
         None => {
-            (package.license_file.as_ref().map(|s| s.into()), 0)
+            (package.license_file().as_ref().map(|s| s.into()), 0)
         }
     })
 }
@@ -937,7 +937,7 @@ fn take_assets(&mut self, package: &cargo_toml::Package<CargoPackageMetadata>, a
                 }
             })
             .collect();
-        if let OptionalFile::Path(readme) = &package.readme {
+        if let OptionalFile::Path(readme) = package.readme() {
             let path = PathBuf::from(readme);
             let target_path = Path::new("usr/share/doc")
                 .join(&package.name)
@@ -967,7 +967,7 @@ fn take_assets(&mut self, package: &cargo_toml::Package<CargoPackageMetadata>, a
 /// Debian-compatible version of the semver version
 fn manifest_version_string(package: &cargo_toml::Package<CargoPackageMetadata>, revision: Option<String>) -> String {
     let debianized_version;
-    let mut version = &package.version;
+    let mut version = package.version();
 
     // Make debian's version ordering (newer versions) more compatible with semver's.
     // Keep "semver-1" and "semver-xxx" as-is (assuming these are irrelevant, or debian revision already),
@@ -1354,10 +1354,10 @@ fn deb_ver() {
     let mut c = cargo_toml::Package::new("test", "1.2.3-1");
     assert_eq!("1.2.3-1", manifest_version_string(&c, None));
     assert_eq!("1.2.3-1-2", manifest_version_string(&c, Some("2".into())));
-    c.version = "1.2.0-beta.3".into();
+    c.version = cargo_toml::Inheritable::Set("1.2.0-beta.3".into());
     assert_eq!("1.2.0~beta.3", manifest_version_string(&c, None));
     assert_eq!("1.2.0~beta.3-4", manifest_version_string(&c, Some("4".into())));
-    c.version = "1.2.0-new".into();
+    c.version = cargo_toml::Inheritable::Set("1.2.0-new".into());
     assert_eq!("1.2.0-new", manifest_version_string(&c, None));
     assert_eq!("1.2.0-new-11", manifest_version_string(&c, Some("11".into())));
 }
