@@ -15,8 +15,8 @@ use std::io::Write;
 use std::path::{Path, PathBuf};
 
 /// Generates an uncompressed tar archive with `control`, `md5sums`, and others
-pub fn generate_archive(options: &Config, time: u64, asset_hashes: HashMap<PathBuf, Digest>, listener: &dyn Listener) -> CDResult<Vec<u8>> {
-    let mut archive = Archive::new(time);
+pub fn generate_archive<W: Write>(dest: W, options: &Config, time: u64, asset_hashes: HashMap<PathBuf, Digest>, listener: &dyn Listener) -> CDResult<W> {
+    let mut archive = Archive::new(dest, time);
     generate_md5sums(&mut archive, options, asset_hashes)?;
     generate_control(&mut archive, options, listener)?;
     if let Some(ref files) = options.conf_files {
@@ -50,7 +50,7 @@ pub fn generate_archive(options: &Config, time: u64, asset_hashes: HashMap<PathB
 /// When `systemd_units` is configured, user supplied `maintainer_scripts` must
 /// contain a `#DEBHELPER#` token at the point where shell script fragments
 /// should be inserted.
-fn generate_scripts(archive: &mut Archive, option: &Config, listener: &dyn Listener) -> CDResult<()> {
+fn generate_scripts<W: Write>(archive: &mut Archive<W>, option: &Config, listener: &dyn Listener) -> CDResult<()> {
     if let Some(ref maintainer_scripts_dir) = option.maintainer_scripts {
         let maintainer_scripts_dir = option.pacakge_manifest_dir.as_path().join(maintainer_scripts_dir);
         let mut scripts;
@@ -107,7 +107,7 @@ fn generate_scripts(archive: &mut Archive, option: &Config, listener: &dyn Liste
 }
 
 /// Creates the md5sums file which contains a list of all contained files and the md5sums of each.
-fn generate_md5sums(archive: &mut Archive, options: &Config, asset_hashes: HashMap<PathBuf, Digest>) -> CDResult<()> {
+fn generate_md5sums<W: Write>(archive: &mut Archive<W>, options: &Config, asset_hashes: HashMap<PathBuf, Digest>) -> CDResult<()> {
     let mut md5sums: Vec<u8> = Vec::new();
 
     // Collect md5sums from each asset in the archive (excludes symlinks).
@@ -127,7 +127,7 @@ fn generate_md5sums(archive: &mut Archive, options: &Config, asset_hashes: HashM
 }
 
 /// Generates the control file that obtains all the important information about the package.
-fn generate_control(archive: &mut Archive, options: &Config, listener: &dyn Listener) -> CDResult<()> {
+fn generate_control<W: Write>(archive: &mut Archive<W>, options: &Config, listener: &dyn Listener) -> CDResult<()> {
     // Create and return the handle to the control file with write access.
     let mut control: Vec<u8> = Vec::with_capacity(1024);
 
@@ -227,7 +227,7 @@ fn generate_control(archive: &mut Archive, options: &Config, listener: &dyn List
 }
 
 /// If configuration files are required, the conffiles file will be created.
-fn generate_conf_files(archive: &mut Archive, files: &str) -> CDResult<()> {
+fn generate_conf_files<W: Write>(archive: &mut Archive<W>, files: &str) -> CDResult<()> {
     let mut data = Vec::new();
     data.write_all(files.as_bytes())?;
     data.push(b'\n');
@@ -235,7 +235,7 @@ fn generate_conf_files(archive: &mut Archive, files: &str) -> CDResult<()> {
     Ok(())
 }
 
-fn generate_triggers_file(archive: &mut Archive, path: &Path) -> CDResult<()> {
+fn generate_triggers_file<W: Write>(archive: &mut Archive<W>, path: &Path) -> CDResult<()> {
     if let Ok(content) = fs::read(path) {
         archive.file("./triggers", &content, 0o644)?;
     }
@@ -301,7 +301,7 @@ mod tests {
         out
     }
 
-    fn prepare(package_name: Option<&str>) -> (Config, crate::listener::MockListener, Archive) {
+    fn prepare<W: Write>(dest: W, package_name: Option<&str>) -> (Config, crate::listener::MockListener, Archive<W>) {
         let mut mock_listener = crate::listener::MockListener::new();
         mock_listener.expect_info().return_const(());
 
@@ -325,14 +325,14 @@ mod tests {
         // value of the manifest dir.
         config.pacakge_manifest_dir = config.pacakge_manifest_dir.strip_prefix(env!("CARGO_MANIFEST_DIR")).unwrap().to_path_buf();
 
-        let ar = Archive::new(0);
+        let ar = Archive::new(dest, 0);
 
         (config, mock_listener, ar)
     }
 
     #[test]
     fn generate_scripts_does_nothing_if_maintainer_scripts_is_not_set() {
-        let (config, mock_listener, mut in_ar) = prepare(None);
+        let (config, mock_listener, mut in_ar) = prepare(vec![], None);
 
         // supply a maintainer script as if it were available on disk
         let _g = add_test_fs_paths(&["debian/postinst"]);
@@ -377,8 +377,8 @@ mod tests {
         generate_scripts_for_package_without_systemd_unit(Some("testchild"), &maintainer_script_paths);
     }
 
-    fn generate_scripts_for_package_without_systemd_unit(package_name: Option<&str>, maintainer_script_paths: &Vec<&'static str>) {
-        let (mut config, mock_listener, mut in_ar) = prepare(package_name);
+    fn generate_scripts_for_package_without_systemd_unit(package_name: Option<&str>, maintainer_script_paths: &[&'static str]) {
+        let (mut config, mock_listener, mut in_ar) = prepare(vec![], package_name);
 
         // supply a maintainer script as if it were available on disk
         // provide file content that we can easily verify
@@ -478,7 +478,7 @@ mod tests {
         maintainer_scripts: &[(&'static str, Option<&'static str>)],
         service_file: &'static str,
     ) {
-        let (mut config, mock_listener, mut in_ar) = prepare(package_name);
+        let (mut config, mock_listener, mut in_ar) = prepare(vec![], package_name);
 
         // supply a maintainer script as if it were available on disk
         // provide file content that we can easily verify

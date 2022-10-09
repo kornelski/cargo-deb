@@ -207,14 +207,14 @@ fn process(
     deb_contents.add_data("debian-binary", system_time, b"2.0\n")?;
 
     // Initialize the contents of the data archive (files that go into the filesystem).
-    let (data_archive, asset_hashes) = data::generate_archive(&options, system_time, listener)?;
+    let (data_archive, asset_hashes) = data::generate_archive(vec![], &options, system_time, listener)?;
     let original = data_archive.len();
 
     let options = &options;
     let (control_compressed, data_compressed) = rayon::join(
         move || {
             // The control archive is the metadata for the package manager
-            let control_archive = control::generate_archive(options, system_time, asset_hashes, listener)?;
+            let control_archive = control::generate_archive(vec![], options, system_time, asset_hashes, listener)?;
             compress::xz_or_gz(&control_archive, fast, system_xz)
         },
         move || compress::xz_or_gz(&data_archive, fast, system_xz),

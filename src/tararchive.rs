@@ -1,22 +1,23 @@
-use crate::error::*;
+use std::io::Write;
+use crate::error::CDResult;
 use std::collections::HashSet;
 use std::io;
 use std::path::{Component, Path, PathBuf};
 use tar::EntryType;
 use tar::Header as TarHeader;
 
-pub struct Archive {
+pub struct Archive<W: Write> {
     added_directories: HashSet<PathBuf>,
     time: u64,
-    tar: tar::Builder<Vec<u8>>,
+    tar: tar::Builder<W>,
 }
 
-impl Archive {
-    pub fn new(time: u64) -> Self {
+impl<W: Write> Archive<W> {
+    pub fn new(dest: W, time: u64) -> Self {
         Self {
             added_directories: HashSet::new(),
             time,
-            tar: tar::Builder::new(Vec::new()),
+            tar: tar::Builder::new(dest),
         }
     }
 
@@ -83,7 +84,7 @@ impl Archive {
         Ok(())
     }
 
-    pub fn into_inner(self) -> io::Result<Vec<u8>> {
+    pub fn into_inner(self) -> io::Result<W> {
         self.tar.into_inner()
     }
 }
