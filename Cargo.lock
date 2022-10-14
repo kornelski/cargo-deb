@@ -54,7 +54,7 @@ checksum = "14c189c53d098945499cdfa7ecc63567cf3886b3332b312a5b4585d8d3a6a610"
 
 [[package]]
 name = "cargo-deb"
-version = "1.40.2"
+version = "1.40.3"
 dependencies = [
  "ar",
  "cargo_toml",
@@ -82,9 +82,9 @@ dependencies = [
 
 [[package]]
 name = "cargo_toml"
-version = "0.13.0-beta.2"
+version = "0.13.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2c0ff61241fc40e5a789d1fb7fd4a3fdc7675bb3806ea6ff0df3971cb57249d8"
+checksum = "aa0e3586af56b3bfa51fca452bd56e8dbbbd5d8d81cbf0b7e4e35b695b537eb8"
 dependencies = [
  "serde",
  "toml",

@@ -1,7 +1,7 @@
 use crate::config::CargoConfig;
 use crate::dependencies::resolve;
 use crate::dh_installsystemd;
-use crate::error::*;
+use crate::error::{CDResult, CargoDebError};
 use crate::listener::Listener;
 use crate::ok_or::OkOrThen;
 use crate::pathbytes::AsUnixPathBytes;
@@ -12,7 +12,6 @@ use rayon::prelude::*;
 use serde::Deserialize;
 use std::borrow::Cow;
 use std::collections::{HashMap, HashSet};
-use std::convert::From;
 use std::env::consts::EXE_SUFFIX;
 use std::env::consts::{DLL_PREFIX, DLL_SUFFIX};
 use std::fs;
@@ -402,14 +401,16 @@ impl Config {
             .ok_or_else(|| CargoDebError::NoRootFoundInWorkspace(available_package_names()))
         }?;
         let workspace_root_manifest_path = Path::new(&metadata.workspace_root).join("Cargo.toml");
-        let workspace_root_manifest = cargo_toml::Manifest::<CargoPackageMetadata>::from_path_with_metadata(workspace_root_manifest_path).ok();
+        let workspace_root_manifest = cargo_toml::Manifest::<CargoPackageMetadata>::from_path_with_metadata(&workspace_root_manifest_path).ok();
 
         let target_dir = Path::new(&metadata.target_directory);
         let manifest_path = Path::new(&target_package.manifest_path);
         let package_manifest_dir = manifest_path.parent().unwrap();
-        let mut manifest = cargo_toml::Manifest::<CargoPackageMetadata>::from_path_with_metadata(manifest_path)?;
+        let mut manifest = cargo_toml::Manifest::<CargoPackageMetadata>::from_path_with_metadata(manifest_path)
+            .map_err(|e| CargoDebError::TomlParsing(e, manifest_path.into()))?;
         if let Some(ws) = &workspace_root_manifest {
-            manifest.inherit_workspace(ws, Path::new(&metadata.workspace_root))?;
+            manifest.inherit_workspace(ws, Path::new(&metadata.workspace_root))
+                .map_err(move |e| CargoDebError::TomlParsing(e, workspace_root_manifest_path))?;
         }
         Self::from_manifest_inner(manifest, workspace_root_manifest.as_ref(), target_package, package_manifest_dir, output_path, target_dir, target, variant, deb_version, deb_revision, listener, selected_profile)
     }

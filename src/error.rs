@@ -13,9 +13,8 @@ quick_error! {
             display("I/O error: {}", err)
             source(err)
         }
-        TomlParsing(err: cargo_toml::Error) {
-            from()
-            display("Unable to parse Cargo.toml")
+        TomlParsing(err: cargo_toml::Error, path: PathBuf) {
+            display("Unable to parse {}", path.display())
             source(err)
         }
         IoFile(msg: &'static str, err: io::Error, file: PathBuf) {
