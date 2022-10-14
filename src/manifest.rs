@@ -407,7 +407,10 @@ impl Config {
         let target_dir = Path::new(&metadata.target_directory);
         let manifest_path = Path::new(&target_package.manifest_path);
         let package_manifest_dir = manifest_path.parent().unwrap();
-        let manifest = cargo_toml::Manifest::<CargoPackageMetadata>::from_path_with_metadata(manifest_path)?;
+        let mut manifest = cargo_toml::Manifest::<CargoPackageMetadata>::from_path_with_metadata(manifest_path)?;
+        if let Some(ws) = &workspace_root_manifest {
+            manifest.inherit_workspace(ws, Path::new(&metadata.workspace_root))?;
+        }
         Self::from_manifest_inner(manifest, workspace_root_manifest.as_ref(), target_package, package_manifest_dir, output_path, target_dir, target, variant, deb_version, deb_revision, listener, selected_profile)
     }
 
@@ -464,7 +467,7 @@ impl Config {
         manifest_check_config(package, package_manifest_dir, &deb, listener);
         let extended_description = manifest_extended_description(
             deb.extended_description.take(),
-            deb.extended_description_file.as_deref().or(package.readme().as_ref()),
+            deb.extended_description_file.as_ref().map(Path::new).or(package.readme().as_path()),
         )?;
         let mut config = Config {
             pacakge_manifest_dir: package_manifest_dir.to_owned(),
@@ -836,7 +839,7 @@ fn debug_flag(manifest: &cargo_toml::Manifest<CargoPackageMetadata>) -> bool {
 }
 
 fn manifest_check_config(package: &cargo_toml::Package<CargoPackageMetadata>, manifest_dir: &Path, deb: &CargoDeb, listener: &dyn Listener) {
-    let readme = package.readme().as_ref();
+    let readme = package.readme().as_path();
     if package.description().is_none() {
         listener.warning("description field is missing in Cargo.toml".to_owned());
     }
@@ -845,7 +848,7 @@ fn manifest_check_config(package: &cargo_toml::Package<CargoPackageMetadata>, ma
     }
     if let Some(readme) = readme {
         if deb.extended_description.is_none() && deb.extended_description_file.is_none() && (readme.ends_with(".md") || readme.ends_with(".markdown")) {
-            listener.info(format!("extended-description field missing. Using {readme}, but markdown may not render well."));
+            listener.info(format!("extended-description field missing. Using {}, but markdown may not render well.", readme.display()));
         }
     } else {
         for p in &["README.md", "README.markdown", "README.txt", "README"] {
@@ -857,7 +860,7 @@ fn manifest_check_config(package: &cargo_toml::Package<CargoPackageMetadata>, ma
     }
 }
 
-fn manifest_extended_description(desc: Option<String>, desc_file: Option<&str>) -> CDResult<Option<String>> {
+fn manifest_extended_description(desc: Option<String>, desc_file: Option<&Path>) -> CDResult<Option<String>> {
     Ok(if desc.is_some() {
         desc
     } else if let Some(desc_file) = desc_file {

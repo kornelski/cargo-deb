@@ -54,7 +54,7 @@ checksum = "14c189c53d098945499cdfa7ecc63567cf3886b3332b312a5b4585d8d3a6a610"
 
 [[package]]
 name = "cargo-deb"
-version = "1.40.1-alpha.1"
+version = "1.40.1"
 dependencies = [
  "ar",
  "cargo_toml",
@@ -82,9 +82,9 @@ dependencies = [
 
 [[package]]
 name = "cargo_toml"
-version = "0.13.0-alpha.1"
+version = "0.13.0-beta.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f5448cb54abe0479b30b1f25f51a83768ae351f924d8f85d193a1b3940b64094"
+checksum = "fa136faf09981f42b50ee8d1751ad27b381743d2d6f753a5c126e2fcb24af31b"
 dependencies = [
  "serde",
  "toml",
@@ -390,9 +390,9 @@ checksum = "e2abad23fbc42b3700f2f279844dc832adb2b2eb069b2df918f455c4e18cc646"
 
 [[package]]
 name = "libc"
-version = "0.2.134"
+version = "0.2.135"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "329c933548736bc49fd575ee68c89e8be4d260064184389a5b77517cddd99ffb"
+checksum = "68783febc7782c6c5cb401fbda4de5a9898be1762314da0bb2c10ced61f18b0c"
 
 [[package]]
 name = "log"
@@ -692,9 +692,9 @@ dependencies = [
 
 [[package]]
 name = "serde_json"
-version = "1.0.85"
+version = "1.0.86"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e55a28e3aaef9d5ce0506d0a14dbba8054ddc7e499ef522dd8b26859ec9d4a44"
+checksum = "41feea4228a6f1cd09ec7a3593a682276702cd67b5273544757dae23c096f074"
 dependencies = [
  "itoa",
  "ryu",

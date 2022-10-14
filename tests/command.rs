@@ -9,9 +9,13 @@ use tempfile::TempDir;
 
 #[test]
 fn build_workspaces() {
-    let (_, ddir) = extract_built_package_from_manifest("tests/test-workspace/test-ws1/Cargo.toml", &["--no-strip"]);
+    let (cdir, ddir) = extract_built_package_from_manifest("tests/test-workspace/test-ws1/Cargo.toml", &["--no-strip", "--fast"]);
     assert!(ddir.path().join("usr/local/bin/renamed2").exists());
     assert!(ddir.path().join("usr/local/bin/decoy").exists());
+
+    let control = fs::read_to_string(cdir.path().join("control")).unwrap();
+    assert!(control.contains("Version: 1.0.0-ws\n"));
+    assert!(control.contains("Maintainer: ws\n"));
 
     let (_, ddir) = extract_built_package_from_manifest("tests/test-workspace/test-ws2/Cargo.toml", &["--no-strip"]);
     assert!(ddir.path().join("usr/bin/renamed2").exists());
