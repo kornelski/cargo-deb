@@ -13,8 +13,7 @@ impl ops::Deref for Compressed {
 
     fn deref(&self) -> &Self::Target {
         match self {
-            Self::Gz(data) |
-            Self::Xz(data) => data,
+            Self::Gz(data) | Self::Xz(data) => data,
         }
     }
 }
@@ -55,11 +54,24 @@ pub fn xz_or_gz(data: &[u8], fast: bool, with_system_xz: bool) -> CDResult<Compr
         return system_xz(data, fast);
     }
 
+    use std::num::NonZeroU8;
     use zopfli::{Format, Options};
 
     // Compressed data is typically half to a third the original size
     let mut compressed = Vec::with_capacity(data.len() >> 1);
-    zopfli::compress(&Options::default(), &Format::Gzip, data, &mut compressed)?;
+    zopfli::compress(
+        &if fast {
+            Options {
+                iteration_count: NonZeroU8::new(5).unwrap(),
+                maximum_block_splits: 5,
+            }
+        } else {
+            Options::default()
+        },
+        &Format::Gzip,
+        data,
+        &mut compressed,
+    )?;
 
     Ok(Compressed::Gz(compressed))
 }
