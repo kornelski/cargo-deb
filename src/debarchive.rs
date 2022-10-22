@@ -1,21 +1,18 @@
+use ar::{Builder, Header};
 use crate::error::CDResult;
 use crate::manifest::Config;
-use crate::pathbytes::*;
-use ar::{Builder, Header};
-use std::fs;
 use std::fs::File;
-use std::path::{Path, PathBuf};
+use std::fs;
+use std::path::PathBuf;
 
 pub struct DebArchive {
     out_abspath: PathBuf,
-    prefix: PathBuf,
     ar_builder: Builder<File>,
 }
 
 impl DebArchive {
     pub fn new(config: &Config) -> CDResult<Self> {
         let out_filename = format!("{}_{}_{}.deb", config.deb_name, config.deb_version, config.architecture);
-        let prefix = config.deb_temp_dir();
         let out_abspath = config.deb_output_path(&out_filename);
         {
             let deb_dir = out_abspath.parent().ok_or("invalid dir")?;
@@ -25,20 +22,12 @@ impl DebArchive {
 
         Ok(DebArchive {
             out_abspath,
-            prefix,
             ar_builder,
         })
     }
 
     pub(crate) fn filename_glob(config: &Config) -> String {
         format!("{}_*_{}.deb", config.deb_name, config.architecture)
-    }
-
-    pub fn add_path(&mut self, path: &Path) -> CDResult<()> {
-        let dest_path = path.strip_prefix(&self.prefix).map_err(|_| "invalid path")?;
-        let mut file = File::open(path)?;
-        self.ar_builder.append_file(&dest_path.as_unix_path(), &mut file)?;
-        Ok(())
     }
 
     pub fn add_data(&mut self, dest_path: &str, mtime_timestamp: u64, data: &[u8]) -> CDResult<()> {
