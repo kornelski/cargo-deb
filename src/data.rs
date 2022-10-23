@@ -131,32 +131,43 @@ pub fn compress_assets(options: &mut Config, listener: &dyn Listener) -> CDResul
 /// Copies all the files to be packaged into the tar archive.
 /// Returns MD5 hashes of files copied
 fn archive_files<W: Write>(archive: &mut Archive<W>, options: &Config, listener: &dyn Listener) -> CDResult<HashMap<PathBuf, Digest>> {
-    let mut hashes = HashMap::new();
-    for asset in &options.assets.resolved {
-        let mut log_line = format!("{} -> {}",
-            asset.source.path().unwrap_or_else(|| Path::new("-")).display(),
-            asset.c.target_path.display()
-        );
-        if let Some(len) = asset.source.file_size() {
-            let (size, unit) = human_size(len);
-            use std::fmt::Write;
-            let _ = write!(&mut log_line, " ({size}{unit})");
-        }
-        listener.info(log_line);
-
-        match &asset.source {
-            AssetSource::Symlink(source_path) => {
-                let link_name = fs::read_link(source_path)?;
-                archive.symlink(&asset.c.target_path, &link_name)?;
+    let (send, recv) = crossbeam_channel::bounded(2);
+    std::thread::scope(move |s| {
+        let num_items = options.assets.resolved.len();
+        let hash_thread = s.spawn(move || {
+            let mut hashes = HashMap::with_capacity(num_items);
+            hashes.extend(recv.into_iter().map(|(path, data)| {
+                (path, md5::compute(&data))
+            }));
+            hashes
+        });
+        for asset in &options.assets.resolved {
+            let mut log_line = format!("{} -> {}",
+                asset.source.path().unwrap_or_else(|| Path::new("-")).display(),
+                asset.c.target_path.display()
+            );
+            if let Some(len) = asset.source.file_size() {
+                let (size, unit) = human_size(len);
+                use std::fmt::Write;
+                let _ = write!(&mut log_line, " ({size}{unit})");
             }
-            _ => {
-                let out_data = asset.source.data()?;
-                hashes.insert(asset.c.target_path.clone(), md5::compute(&out_data));
-                archive.file(&asset.c.target_path, &out_data, asset.c.chmod)?;
-            },
+            listener.info(log_line);
+
+            match &asset.source {
+                AssetSource::Symlink(source_path) => {
+                    let link_name = fs::read_link(source_path)?;
+                    archive.symlink(&asset.c.target_path, &link_name)?;
+                }
+                _ => {
+                    let out_data = asset.source.data()?;
+                    archive.file(&asset.c.target_path, &out_data, asset.c.chmod)?;
+                    send.send((asset.c.target_path.clone(), out_data)).unwrap();
+                },
+            }
         }
-    }
-    Ok(hashes)
+        drop(send);
+        Ok(hash_thread.join().unwrap())
+    })
 }
 
 fn human_size(len: u64) -> (u64, &'static str) {
