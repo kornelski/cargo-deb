@@ -1,4 +1,5 @@
 use cargo_deb::*;
+use cargo_deb::control::ControlArchiveBuilder;
 use std::env;
 use std::path::Path;
 use std::process;
@@ -214,7 +215,10 @@ fn process(
     let (control_compressed, data_compressed) = rayon::join(
         move || {
             // The control archive is the metadata for the package manager
-            let control_archive = control::generate_archive(vec![], options, system_time, asset_hashes, listener)?;
+            let mut builder = ControlArchiveBuilder::new(vec![], system_time, listener);
+            builder.generate_archive(options)?;
+            builder.generate_md5sums(options, asset_hashes)?;
+            let control_archive = builder.finish()?;
             compress::xz_or_gz(&control_archive, fast, system_xz)
         },
         move || compress::xz_or_gz(&data_archive, fast, system_xz),
