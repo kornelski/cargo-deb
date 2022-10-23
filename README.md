@@ -1,14 +1,15 @@
-# Debian packages from Cargo projects [![Build Status](https://travis-ci.org/mmstick/cargo-deb.svg?branch=master)](https://travis-ci.org/mmstick/cargo-deb)
+# Debian packages from Cargo projects
 
 This is a [Cargo](https://doc.rust-lang.org/cargo/) helper command which automatically creates binary [Debian packages](https://www.debian.org/doc/debian-policy/ch-binary.html) (`.deb`) from Cargo projects.
 
 ## Installation
 
 ```sh
+rustup update   # Debian's Rust is too outdated, use rustup.rs
 cargo install cargo-deb
 ```
 
-Requires Rust 1.42+, and optionally `dpkg`, `dpkg-dev` and `liblzma-dev`. Compatible with Ubuntu.
+Requires Rust 1.60+, and optionally `dpkg`, `dpkg-dev` and `liblzma-dev`. Compatible with Ubuntu. If the LZMA dependency causes you headaches, try `cargo install cargo-deb --no-default-features`.
 
 ## Usage
 
@@ -109,11 +110,13 @@ cargo deb --target=i686-unknown-linux-gnu
 
 Cross-compiled archives are saved in `target/<target triple>/debian/*.deb`. The actual archive path is printed on success.
 
-This option works well for crates that either have no library dependencies or don't want to target an older release.  To cross-compile with support for a release older than the host's, consider using a container or VM.
+This option works well for crates that either have no library dependencies or don't want to target an older release. To cross-compile with support for a release older than the host's, consider using a container or a VM.
 
 In `.cargo/config` you can add `[target.<target triple>] strip = { path = "…" } objcopy = { path = "…" }` to specify a path to the architecture-specific `strip` and `objcopy` commands, or use `--no-strip`.
 
 ### Separate debug info
+
+To get debug symbols, set `[profile.release] debug = true` in `Cargo.toml`. Building using the dev profile is intentionally unsupported.
 
     cargo deb --separate-debug-symbols
 
@@ -129,9 +132,7 @@ Flags after `--` are passed to `cargo build`, so you can use options such as `-Z
 
 ### Workspaces
 
-Cargo-deb understands workspaces, but doesn't have sophisticated control for packages in the workspace. [Please leave feedback if you're interested in workspace support](https://github.com/mmstick/cargo-deb/issues/49).
-
-It's possible to build a project in another directory with `cargo deb --manifest-path=<path/to/Cargo.toml>`.
+Cargo-deb understands workspaces and can build all crates in the workspace if necessary. However, you must choose one crate to be the source of the package metadata. You can select which crate to build with `-p crate_name` or `--manifest-path=<path/to/Cargo.toml>`.
 
 ### Custom version strings
 
