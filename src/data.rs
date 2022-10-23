@@ -1,13 +1,15 @@
+use std::io::{Read, self};
 use crate::error::*;
 use crate::listener::Listener;
 use crate::manifest::{Asset, Config, IsBuilt, AssetSource};
 use crate::tararchive::Archive;
+use flate2::Compression;
 use md5::Digest;
 use std::collections::HashMap;
 use std::fs;
 use std::io::Write;
 use std::path::{Path, PathBuf};
-use zopfli::{self, Format, Options};
+use flate2::bufread::GzEncoder;
 
 /// Generates an uncompressed tar archive and hashes of its files
 pub fn generate_archive<W: Write>(dest: W, options: &Config, time: u64, listener: &dyn Listener) -> CDResult<(W, HashMap<PathBuf, Digest>)> {
@@ -22,10 +24,7 @@ pub(crate) fn generate_changelog_asset(options: &Config) -> CDResult<Option<Vec<
         let changelog = fs::read(options.path_in_package(path))
             .and_then(|content| {
                 // The input is plaintext, but the debian package should contain gzipped one.
-                let mut compressed = Vec::with_capacity(content.len());
-                zopfli::compress(&Options::default(), &Format::Gzip, &*content, &mut compressed)?;
-                compressed.shrink_to_fit();
-                Ok(compressed)
+                gzipped(&content)
             })
             .map_err(move |e| CargoDebError::IoFile("unable to read changelog file", e, path.into()))?;
         Ok(Some(changelog))
@@ -102,15 +101,9 @@ pub fn compress_assets(options: &mut Config, listener: &dyn Listener) -> CDResul
         let target_path_str = asset.c.target_path.to_string_lossy();
         if needs_compression(&target_path_str) {
             listener.info(format!("Compressing '{}'", asset.source.path().unwrap_or_else(|| Path::new("-")).display()));
-
-            let content = asset.source.data()?;
-            let mut compressed = Vec::with_capacity(content.len());
-            zopfli::compress(&Options::default(), &Format::Gzip, &*content, &mut compressed)?;
-            compressed.shrink_to_fit();
-
             new_assets.push(Asset::new(
-                crate::manifest::AssetSource::Data(compressed),
-                Path::new(&format!("{target_path_str}.gz")).into(),
+                crate::manifest::AssetSource::Data(gzipped(&asset.source.data()?)?),
+                format!("{target_path_str}.gz").into(),
                 asset.c.chmod,
                 IsBuilt::No,
             ));
@@ -178,4 +171,10 @@ fn human_size(len: u64) -> (u64, &'static str) {
         return ((len + 999) / 1000, "KB");
     }
     ((len + 999_999) / 1_000_000, "MB")
+}
+
+fn gzipped(content: &[u8]) -> io::Result<Vec<u8>> {
+    let mut compressed = Vec::with_capacity(content.len() * 2 / 3);
+    GzEncoder::new(content, Compression::default()).read_to_end(&mut compressed)?;
+    Ok(compressed)
 }

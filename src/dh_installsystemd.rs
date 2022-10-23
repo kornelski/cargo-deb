@@ -763,7 +763,7 @@ mod tests {
         // setup input for generate()
         let assets = vec![Asset::new(
             AssetSource::Path(PathBuf::from(unit_file_path)),
-            Path::new(&format!("{}/mypkg.service", install_base_path)).to_path_buf(),
+            format!("{install_base_path}/mypkg.service").into(),
             0o0,
             crate::manifest::IsBuilt::No,
         )];

@@ -39,6 +39,7 @@ path = "src/main.rs"
 doc = false
 
 [dependencies]
+flate2 = "1.0.24"
 getopts = "0.2.21"
 md5 = "0.7.0"
 quick-error = "2.0.1"
@@ -47,7 +48,6 @@ serde = { version = "1.0.145", features = ["derive"] }
 serde_json = "1.0.85"
 tar = "0.4.38"
 toml = "0.5.9"
-zopfli = "0.7.1"
 glob = "0.3.0"
 ar = "0.9.0"
 cargo_toml = "0.13.0"

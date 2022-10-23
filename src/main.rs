@@ -203,38 +203,39 @@ fn process(
 
     // Obtain the current time which will be used to stamp the generated files in the archives.
     let system_time = time::SystemTime::now().duration_since(time::UNIX_EPOCH)?.as_secs();
-    let mut deb_contents = DebArchive::new(&options)?;
-
-    deb_contents.add_data("debian-binary", system_time, b"2.0\n")?;
-
-    // Initialize the contents of the data archive (files that go into the filesystem).
-    let (data_archive, asset_hashes) = data::generate_archive(vec![], &options, system_time, listener)?;
-    let original = data_archive.len();
 
     let options = &options;
-    let (control_compressed, data_compressed) = rayon::join(
+    let (control_builder, data_result) = rayon::join(
         move || {
             // The control archive is the metadata for the package manager
-            let mut builder = ControlArchiveBuilder::new(vec![], system_time, listener);
-            builder.generate_archive(options)?;
-            builder.generate_md5sums(options, asset_hashes)?;
-            let control_archive = builder.finish()?;
-            compress::xz_or_gz(&control_archive, fast, system_xz)
+            let mut control_builder = ControlArchiveBuilder::new(compress::xz_or_gz(fast, system_xz)?, system_time, listener);
+            control_builder.generate_archive(options)?;
+            Ok::<_, CargoDebError>(control_builder)
         },
-        move || compress::xz_or_gz(&data_archive, fast, system_xz),
+        move || {
+            // Initialize the contents of the data archive (files that go into the filesystem).
+            let (compressed, asset_hashes) = data::generate_archive(compress::xz_or_gz(fast, system_xz)?, &options, system_time, listener)?;
+            let original_data_size = compressed.uncompressed_size;
+            Ok::<_, CargoDebError>((compressed.finish()?, original_data_size, asset_hashes))
+        },
     );
-    let control_compressed = control_compressed?;
-    let data_compressed = data_compressed?;
+    let mut control_builder = control_builder?;
+    let (data_compressed, original_data_size, asset_hashes) = data_result?;
+    control_builder.generate_md5sums(options, asset_hashes)?;
+    let control_compressed = control_builder.finish()?.finish()?;
+
+    let mut deb_contents = DebArchive::new(&options)?;
+    deb_contents.add_data("debian-binary".into(), system_time, b"2.0\n")?;
 
     // Order is important for Debian
-    deb_contents.add_data(&format!("control.tar.{}", control_compressed.extension()), system_time, &control_compressed)?;
+    deb_contents.add_data(format!("control.tar.{}", control_compressed.extension()), system_time, &control_compressed)?;
     drop(control_compressed);
-    let compressed = data_compressed.len();
+    let compressed_data_size = data_compressed.len();
     listener.info(format!(
-        "compressed/original ratio {compressed}/{original} ({}%)",
-        compressed * 100 / original
+        "compressed/original ratio {compressed_data_size}/{original_data_size} ({}%)",
+        compressed_data_size * 100 / original_data_size
     ));
-    deb_contents.add_data(&format!("data.tar.{}", data_compressed.extension()), system_time, &data_compressed)?;
+    deb_contents.add_data(format!("data.tar.{}", data_compressed.extension()), system_time, &data_compressed)?;
     drop(data_compressed);
 
     let generated = deb_contents.finish()?;
