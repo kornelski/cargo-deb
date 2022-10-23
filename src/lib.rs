@@ -184,7 +184,9 @@ pub fn strip_binaries(options: &mut Config, target: Option<&str>, listener: &dyn
 
     let stripped_binaries_output_dir = options.default_deb_output_dir();
 
-    options.built_binaries_mut().par_iter_mut().enumerate().try_for_each(|(i, asset)| {
+    options.built_binaries_mut().into_par_iter().enumerate()
+        .filter(|(_, asset)| !asset.source.archive_as_symlink_only()) // data won't be included, so nothing to strip
+        .try_for_each(|(i, asset)| {
         let new_source = match asset.source.path() {
             Some(path) => {
                 if !path.exists() {

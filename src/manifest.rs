@@ -26,27 +26,38 @@ fn is_glob_pattern(s: &Path) -> bool {
 pub enum AssetSource {
     /// Copy file from the path (and strip binary if needed).
     Path(PathBuf),
+    /// A symlink existing in the file system
+    Symlink(PathBuf),
     /// Write data to destination as-is.
     Data(Vec<u8>),
 }
 
 impl AssetSource {
+    /// Symlink must exist on disk to be preserved
+    #[must_use]
+    pub fn from_path(path: impl Into<PathBuf>, preserve_existing_symlink: bool) -> Self {
+        let path = path.into();
+        if preserve_existing_symlink || !path.exists() { // !exists means a symlink to bogus path
+            if let Ok(md) = fs::symlink_metadata(&path) {
+                if md.is_symlink() {
+                    return Self::Symlink(path)
+                }
+            }
+        }
+        Self::Path(path)
+    }
+
     #[must_use]
     pub fn path(&self) -> Option<&Path> {
-        match *self {
+        match self {
+            AssetSource::Symlink(ref p) |
             AssetSource::Path(ref p) => Some(p),
             _ => None,
         }
     }
 
-    pub fn is_symbolic_link(&self) -> bool {
-        if let AssetSource::Path(path) = self {
-            let meta = fs::symlink_metadata(path);
-            if let Ok(meta) = meta {
-                return meta.is_symlink();
-            }
-        }
-        false
+    pub fn archive_as_symlink_only(&self) -> bool {
+        matches!(self, AssetSource::Symlink(_))
     }
 
     #[must_use]
@@ -55,17 +66,19 @@ impl AssetSource {
             // FIXME: may not be accurate if the executable is not stripped yet?
             AssetSource::Path(ref p) => fs::metadata(p).ok().map(|m| m.len()),
             AssetSource::Data(ref d) => Some(d.len() as u64),
+            AssetSource::Symlink(_) => None,
         }
     }
 
     pub fn data(&self) -> CDResult<Cow<'_, [u8]>> {
-        Ok(match *self {
-            AssetSource::Path(ref p) => {
+        Ok(match self {
+            AssetSource::Path(p) => {
                 let data = read_file_to_bytes(p)
                     .map_err(|e| CargoDebError::IoFile("unable to read asset to add to archive", e, p.to_owned()))?;
                 Cow::Owned(data)
             },
-            AssetSource::Data(ref d) => Cow::Borrowed(d),
+            AssetSource::Data(d) => Cow::Borrowed(d),
+            AssetSource::Symlink(_) => return Err(CargoDebError::Str("Symlink unexpectedly used to read file data")),
         })
     }
 
@@ -73,8 +86,9 @@ impl AssetSource {
     /// This is just `<original-file>.debug`
     #[must_use]
     pub fn debug_source(&self) -> Option<PathBuf> {
-        match *self {
-            AssetSource::Path(ref p) => Some(debug_filename(p)),
+        match self {
+            AssetSource::Path(p) |
+            AssetSource::Symlink(p) => Some(debug_filename(p)),
             _ => None,
         }
     }
@@ -539,7 +553,7 @@ impl Config {
             if word == "$auto" {
                 let bin = self.all_binaries();
                 let resolved = bin.par_iter()
-                    .filter(|bin| !bin.is_symbolic_link())
+                    .filter(|bin| !bin.archive_as_symlink_only())
                     .filter_map(|p| p.path())
                     .filter_map(|bname| match resolve(bname, &self.target) {
                         Ok(bindeps) => Some(bindeps),
@@ -647,7 +661,7 @@ impl Config {
                 };
                 log::debug!("asset {} -> {} {} {:o}", source_file.display(), target_file.display(), if is_built == IsBuilt::No {"copy"} else {"build"}, chmod);
                 self.assets.resolved.push(Asset::new(
-                    AssetSource::Path(source_file),
+                    AssetSource::from_path(source_file, self.preserve_symlinks),
                     target_file,
                     chmod,
                     is_built,
@@ -718,10 +732,10 @@ impl Config {
 
                 let units = dh_installsystemd::find_units(&search_path, package, unit_name);
 
-                for (source, target) in &units {
+                for (source, target) in units {
                     self.assets.resolved.push(Asset::new(
-                        AssetSource::Path(source.clone()),
-                        target.path.clone(),
+                        AssetSource::from_path(source, self.preserve_symlinks), // should this even support symlinks at all?
+                        target.path,
                         target.mode,
                         IsBuilt::No,
                     ));

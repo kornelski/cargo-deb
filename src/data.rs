@@ -1,10 +1,9 @@
 use crate::error::*;
 use crate::listener::Listener;
-use crate::manifest::{Asset, Config, IsBuilt};
+use crate::manifest::{Asset, Config, IsBuilt, AssetSource};
 use crate::tararchive::Archive;
 use md5::Digest;
 use std::collections::HashMap;
-use std::fmt;
 use std::fs;
 use std::io::Write;
 use std::path::{Path, PathBuf};
@@ -134,33 +133,27 @@ pub fn compress_assets(options: &mut Config, listener: &dyn Listener) -> CDResul
 fn archive_files<W: Write>(archive: &mut Archive<W>, options: &Config, listener: &dyn Listener) -> CDResult<HashMap<PathBuf, Digest>> {
     let mut hashes = HashMap::new();
     for asset in &options.assets.resolved {
-        let mut log_line = format!(
-            "{} -> {}",
+        let mut log_line = format!("{} -> {}",
             asset.source.path().unwrap_or_else(|| Path::new("-")).display(),
             asset.c.target_path.display()
         );
         if let Some(len) = asset.source.file_size() {
             let (size, unit) = human_size(len);
-            let _ = fmt::Write::write_fmt(&mut log_line, format_args!(" ({size}{unit})"));
+            use std::fmt::Write;
+            let _ = write!(&mut log_line, " ({size}{unit})");
         }
         listener.info(log_line);
 
-        let mut archived = false;
-        if options.preserve_symlinks {
-            if let Some(source_path) = asset.source.path() {
-                let md = fs::symlink_metadata(source_path)?;
-                if md.file_type().is_symlink() {
-                    archived = true;
-                    let link_name = fs::read_link(source_path)?;
-                    archive.symlink(&asset.c.target_path, &link_name)?;
-                }
+        match &asset.source {
+            AssetSource::Symlink(source_path) => {
+                let link_name = fs::read_link(source_path)?;
+                archive.symlink(&asset.c.target_path, &link_name)?;
             }
-        }
-
-        if !archived {
-            let out_data = asset.source.data()?;
-            hashes.insert(asset.c.target_path.clone(), md5::compute(&out_data));
-            archive.file(&asset.c.target_path, &out_data, asset.c.chmod)?;
+            _ => {
+                let out_data = asset.source.data()?;
+                hashes.insert(asset.c.target_path.clone(), md5::compute(&out_data));
+                archive.file(&asset.c.target_path, &out_data, asset.c.chmod)?;
+            },
         }
     }
     Ok(hashes)
