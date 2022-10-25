@@ -26,7 +26,7 @@ impl AsUnixPathBytes for Path {
 
     #[cfg(not(unix))]
     fn to_bytes(&self) -> &[u8] {
-        self.to_str().unwrap()
+        self.to_str().unwrap().as_bytes()
     }
 
     #[cfg(unix)]
