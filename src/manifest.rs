@@ -538,7 +538,7 @@ impl Config {
             preserve_symlinks: deb.preserve_symlinks.unwrap_or(false),
             systemd_units: deb.systemd_units.take(),
         };
-        config.take_assets(package, deb.assets.take(), &cargo_metadata.targets, selected_profile)?;
+        config.take_assets(package, deb.assets.take(), &cargo_metadata.targets, selected_profile, listener)?;
         config.add_copyright_asset()?;
         config.add_changelog_asset()?;
         config.add_systemd_assets()?;
@@ -911,7 +911,7 @@ fn manifest_license_file(package: &cargo_toml::Package<CargoPackageMetadata>, li
 }
 
 impl Config {
-fn take_assets(&mut self, package: &cargo_toml::Package<CargoPackageMetadata>, assets: Option<Vec<Vec<String>>>, build_targets: &[CargoMetadataTarget], profile: &str) -> CDResult<()> {
+fn take_assets(&mut self, package: &cargo_toml::Package<CargoPackageMetadata>, assets: Option<Vec<Vec<String>>>, build_targets: &[CargoMetadataTarget], profile: &str, listener: &dyn Listener) -> CDResult<()> {
     let assets = if let Some(assets) = assets {
         let profile_target_dir = format!("target/{profile}");
         // Treat all explicit assets as unresolved until after the build step
@@ -920,6 +920,12 @@ fn take_assets(&mut self, package: &cargo_toml::Package<CargoPackageMetadata>, a
             let mut asset_parts = asset_line.drain(..);
             let source_path = PathBuf::from(asset_parts.next()
                 .ok_or("missing path (first array entry) for asset in Cargo.toml")?);
+            if source_path.starts_with("target/debug/") {
+                listener.warning(format!("Packaging of development-only binaries is intentionally unsupported in cargo-deb.
+Please only use `target/release/` directory for built products, not `{}`.
+To add debug information or additional assertions use `[profile.release]` in `Cargo.toml` instead.
+This will be hard error in a future release of cargo-deb.", source_path.display()));
+            }
             let (is_built, source_path) = if let Ok(rel_path) = source_path.strip_prefix(&profile_target_dir) {
                 (self.is_built_file_in_package(&rel_path, build_targets), self.path_in_build(rel_path, profile))
             } else {
