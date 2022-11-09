@@ -15,6 +15,7 @@ fn build_workspaces() {
 
     let control = fs::read_to_string(cdir.path().join("control")).unwrap();
     assert!(control.contains("Version: 1.0.0-ws\n"));
+    assert!(control.contains("Package: test1-crate-name\n"));
     assert!(control.contains("Maintainer: ws\n"));
 
     let (_, ddir) = extract_built_package_from_manifest("tests/test-workspace/test-ws2/Cargo.toml", &["--no-strip"]);
@@ -22,6 +23,7 @@ fn build_workspaces() {
     assert!(ddir.path().join(format!("usr/lib/{DLL_PREFIX}test2lib{DLL_SUFFIX}")).exists());
 }
 
+#[track_caller]
 fn extract_built_package_from_manifest(manifest_path: &str, args: &[&str]) -> (TempDir, TempDir) {
     let root = PathBuf::from(env::var_os("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR"));
     let cmd_path = root.join(env!("CARGO_BIN_EXE_cargo-deb"));

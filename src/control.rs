@@ -315,6 +315,7 @@ mod tests {
         out
     }
 
+    #[track_caller]
     fn prepare<'l, W: Write>(dest: W, package_name: Option<&str>, mock_listener: &'l mut MockListener) -> (Config, ControlArchiveBuilder<'l, W>) {
         mock_listener.expect_info().return_const(());
 
@@ -388,9 +389,10 @@ mod tests {
             "test-resources/testroot/testchild/debian/postrm",
             "test-resources/testroot/testchild/debian/templates",
         ];
-        generate_scripts_for_package_without_systemd_unit(Some("testchild"), &maintainer_script_paths);
+        generate_scripts_for_package_without_systemd_unit(Some("test_child"), &maintainer_script_paths);
     }
 
+    #[track_caller]
     fn generate_scripts_for_package_without_systemd_unit(package_name: Option<&str>, maintainer_script_paths: &[&'static str]) {
         let mut listener = MockListener::new();
         let (mut config, mut in_ar) = prepare(vec![], package_name, &mut listener);
@@ -454,7 +456,7 @@ mod tests {
             ("test-resources/testroot/testchild/debian/templates", Some("dummy content")),
         ];
         generate_scripts_for_package_with_systemd_unit(
-            Some("testchild"),
+            Some("test_child"),
             &maintainer_scripts,
             "test-resources/testroot/testchild/debian/some.service",
         );
@@ -478,7 +480,7 @@ mod tests {
             ("test-resources/testroot/testchild/debian/postrm", None),
         ];
         generate_scripts_for_package_with_systemd_unit(
-            Some("testchild"),
+            Some("test_child"),
             &maintainer_scripts,
             "test-resources/testroot/testchild/debian/some.service",
         );
@@ -488,6 +490,7 @@ mod tests {
     //   - each file should be in the same directory
     //   - the generated archive should contain a file with each of the given filenames
     //   - if Some(...) then pretend when creating the archive that a file at that path exists with the given content
+    #[track_caller]
     fn generate_scripts_for_package_with_systemd_unit(
         package_name: Option<&str>,
         maintainer_scripts: &[(&'static str, Option<&'static str>)],

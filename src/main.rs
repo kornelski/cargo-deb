@@ -13,7 +13,7 @@ struct CliOptions {
     verbose: bool,
     quiet: bool,
     install: bool,
-    package_name: Option<String>,
+    selected_package_name: Option<String>,
     output_path: Option<String>,
     variant: Option<String>,
     target: Option<String>,
@@ -82,7 +82,7 @@ fn main() {
         variant: matches.opt_str("variant"),
         target: matches.opt_str("target"),
         output_path: matches.opt_str("output"),
-        package_name: matches.opt_str("package"),
+        selected_package_name: matches.opt_str("package"),
         manifest_path: matches.opt_str("manifest-path"),
         deb_version: matches.opt_str("deb-version"),
         deb_revision: matches.opt_str("deb-revision"),
@@ -118,7 +118,7 @@ fn process(
     CliOptions {
         manifest_path,
         output_path,
-        package_name,
+        selected_package_name,
         variant,
         target,
         install,
@@ -174,7 +174,7 @@ fn process(
     let manifest_path = manifest_path.as_ref().map_or("Cargo.toml", |s| s.as_str());
     let mut options = Config::from_manifest(
         Path::new(manifest_path),
-        package_name.as_deref(),
+        selected_package_name.as_deref(),
         output_path,
         target,
         variant,

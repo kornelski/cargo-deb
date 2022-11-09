@@ -396,7 +396,7 @@ impl Config {
     /// Makes a new config from `Cargo.toml` in the `manifest_path`
     ///
     /// `None` target means the host machine's architecture.
-    pub fn from_manifest(manifest_path: &Path, package_name: Option<&str>, output_path: Option<String>, target: Option<&str>, variant: Option<&str>, deb_version: Option<String>, deb_revision: Option<String>, listener: &dyn Listener, selected_profile: &str) -> CDResult<Config> {
+    pub fn from_manifest(manifest_path: &Path, selected_package_name: Option<&str>, output_path: Option<String>, target: Option<&str>, variant: Option<&str>, deb_version: Option<String>, deb_revision: Option<String>, listener: &dyn Listener, selected_profile: &str) -> CDResult<Config> {
         let metadata = cargo_metadata(manifest_path)?;
         let available_package_names = || {
             metadata.packages.iter()
@@ -404,7 +404,7 @@ impl Config {
                 .map(|p| p.name.as_str())
                 .collect::<Vec<_>>().join(", ")
         };
-        let target_package = if let Some(name) = package_name {
+        let target_package = if let Some(name) = selected_package_name {
             metadata.packages.iter().find(|p| p.name == name)
                 .ok_or_else(|| CargoDebError::PackageNotFoundInWorkspace(name.into(), available_package_names()))
         } else {
@@ -494,7 +494,7 @@ impl Config {
             target: target.map(|t| t.to_string()),
             target_dir,
             name: package.name.clone(),
-            deb_name: deb.name.take().unwrap_or_else(|| package.name.clone()),
+            deb_name: deb.name.take().unwrap_or_else(|| debian_package_name(&package.name)),
             deb_version: deb_version.unwrap_or_else(|| manifest_version_string(package, deb_revision.or(deb.revision))),
             license: package.license.take().map(|v| v.unwrap()),
             license_file,
@@ -846,6 +846,14 @@ impl Config {
             .then(a.c.target_path.parent().cmp(&b.c.target_path.parent()))
         });
     }
+}
+
+/// Debian doesn't like `_` in names
+fn debian_package_name(crate_name: &str) -> String {
+    // crate names are ASCII only
+    crate_name.bytes().map(|c| {
+        if c != b'_' {c.to_ascii_lowercase() as char} else {'-'}
+    }).collect()
 }
 
 fn debug_flag(manifest: &cargo_toml::Manifest<CargoPackageMetadata>) -> bool {
