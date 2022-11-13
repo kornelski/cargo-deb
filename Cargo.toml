@@ -9,7 +9,7 @@ homepage = "https://github.com/kornelski/cargo-deb#readme"
 keywords = ["debian", "ubuntu", "deploy", "cargo-subcommand"]
 repository = "https://github.com/kornelski/cargo-deb"
 readme = "README.md"
-version = "1.41.0"
+version = "1.41.1"
 edition = "2021"
 rust-version = "1.60"
 
@@ -63,6 +63,7 @@ crossbeam-channel = "0.5.6"
 [features]
 default = ["lzma"]
 lzma = ["dep:xz2", "dep:num_cpus"]
+static-lzma = ["lzma", "xz2?/static"]
 
 [profile.dev]
 debug = 1

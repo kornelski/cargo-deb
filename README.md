@@ -139,3 +139,17 @@ Cargo-deb understands workspaces and can build all crates in the workspace if ne
     cargo deb --deb-version my-custom-version
 
 Overrides the version string generated from the Cargo manifest.
+
+### Undefined reference to `lzma_stream_encoder_mt` error
+
+This happens when the system-provided LZMA library is too old. Try with a bundled version:
+
+```sh
+cargo install cargo-deb --features=static-lzma
+```
+
+or fall back to gzip:
+
+```sh
+cargo install cargo-deb --no-default-features
+```
