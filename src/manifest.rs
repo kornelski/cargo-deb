@@ -218,9 +218,7 @@ impl AssetCommon {
     }
 
     fn is_dynamic_library(&self) -> bool {
-        self.target_path.file_name()
-            .and_then(|f| f.to_str())
-            .map_or(false, |f| f.ends_with(DLL_SUFFIX))
+        is_dynamic_library_filename(&self.target_path)
     }
 
     /// Returns the target path for the debug symbol file, which will be
@@ -251,6 +249,12 @@ fn debug_filename(path: &Path) -> PathBuf {
     let mut debug_filename = path.as_os_str().to_os_string();
     debug_filename.push(".debug");
     Path::new(&debug_filename).to_path_buf()
+}
+
+fn is_dynamic_library_filename(path: &Path) -> bool {
+    path.file_name()
+        .and_then(|f| f.to_str())
+        .map_or(false, |f| f.ends_with(DLL_SUFFIX))
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
@@ -598,15 +602,15 @@ impl Config {
         let mut same_package = true;
         let resolved = self.assets.resolved.iter().map(|a| (&a.c, a.source.path()));
         let unresolved = self.assets.unresolved.iter().map(|a| (&a.c, Some(a.source_path.as_ref())));
-        for (a, source_path) in resolved.chain(unresolved).filter(|(c,_)| c.is_built != IsBuilt::No) {
-            if a.is_built != IsBuilt::SamePackage {
-                log::debug!("building workspace because {} is from another package", source_path.unwrap_or(&a.target_path).display());
+        for (asset_target, source_path) in resolved.chain(unresolved).filter(|(c,_)| c.is_built != IsBuilt::No) {
+            if asset_target.is_built != IsBuilt::SamePackage {
+                log::debug!("building workspace because {} is from another package", source_path.unwrap_or(&asset_target.target_path).display());
                 same_package = false;
             }
-            if a.is_dynamic_library() {
-                log::debug!("building libs for {}", source_path.unwrap_or(&a.target_path).display());
+            if asset_target.is_dynamic_library() || source_path.map_or(false, is_dynamic_library_filename) {
+                log::debug!("building libs for {}", source_path.unwrap_or(&asset_target.target_path).display());
                 build_libs = true;
-            } else if a.is_executable() {
+            } else if asset_target.is_executable() {
                 if let Some(source_path) = source_path {
                     let name = source_path.file_name().unwrap().to_str().expect("utf-8 target name");
                     let name = name.strip_suffix(EXE_SUFFIX).unwrap_or(name);
