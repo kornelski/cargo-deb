@@ -17,6 +17,7 @@ use std::env::consts::{DLL_PREFIX, DLL_SUFFIX};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
+use std::time::SystemTime;
 
 fn is_glob_pattern(s: &Path) -> bool {
     s.to_bytes().iter().any(|&c| c == b'*' || c == b'[' || c == b']' || c == b'!')
@@ -394,6 +395,9 @@ pub struct Config {
     pub preserve_symlinks: bool,
     /// Details of how to install any systemd units
     pub(crate) systemd_units: Option<SystemdUnitsConfig>,
+
+    /// unix timestamp for generated files
+    pub default_timestamp: u64,
 }
 
 impl Config {
@@ -426,6 +430,9 @@ impl Config {
         let package_manifest_dir = manifest_path.parent().unwrap();
         let manifest_bytes =
             fs::read(manifest_path).map_err(|e| CargoDebError::IoFile("unable to read manifest", e, manifest_path.to_owned()))?;
+        let manifest_mdate = std::fs::metadata(manifest_path)?.modified().unwrap_or_else(|_| SystemTime::now());
+        let default_timestamp = manifest_mdate.duration_since(SystemTime::UNIX_EPOCH).expect("bad clock").as_secs();
+
         let mut manifest = cargo_toml::Manifest::<CargoPackageMetadata>::from_slice_with_metadata(&manifest_bytes)
             .map_err(|e| CargoDebError::TomlParsing(e, manifest_path.into()))?;
         if let Some(ws) = &workspace_root_manifest {
@@ -434,7 +441,7 @@ impl Config {
         }
         manifest.complete_from_path(manifest_path)
             .map_err(move |e| CargoDebError::TomlParsing(e, manifest_path.to_path_buf()))?;
-        Self::from_manifest_inner(manifest, workspace_root_manifest.as_ref(), target_package, package_manifest_dir, output_path, target_dir, target, variant, deb_version, deb_revision, listener, selected_profile)
+        Self::from_manifest_inner(manifest, workspace_root_manifest.as_ref(), target_package, package_manifest_dir, output_path, target_dir, target, variant, deb_version, deb_revision, listener, selected_profile, default_timestamp)
     }
 
     /// Convert Cargo.toml/metadata information into internal config structure
@@ -454,6 +461,7 @@ impl Config {
         deb_revision: Option<String>,
         listener: &dyn Listener,
         selected_profile: &str,
+        default_timestamp: u64,
     ) -> CDResult<Self> {
         // Cargo cross-compiles to a dir
         let target_dir = if let Some(target) = target {
@@ -493,6 +501,7 @@ impl Config {
             deb.extended_description_file.as_ref().map(Path::new).or(package.readme().as_path()),
         )?;
         let mut config = Config {
+            default_timestamp,
             pacakge_manifest_dir: package_manifest_dir.to_owned(),
             deb_output_path,
             target: target.map(|t| t.to_string()),

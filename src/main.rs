@@ -202,19 +202,19 @@ fn process(
     }
 
     // Obtain the current time which will be used to stamp the generated files in the archives.
-    let system_time = time::SystemTime::now().duration_since(time::UNIX_EPOCH)?.as_secs();
+    let default_timestamp = options.default_timestamp;
 
     let options = &options;
     let (control_builder, data_result) = rayon::join(
         move || {
             // The control archive is the metadata for the package manager
-            let mut control_builder = ControlArchiveBuilder::new(compress::xz_or_gz(fast, system_xz)?, system_time, listener);
+            let mut control_builder = ControlArchiveBuilder::new(compress::xz_or_gz(fast, system_xz)?, default_timestamp, listener);
             control_builder.generate_archive(options)?;
             Ok::<_, CargoDebError>(control_builder)
         },
         move || {
             // Initialize the contents of the data archive (files that go into the filesystem).
-            let (compressed, asset_hashes) = data::generate_archive(compress::xz_or_gz(fast, system_xz)?, &options, system_time, listener)?;
+            let (compressed, asset_hashes) = data::generate_archive(compress::xz_or_gz(fast, system_xz)?, &options, default_timestamp, listener)?;
             let original_data_size = compressed.uncompressed_size;
             Ok::<_, CargoDebError>((compressed.finish()?, original_data_size, asset_hashes))
         },
@@ -225,17 +225,17 @@ fn process(
     let control_compressed = control_builder.finish()?.finish()?;
 
     let mut deb_contents = DebArchive::new(&options)?;
-    deb_contents.add_data("debian-binary".into(), system_time, b"2.0\n")?;
+    deb_contents.add_data("debian-binary".into(), default_timestamp, b"2.0\n")?;
 
     // Order is important for Debian
-    deb_contents.add_data(format!("control.tar.{}", control_compressed.extension()), system_time, &control_compressed)?;
+    deb_contents.add_data(format!("control.tar.{}", control_compressed.extension()), default_timestamp, &control_compressed)?;
     drop(control_compressed);
     let compressed_data_size = data_compressed.len();
     listener.info(format!(
         "compressed/original ratio {compressed_data_size}/{original_data_size} ({}%)",
         compressed_data_size * 100 / original_data_size
     ));
-    deb_contents.add_data(format!("data.tar.{}", data_compressed.extension()), system_time, &data_compressed)?;
+    deb_contents.add_data(format!("data.tar.{}", data_compressed.extension()), default_timestamp, &data_compressed)?;
     drop(data_compressed);
 
     let generated = deb_contents.finish()?;
