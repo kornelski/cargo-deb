@@ -306,7 +306,7 @@ fn match_architecture(spec: ArchSpec, target_arch: &str) -> CDResult<bool> {
 /// Cargo deb configuration read from the manifest and cargo metadata
 pub struct Config {
     /// Directory where `Cargo.toml` is located. It's a subdirectory in workspaces.
-    pub pacakge_manifest_dir: PathBuf,
+    pub package_manifest_dir: PathBuf,
     /// User-configured output path for *.deb
     pub deb_output_path: Option<String>,
     /// Triple. `None` means current machine architecture.
@@ -506,7 +506,7 @@ impl Config {
         )?;
         let mut config = Config {
             default_timestamp,
-            pacakge_manifest_dir: package_manifest_dir.to_owned(),
+            package_manifest_dir: package_manifest_dir.to_owned(),
             deb_output_path,
             target: target.map(|t| t.to_string()),
             target_dir,
@@ -824,7 +824,7 @@ impl Config {
     }
 
     pub(crate) fn path_in_package<P: AsRef<Path>>(&self, rel_path: P) -> PathBuf {
-        self.pacakge_manifest_dir.join(rel_path)
+        self.package_manifest_dir.join(rel_path)
     }
 
     /// Store intermediate files here
@@ -991,7 +991,7 @@ This will be hard error in a future release of cargo-deb.", source_path.display(
             })
             .collect();
         if let OptionalFile::Path(readme) = package.readme() {
-            let path = self.pacakge_manifest_dir.join(PathBuf::from(readme)).canonicalize()?;
+            let path = self.package_manifest_dir.join(PathBuf::from(readme)).canonicalize()?;
             let target_path = Path::new("usr/share/doc")
                 .join(&package.name)
                 .join(path.file_name().ok_or("bad README path")?);
@@ -1008,7 +1008,7 @@ This will be hard error in a future release of cargo-deb.", source_path.display(
     fn is_built_file_in_package(&self, rel_path: &Path, build_targets: &[CargoMetadataTarget]) -> IsBuilt {
         let source_name = rel_path.file_name().expect("asset filename").to_str().expect("utf-8 names");
         let source_name = source_name.strip_suffix(EXE_SUFFIX).unwrap_or(source_name);
-        if build_targets.iter().filter(|t| t.name == source_name).any(|t| t.src_path.starts_with(&self.pacakge_manifest_dir)) {
+        if build_targets.iter().filter(|t| t.name == source_name).any(|t| t.src_path.starts_with(&self.package_manifest_dir)) {
             IsBuilt::SamePackage
         } else {
             IsBuilt::Workspace
