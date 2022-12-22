@@ -498,7 +498,11 @@ impl Config {
         manifest_check_config(package, package_manifest_dir, &deb, listener);
         let extended_description = manifest_extended_description(
             deb.extended_description.take(),
-            deb.extended_description_file.as_ref().map(Path::new).or(package.readme().as_path()),
+            deb.extended_description_file.as_ref().map(Path::new).or(package
+                .readme()
+                .as_path()
+                .and_then(|v| package_manifest_dir.join(v).canonicalize().ok())
+                .as_deref()),
         )?;
         let mut config = Config {
             default_timestamp,
@@ -987,7 +991,7 @@ This will be hard error in a future release of cargo-deb.", source_path.display(
             })
             .collect();
         if let OptionalFile::Path(readme) = package.readme() {
-            let path = PathBuf::from(readme);
+            let path = self.pacakge_manifest_dir.join(PathBuf::from(readme)).canonicalize()?;
             let target_path = Path::new("usr/share/doc")
                 .join(&package.name)
                 .join(path.file_name().ok_or("bad README path")?);
