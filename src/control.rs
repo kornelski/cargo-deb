@@ -32,7 +32,7 @@ impl<'l, W: Write> ControlArchiveBuilder<'l, W> {
         }
         self.generate_scripts(options)?;
         if let Some(ref file) = options.triggers_file {
-            let triggers_file = &options.pacakge_manifest_dir.as_path().join(file);
+            let triggers_file = &options.package_manifest_dir.as_path().join(file);
             if !triggers_file.exists() {
                 return Err(CargoDebError::AssetFileNotFound(file.to_path_buf()));
             }
@@ -64,7 +64,7 @@ impl<'l, W: Write> ControlArchiveBuilder<'l, W> {
     /// should be inserted.
     fn generate_scripts(&mut self, option: &Config) -> CDResult<()> {
         if let Some(ref maintainer_scripts_dir) = option.maintainer_scripts {
-            let maintainer_scripts_dir = option.pacakge_manifest_dir.as_path().join(maintainer_scripts_dir);
+            let maintainer_scripts_dir = option.package_manifest_dir.as_path().join(maintainer_scripts_dir);
             let mut scripts;
 
             if let Some(systemd_units_config) = &option.systemd_units {
@@ -337,7 +337,7 @@ mod tests {
         // to the absolute path we find ourselves in at test run time, but
         // instead have to match exactly the paths looked up based on the
         // value of the manifest dir.
-        config.pacakge_manifest_dir = config.pacakge_manifest_dir.strip_prefix(env!("CARGO_MANIFEST_DIR")).unwrap().to_path_buf();
+        config.package_manifest_dir = config.package_manifest_dir.strip_prefix(env!("CARGO_MANIFEST_DIR")).unwrap().to_path_buf();
 
         let ar = ControlArchiveBuilder::new(dest, 0, mock_listener);
 
