@@ -435,11 +435,8 @@ impl Config {
 
         let mut manifest = cargo_toml::Manifest::<CargoPackageMetadata>::from_slice_with_metadata(&manifest_bytes)
             .map_err(|e| CargoDebError::TomlParsing(e, manifest_path.into()))?;
-        if let Some(ws) = &workspace_root_manifest {
-            manifest.inherit_workspace(ws, Path::new(&metadata.workspace_root))
-                .map_err(move |e| CargoDebError::TomlParsing(e, workspace_root_manifest_path))?;
-        }
-        manifest.complete_from_path(manifest_path)
+        let ws_root = workspace_root_manifest.as_ref().map(|ws| (ws, Path::new(&metadata.workspace_root)));
+        manifest.complete_from_path_and_workspace(manifest_path, ws_root)
             .map_err(move |e| CargoDebError::TomlParsing(e, manifest_path.to_path_buf()))?;
         Self::from_manifest_inner(manifest, workspace_root_manifest.as_ref(), target_package, package_manifest_dir, output_path, target_dir, target, variant, deb_version, deb_revision, listener, selected_profile, default_timestamp)
     }

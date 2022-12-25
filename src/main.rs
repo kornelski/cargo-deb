@@ -3,7 +3,6 @@ use cargo_deb::control::ControlArchiveBuilder;
 use std::env;
 use std::path::Path;
 use std::process;
-use std::time;
 
 struct CliOptions {
     no_build: bool,
