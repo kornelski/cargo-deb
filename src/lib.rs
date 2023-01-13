@@ -103,7 +103,7 @@ pub fn cargo_build(options: &Config, target: Option<&str>, build_command: &str, 
         cmd.args(["--target", target]);
         // Set helpful defaults for cross-compiling
         if env::var_os("PKG_CONFIG_ALLOW_CROSS").is_none() && env::var_os("PKG_CONFIG_PATH").is_none() {
-            let pkg_config_path = format!("/usr/lib/{}/pkgconfig", debian_triple(target));
+            let pkg_config_path = format!("/usr/lib/{}/pkgconfig", debian_triple_from_rust_triple(target));
             if Path::new(&pkg_config_path).exists() {
                 cmd.env("PKG_CONFIG_ALLOW_CROSS", "1");
                 cmd.env("PKG_CONFIG_PATH", pkg_config_path);
@@ -128,8 +128,8 @@ pub fn cargo_build(options: &Config, target: Option<&str>, build_command: &str, 
     Ok(())
 }
 
-// Maps Rust's blah-unknown-linux-blah to Debian's blah-linux-blah
-fn debian_triple(rust_target_triple: &str) -> String {
+// Maps Rust's blah-unknown-linux-blah to Debian's blah-linux-blah. This is debian's multiarch.
+fn debian_triple_from_rust_triple(rust_target_triple: &str) -> String {
     let mut p = rust_target_triple.split('-');
     let arch = p.next().unwrap();
     let abi = p.last().unwrap_or("");
@@ -149,6 +149,37 @@ fn debian_triple(rust_target_triple: &str) -> String {
     format!("{darch}-linux-{dabi}")
 }
 
+
+/// Debianizes the architecture name. Weirdly, architecture and multiarch use different naming conventions in Debian!
+pub(crate) fn debian_architecture_from_rust_triple(target: &str) -> &str {
+    let mut parts = target.split('-');
+    let arch = parts.next().unwrap();
+    let abi = parts.last().unwrap_or("");
+    match (arch, abi) {
+        // https://wiki.debian.org/Multiarch/Tuples
+        // rustc --print target-list
+        // https://doc.rust-lang.org/std/env/consts/constant.ARCH.html
+        ("aarch64", _) => "arm64",
+        ("mips64", "gnuabin32") => "mipsn32",
+        ("mips64el", "gnuabin32") => "mipsn32el",
+        ("mipsisa32r6", _) => "mipsr6",
+        ("mipsisa32r6el", _) => "mipsr6el",
+        ("mipsisa64r6", "gnuabi64") => "mips64r6",
+        ("mipsisa64r6", "gnuabin32") => "mipsn32r6",
+        ("mipsisa64r6el", "gnuabi64") => "mips64r6el",
+        ("mipsisa64r6el", "gnuabin32") => "mipsn32r6el",
+        ("powerpc", "gnuspe") => "powerpcspe",
+        ("powerpc64", _) => "ppc64",
+        ("powerpc64le", _) => "ppc64el",
+        ("riscv64gc", _) => "riscv64",
+        ("i586", _) | ("i686", _) | ("x86", _) => "i386",
+        ("x86_64", "gnux32") => "x32",
+        ("x86_64", _) => "amd64",
+        (arm, gnueabi) if arm.starts_with("arm") && gnueabi.ends_with("hf") => "armhf",
+        (arm, _) if arm.starts_with("arm") => "armel",
+        (other_arch, _) => other_arch,
+    }
+}
 fn ensure_success(status: ExitStatus) -> io::Result<()> {
     if status.success() {
         Ok(())

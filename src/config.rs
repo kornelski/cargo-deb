@@ -76,7 +76,7 @@ impl CargoConfig {
             }
         }
 
-        let debian_target_triple = crate::debian_triple(target_triple);
+        let debian_target_triple = crate::debian_triple_from_rust_triple(target_triple);
         if let Some(linker) = self.linker_command(target_triple) {
             if linker.parent().is_some() {
                 let linker_file_name = linker.file_name().unwrap().to_str().unwrap();

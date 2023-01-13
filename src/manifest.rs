@@ -1,6 +1,6 @@
 use crate::config::CargoConfig;
 use crate::dependencies::resolve;
-use crate::dh_installsystemd;
+use crate::{dh_installsystemd, debian_architecture_from_rust_triple};
 use crate::error::{CDResult, CargoDebError};
 use crate::listener::Listener;
 use crate::ok_or::OkOrThen;
@@ -535,7 +535,7 @@ impl Config {
             provides: deb.provides.take(),
             section: deb.section.take(),
             priority: deb.priority.take().unwrap_or_else(|| "optional".to_owned()),
-            architecture: get_arch(target.unwrap_or(crate::DEFAULT_TARGET)).to_owned(),
+            architecture: debian_architecture_from_rust_triple(target.unwrap_or(crate::DEFAULT_TARGET)).to_owned(),
             conf_files: deb.conf_files.map(|x| format_conffiles(&x)),
             assets: Assets::new(),
             triggers_file: deb.triggers_file.map(PathBuf::from),
@@ -1167,37 +1167,6 @@ fn cargo_metadata(manifest_path: &Path) -> CDResult<CargoMetadata> {
     Ok(metadata)
 }
 
-/// Debianizes the architecture name
-pub(crate) fn get_arch(target: &str) -> &str {
-    let mut parts = target.split('-');
-    let arch = parts.next().unwrap();
-    let abi = parts.last().unwrap_or("");
-    match (arch, abi) {
-        // https://wiki.debian.org/Multiarch/Tuples
-        // rustc --print target-list
-        // https://doc.rust-lang.org/std/env/consts/constant.ARCH.html
-        ("aarch64", _) => "arm64",
-        ("mips64", "gnuabin32") => "mipsn32",
-        ("mips64el", "gnuabin32") => "mipsn32el",
-        ("mipsisa32r6", _) => "mipsr6",
-        ("mipsisa32r6el", _) => "mipsr6el",
-        ("mipsisa64r6", "gnuabi64") => "mips64r6",
-        ("mipsisa64r6", "gnuabin32") => "mipsn32r6",
-        ("mipsisa64r6el", "gnuabi64") => "mips64r6el",
-        ("mipsisa64r6el", "gnuabin32") => "mipsn32r6el",
-        ("powerpc", "gnuspe") => "powerpcspe",
-        ("powerpc64", _) => "ppc64",
-        ("powerpc64le", _) => "ppc64el",
-        ("riscv64gc", _) => "riscv64",
-        ("i586", _) | ("i686", _) | ("x86", _) => "i386",
-        ("x86_64", "gnux32") => "x32",
-        ("x86_64", _) => "amd64",
-        (arm, gnueabi) if arm.starts_with("arm") && gnueabi.ends_with("hf") => "armhf",
-        (arm, _) if arm.starts_with("arm") => "armel",
-        (other_arch, _) => other_arch,
-    }
-}
-
 /// Format conffiles section, ensuring each path has a leading slash
 ///
 /// Starting with [dpkg 1.20.1](https://github.com/guillemj/dpkg/blob/68ab722604217d3ab836276acfc0ae1260b28f5f/debian/changelog#L393),
@@ -1222,7 +1191,7 @@ mod tests {
 
     #[test]
     fn match_arm_arch() {
-        assert_eq!("armhf", get_arch("arm-unknown-linux-gnueabihf"));
+        assert_eq!("armhf", debian_architecture_from_rust_triple("arm-unknown-linux-gnueabihf"));
     }
 
     #[test]
