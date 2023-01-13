@@ -53,8 +53,8 @@ use std::process::{Command, ExitStatus};
 
 const TAR_REJECTS_CUR_DIR: bool = true;
 
-/// created by `build.rs`
-const DEFAULT_TARGET: &str = include_str!(concat!(env!("OUT_DIR"), "/default_target.rs"));
+/// Set by `build.rs`
+const DEFAULT_TARGET: &str = env!("CARGO_DEB_DEFAULT_TARGET");
 
 /// Run `dpkg` to install `deb` archive at the given path
 pub fn install_deb(path: &Path) -> CDResult<()> {
