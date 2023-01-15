@@ -65,31 +65,31 @@ impl<'l, W: Write> ControlArchiveBuilder<'l, W> {
     fn generate_scripts(&mut self, option: &Config) -> CDResult<()> {
         if let Some(ref maintainer_scripts_dir) = option.maintainer_scripts {
             let maintainer_scripts_dir = option.package_manifest_dir.as_path().join(maintainer_scripts_dir);
-            let mut scripts;
+            let mut scripts = ScriptFragments::with_capacity(0);
 
-            if let Some(systemd_units_config) = &option.systemd_units {
-                // Select and populate autoscript templates relevant to the unit
-                // file(s) in this package and the configuration settings chosen.
-                scripts = dh_installsystemd::generate(
-                    &option.name,
-                    &option.assets.resolved,
-                    &dh_installsystemd::Options::from(systemd_units_config),
-                    self.listener,
-                )?;
+            if let Some(systemd_units_config_vec) = &option.systemd_units {
+                for systemd_units_config in systemd_units_config_vec {
+                    // Select and populate autoscript templates relevant to the unit
+                    // file(s) in this package and the configuration settings chosen.
+                    scripts = dh_installsystemd::generate(
+                        &option.name,
+                        &option.assets.resolved,
+                        &dh_installsystemd::Options::from(systemd_units_config),
+                        self.listener,
+                    )?;
 
-                // Get Option<&str> from Option<String>
-                let unit_name = systemd_units_config.unit_name.as_deref();
+                    // Get Option<&str> from Option<String>
+                    let unit_name = systemd_units_config.unit_name.as_deref();
 
-                // Replace the #DEBHELPER# token in the users maintainer scripts
-                // and/or generate maintainer scripts from scratch as needed.
-                dh_lib::apply(
-                    &maintainer_scripts_dir,
-                    &mut scripts,
-                    &option.name,
-                    unit_name,
-                    self.listener)?;
-            } else {
-                scripts = ScriptFragments::with_capacity(0);
+                    // Replace the #DEBHELPER# token in the users maintainer scripts
+                    // and/or generate maintainer scripts from scratch as needed.
+                    dh_lib::apply(
+                        &maintainer_scripts_dir,
+                        &mut scripts,
+                        &option.name,
+                        unit_name,
+                        self.listener)?;
+                }
             }
 
             // Add maintainer scripts to the archive, either those supplied by the
@@ -521,7 +521,7 @@ mod tests {
         config.maintainer_scripts.get_or_insert(PathBuf::from("debian"));
 
         // enable systemd unit processing
-        config.systemd_units.get_or_insert(SystemdUnitsConfig::default());
+        config.systemd_units.get_or_insert(vec![SystemdUnitsConfig::default()]);
 
         // generate scripts and store them in the given archive
         in_ar.generate_scripts(&config).unwrap();

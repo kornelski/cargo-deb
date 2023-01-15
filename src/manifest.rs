@@ -394,7 +394,7 @@ pub struct Config {
     /// Should symlinks be preserved in the assets
     pub preserve_symlinks: bool,
     /// Details of how to install any systemd units
-    pub(crate) systemd_units: Option<SystemdUnitsConfig>,
+    pub(crate) systemd_units: Option<Vec<SystemdUnitsConfig>>,
 
     /// unix timestamp for generated files
     pub default_timestamp: u64,
@@ -732,23 +732,25 @@ impl Config {
     }
 
     fn add_systemd_assets(&mut self) -> CDResult<()> {
-        if let Some(ref config) = self.systemd_units {
-            let units_dir_option = config.unit_scripts.as_ref()
-                .or(self.maintainer_scripts.as_ref());
-            if let Some(unit_dir) = units_dir_option {
-                let search_path = self.path_in_package(unit_dir);
-                let package = &self.name;
-                let unit_name = config.unit_name.as_deref();
+        if let Some(ref config_vec) = self.systemd_units {
+            for config in config_vec {
+                let units_dir_option = config.unit_scripts.as_ref()
+                    .or(self.maintainer_scripts.as_ref());
+                if let Some(unit_dir) = units_dir_option {
+                    let search_path = self.path_in_package(unit_dir);
+                    let package = &self.name;
+                    let unit_name = config.unit_name.as_deref();
 
-                let units = dh_installsystemd::find_units(&search_path, package, unit_name);
+                    let units = dh_installsystemd::find_units(&search_path, package, unit_name);
 
-                for (source, target) in units {
-                    self.assets.resolved.push(Asset::new(
-                        AssetSource::from_path(source, self.preserve_symlinks), // should this even support symlinks at all?
-                        target.path,
-                        target.mode,
-                        IsBuilt::No,
-                    ));
+                    for (source, target) in units {
+                        self.assets.resolved.push(Asset::new(
+                            AssetSource::from_path(source, self.preserve_symlinks), // should this even support symlinks at all?
+                            target.path,
+                            target.mode,
+                            IsBuilt::No,
+                        ));
+                    }
                 }
             }
         } else {
@@ -1077,7 +1079,7 @@ struct CargoDeb {
     pub default_features: Option<bool>,
     pub separate_debug_symbols: Option<bool>,
     pub preserve_symlinks: Option<bool>,
-    pub systemd_units: Option<SystemdUnitsConfig>,
+    pub systemd_units: Option<Vec<SystemdUnitsConfig>>,
     pub variants: Option<HashMap<String, CargoDeb>>,
 }
 
@@ -1331,7 +1333,7 @@ mod tests {
 
         let mut config = Config::from_manifest(Path::new("Cargo.toml"), None, None, None, None, None, None, &mock_listener, "release").unwrap();
 
-        config.systemd_units.get_or_insert(SystemdUnitsConfig::default());
+        config.systemd_units.get_or_insert(vec![SystemdUnitsConfig::default()]);
         config.maintainer_scripts.get_or_insert(PathBuf::new());
 
         config.add_systemd_assets().unwrap();
