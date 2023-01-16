@@ -546,7 +546,7 @@ impl Config {
             separate_debug_symbols: deb.separate_debug_symbols.unwrap_or(false),
             debug_enabled,
             preserve_symlinks: deb.preserve_symlinks.unwrap_or(false),
-            systemd_units: deb.systemd_units.take(),
+            systemd_units: deb.systemd_units.take().map(|u| vec![u]),
         };
         config.take_assets(package, deb.assets.take(), &cargo_metadata.targets, selected_profile, listener)?;
         config.add_copyright_asset()?;
@@ -1079,7 +1079,7 @@ struct CargoDeb {
     pub default_features: Option<bool>,
     pub separate_debug_symbols: Option<bool>,
     pub preserve_symlinks: Option<bool>,
-    pub systemd_units: Option<Vec<SystemdUnitsConfig>>,
+    pub systemd_units: Option<SystemdUnitsConfig>,
     pub variants: Option<HashMap<String, CargoDeb>>,
 }
 
