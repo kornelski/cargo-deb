@@ -169,6 +169,28 @@ fi
 
 Note that two shell script fragments have been injected into the maintainer script and that the `#RESTART_ACTION#` and `#UNITFILE#` placeholder tokens have been replaced compared to the original autoscripts [here](https://github.com/mmstick/cargo-deb/blob/master/autoscripts/postinst-systemd-dont-enable) and [here](https://github.com/mmstick/cargo-deb/blob/master/autoscripts/postinst-systemd-restart).
 
+#### Multiple Systemd Units Example
+
+There is also an option to specify multiple systemd unit files, To expand on the minimal example, here is a minumal example with multiple systemd unit files.
+
+`Cargo.toml`:
+
+```toml
+[package]
+name = "example"
+version = "1.2.3"
+description = "An example package to demonstrate cargo-deb systemd-units support."
+license = "MIT"
+authors = ["cargo-deb team"]
+
+[package.metadata.deb]
+maintainer-scripts = "debian/"
+systemd-units = [ 
+        { unit-name = "unit-one", enable = false },
+        { unit-name = "unit-two", enable = false } 
+    ] 
+```
+
 #### Advanced Example
 
 For a more advanced example you might want to look at the [NLnet Labs Krill project](https://github.com/NLnetLabs/krill/) use of cargo-deb (disclaimer: this author is a contributor) which shows:
