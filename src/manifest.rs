@@ -10,7 +10,6 @@ use cargo_toml::DebugSetting;
 use cargo_toml::OptionalFile;
 use rayon::prelude::*;
 use serde::Deserialize;
-use serde::Deserializer;
 use std::borrow::Cow;
 use std::collections::{HashMap, HashSet};
 use std::env::consts::EXE_SUFFIX;
@@ -547,7 +546,11 @@ impl Config {
             separate_debug_symbols: deb.separate_debug_symbols.unwrap_or(false),
             debug_enabled,
             preserve_symlinks: deb.preserve_symlinks.unwrap_or(false),
-            systemd_units: deb.systemd_units,
+            systemd_units: match deb.systemd_units {
+                None => None,
+                Some(SystemUnitsSingleOrMultiple::Single(s)) => { Some(vec![s]) }
+                Some(SystemUnitsSingleOrMultiple::Multi(v)) => { Some(v) }
+            },
         };
         config.take_assets(package, deb.assets.take(), &cargo_metadata.targets, selected_profile, listener)?;
         config.add_copyright_asset()?;
@@ -1051,15 +1054,11 @@ enum LicenseFile {
 }
 
 #[derive(Deserialize)]
+#[derive(Clone, Debug)]
 #[serde(untagged)]
-enum SystemUnitsSingleOrMultiple { Single(SystemdUnitsConfig), Multi(Vec<SystemdUnitsConfig>) } 
-fn system_units_single_or_multi<'de, D>(deserializer: D) -> Result<Option<Vec<SystemdUnitsConfig>>, D::Error>
-    where D: Deserializer<'de>
-{
-    match SystemUnitsSingleOrMultiple::deserialize(deserializer)? {
-        SystemUnitsSingleOrMultiple::Single(s) => { Ok(Some(vec![s])) }
-        SystemUnitsSingleOrMultiple::Multi(v) => { Ok(Some(v)) } 
-    }
+enum SystemUnitsSingleOrMultiple {
+    Single(SystemdUnitsConfig),
+    Multi(Vec<SystemdUnitsConfig>)
 }
 
 
@@ -1093,8 +1092,7 @@ struct CargoDeb {
     pub default_features: Option<bool>,
     pub separate_debug_symbols: Option<bool>,
     pub preserve_symlinks: Option<bool>,
-    #[serde(deserialize_with = "system_units_single_or_multi")]
-    pub systemd_units: Option<Vec<SystemdUnitsConfig>>, 
+    pub systemd_units: Option<SystemUnitsSingleOrMultiple>,
     pub variants: Option<HashMap<String, CargoDeb>>,
 }
 
