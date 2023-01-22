@@ -64,7 +64,7 @@ impl<'l, W: Write> ControlArchiveBuilder<'l, W> {
     /// should be inserted.
     fn generate_scripts(&mut self, option: &Config) -> CDResult<()> {
         if let Some(ref maintainer_scripts_dir) = option.maintainer_scripts {
-            let maintainer_scripts_dir = option.package_manifest_dir.as_path().join(maintainer_scripts_dir);
+            let maintainer_scripts_dir = option.package_manifest_dir.as_path().join(maintainer_scripts_dir).canonicalize()?;
             let mut scripts = ScriptFragments::with_capacity(0);
 
             if let Some(systemd_units_config_vec) = &option.systemd_units {
@@ -101,6 +101,8 @@ impl<'l, W: Write> ControlArchiveBuilder<'l, W> {
                     let script_path = maintainer_scripts_dir.join(name);
                     if is_path_file(&script_path) {
                         script = Some(read_file_to_bytes(&script_path)?);
+                    } else {
+                        self.listener.warning(format!("maintainer script {name} was not found at location {maintainer_scripts_dir:?}, generating defaults instead."));
                     }
                 }
 
