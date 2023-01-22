@@ -102,7 +102,7 @@ impl<'l, W: Write> ControlArchiveBuilder<'l, W> {
                     if is_path_file(&script_path) {
                         script = Some(read_file_to_bytes(&script_path)?);
                     } else {
-                        self.listener.warning(format!("maintainer script {name} was not found at location {maintainer_scripts_dir:?}, generating defaults instead."));
+                        self.listener.warning(format!("maintainer script '{name}' was not found at location {maintainer_scripts_dir:?}, generating defaults instead."));
                     }
                 }
 
