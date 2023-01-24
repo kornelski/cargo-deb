@@ -14,7 +14,7 @@ edition = "2021"
 rust-version = "1.60"
 
 [package.metadata.deb]
-maintainer = "Michael Aaron Murphy <mmstickman@gmail.com>"
+maintainer = "Kornel Lesiński <kornel@geekhood.net>"
 copyright = "2016-2021, Michael Aaron Murphy, Kornel Lesiński"
 license-file = ["LICENSE", "5"]
 extended-description = """\

@@ -6,7 +6,7 @@
 
 If you only want to make some `*.deb` files, and you're not a developer of tools
 for Debian packaging, **[see `cargo deb` command usage described in the
-README instead](https://github.com/mmstick/cargo-deb#readme)**.
+README instead](https://github.com/kornelski/cargo-deb#readme)**.
 
 ```sh
 cargo install cargo-deb

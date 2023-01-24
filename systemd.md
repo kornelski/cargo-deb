@@ -52,7 +52,7 @@ See:
  - The [dh_installsystemd Ubuntu 20.04 man page](http://manpages.ubuntu.com/manpages/focal/en/man1/dh_installsystemd.1.html)
  - The [systemd documentation](https://www.freedesktop.org/software/systemd/man/systemd.unit.html#Description) for more details on unit naming.
  - The [Debian Policy Manual](https://www.debian.org/doc/debian-policy/ch-maintainerscripts.html) for more information about maintainer scripts.
- - A list of [shell fragments](https://github.com/mmstick/cargo-deb/tree/579e10c89b060d=eec05ce8653f501c9eee3a0297/autoscripts) which may be inserted.
+ - A list of [shell fragments](https://github.com/kornelski/cargo-deb/tree/main/autoscripts) which may be inserted.
 
 #### Minimal Example
 
@@ -167,7 +167,7 @@ fi
 # End automatically added section
 ```
 
-Note that two shell script fragments have been injected into the maintainer script and that the `#RESTART_ACTION#` and `#UNITFILE#` placeholder tokens have been replaced compared to the original autoscripts [here](https://github.com/mmstick/cargo-deb/blob/master/autoscripts/postinst-systemd-dont-enable) and [here](https://github.com/mmstick/cargo-deb/blob/master/autoscripts/postinst-systemd-restart).
+Note that two shell script fragments have been injected into the maintainer script and that the `#RESTART_ACTION#` and `#UNITFILE#` placeholder tokens have been replaced compared to the original autoscripts [here](https://github.com/kornelski/cargo-deb/blob/main/autoscripts/postinst-systemd-dont-enable) and [here](https://github.com/kornelski/cargo-deb/blob/main/autoscripts/postinst-systemd-restart).
 
 #### Multiple Systemd Units Example
 
