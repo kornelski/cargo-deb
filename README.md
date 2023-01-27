@@ -9,7 +9,9 @@ rustup update   # Debian's Rust is too outdated, use rustup.rs
 cargo install cargo-deb
 ```
 
-Requires Rust 1.60+, and optionally `dpkg`, `dpkg-dev` and `liblzma-dev`. Compatible with Ubuntu. If the LZMA dependency causes you headaches, try `cargo install cargo-deb --no-default-features`.
+Requires Rust 1.63+, and optionally `dpkg`, `dpkg-dev` and `liblzma-dev`. Compatible with Ubuntu. If the LZMA dependency causes you headaches, try `cargo install cargo-deb --no-default-features`.
+
+If you get a compilation error, run `rustup update`! If you get an error running `rustup update`, uninstall your rust/cargo package, and install [the official Rust](https://rustup.rs/) instead.
 
 ## Usage
 
