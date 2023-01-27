@@ -9,9 +9,9 @@ homepage = "https://github.com/kornelski/cargo-deb#readme"
 keywords = ["debian", "ubuntu", "deploy", "cargo-subcommand"]
 repository = "https://github.com/kornelski/cargo-deb"
 readme = "README.md"
-version = "1.42.0"
+version = "1.42.1"
 edition = "2021"
-rust-version = "1.60"
+rust-version = "1.63"
 
 [package.metadata.deb]
 maintainer = "Kornel Lesiński <kornel@geekhood.net>"
