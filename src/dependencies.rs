@@ -10,19 +10,17 @@ pub fn resolve(path: &Path, target: &Option<String>) -> CDResult<Vec<String>> {
     let debian_folder = temp_folder.path().join("debian");
     let control_file_path = debian_folder.join("control");
     std::fs::create_dir_all(&debian_folder)?;
-
-    {
-        // dpkg-shlibdeps requires a (possibly empty) debian/control file to exist in its working
-        // directory. The executable location doesn't matter.
-        let _file = std::fs::File::create(&control_file_path)?;
-    }
+    // dpkg-shlibdeps requires a (possibly empty) debian/control file to exist in its working
+    // directory. The executable location doesn't matter.
+    let _ = std::fs::File::create(&control_file_path);
 
     // Print result to stdout instead of a file.
-    let mut args = Vec::from([String::from("-O")]);
+    let mut args = vec!["-O"];
+    let libpath_arg;
     // determine library search path from target
     if let Some(target) = target {
-        let libpath_arg = format!("-l/usr/{}/lib", debian_triple_from_rust_triple(target));
-        args.push(libpath_arg);
+        libpath_arg = format!("-l/usr/{}/lib", debian_triple_from_rust_triple(target));
+        args.push(&libpath_arg);
     }
     const DPKG_SHLIBDEPS_COMMAND: &str = "dpkg-shlibdeps";
     let output = Command::new(DPKG_SHLIBDEPS_COMMAND)
