@@ -102,9 +102,21 @@ There can be multiple variants of the metadata in one `Cargo.toml` file. `--vari
 
 ### Cross-compilation
 
-`cargo deb` supports a `--target` flag, which takes [Rust target triple](https://forge.rust-lang.org/release/platform-support.html). See `rustc --print target-list` for the list of supported values.
+`cargo deb` supports cross-compilation. It can be run from any unix-like host, including macOS, provided that the build environment is set up for cross-compilation:
 
-Cross-compilation can be run from any host, including macOS and Windows, provided that Debian-compatible linker and system libraries are available to Rust. The target has to be [installed for Rust](https://github.com/rust-lang-nursery/rustup.rs#cross-compilation) (e.g. `rustup target add i686-unknown-linux-gnu`) and has to be [installed for the host system (e.g. Debian)](https://wiki.debian.org/ToolChain/Cross) (e.g. `apt-get install libc6-dev-i386`). Note that Rust's and [Debian's architecture names](https://www.debian.org/ports/) are different.
+* The cross-compilation target has to be [installed via rustup](https://github.com/rust-lang-nursery/rustup.rs#cross-compilation) (e.g. `rustup target add i686-unknown-linux-gnu`) and has to be [installed for the host system](https://wiki.debian.org/ToolChain/Cross) (e.g. `apt-get install libc6-dev-i386`). Note that [Rust's](https://forge.rust-lang.org/release/platform-support.html) and [Debian's architecture names](https://www.debian.org/ports/) are different. See `rustc --print target-list` for the list of supported values for the `--target` argument.
+* A Linux-compatible linker and system libraries (e.g. glibc or musl) must be installed and available to Rust/Cargo,
+   * `dpkg --add-architecture <debian architecture name>`
+   * `apt-get install pkg-config build-essential crossbuild-essential-<debian architecture name>`
+* Cargo must be [configured to use a cross-linker](https://doc.rust-lang.org/cargo/reference/config.html#targettriplelinker).
+* Cargo dependencies that use C libraries probably won't work, unless you install a target's sysroot for pkg-config. Setting `PKG_CONFIG_ALLOW_CROSS=1` will not help at all, and will only make things *worse*.
+   * `apt-get install libssl-dev:<debian architecture name>`
+* Cargo dependencies that build C code probably won't work, unless you install a C compiler for the target system, and configure appropriate `CC_<target>` variables.
+   * `export HOST_CC=gcc`
+   * `export CC_x86_64_unknown_linux_gnu=/usr/bin/x86_64-linux-gnu-gcc` (correct the target and paths for your OS)
+* Stripping probably won't work, unless you install versions compatible with the target and configure their paths in `.cargo/config` by adding `[target.<target triple>] strip = { path = "…" } objcopy = { path = "…" }`. Alternatively, use `--no-strip`.
+
+Yes, these requiremens are onerous. You can also try [`cross`](https://lib.rs/crates/cross) or [`cargo zigbuild`](https://lib.rs/crates/cargo-zigbuild), since Zig is way better at cross-compiling, and then run `cargo deb --target=… --no-build`.
 
 ```sh
 cargo deb --target=i686-unknown-linux-gnu
@@ -112,9 +124,7 @@ cargo deb --target=i686-unknown-linux-gnu
 
 Cross-compiled archives are saved in `target/<target triple>/debian/*.deb`. The actual archive path is printed on success.
 
-This option works well for crates that either have no library dependencies or don't want to target an older release. To cross-compile with support for a release older than the host's, consider using a container or a VM.
-
-In `.cargo/config` you can add `[target.<target triple>] strip = { path = "…" } objcopy = { path = "…" }` to specify a path to the architecture-specific `strip` and `objcopy` commands, or use `--no-strip`.
+Note that you can't use cross-compilation to build for an older verison of Debian. If you need to support Debian releases older than the host, consider using a container or a VM, or make a completely static binary for MUSL instead.
 
 ### Separate debug info
 
