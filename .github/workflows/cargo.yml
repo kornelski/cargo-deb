@@ -1,5 +1,8 @@
 name: CI
 
+env:
+  CARGO_REGISTRIES_CRATES_IO_PROTOCOL: sparse
+
 on:
   push:
   pull_request:
@@ -16,8 +19,7 @@ jobs:
     strategy:
       matrix:
         rust:
-          - stable
-          - nightly
+          - beta
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v2
@@ -26,6 +28,10 @@ jobs:
           profile: minimal
           toolchain: ${{ matrix.rust }}
           override: true
+      - uses: actions-rs/cargo@v1
+        with:
+          command: test
+          args: --all-features
       - uses: actions-rs/cargo@v1
         with:
           command: test
