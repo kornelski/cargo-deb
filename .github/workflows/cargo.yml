@@ -22,16 +22,9 @@ jobs:
           - beta
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v2
-      - uses: actions-rs/toolchain@v1
+      - uses: actions/checkout@v3
+      - uses: dtolnay/rust-toolchain@master
         with:
-          profile: minimal
           toolchain: ${{ matrix.rust }}
-          override: true
-      - uses: actions-rs/cargo@v1
-        with:
-          command: test
-          args: --all-features
-      - uses: actions-rs/cargo@v1
-        with:
-          command: test
+      - run: cargo test --all-features
+      - run: cargo test
