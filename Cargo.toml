@@ -9,7 +9,7 @@ homepage = "https://github.com/kornelski/cargo-deb#readme"
 keywords = ["debian", "ubuntu", "deploy", "cargo-subcommand"]
 repository = "https://github.com/kornelski/cargo-deb"
 readme = "README.md"
-version = "1.42.2"
+version = "1.42.3"
 edition = "2021"
 rust-version = "1.63"
 
@@ -75,7 +75,7 @@ debug = false
 
 [dev-dependencies]
 mockall = "0.11.3"
-rstest = "0.16.0"
+rstest = "0.17.0"
 lazy_static = "1.4.0"
 
 [workspace]
