@@ -699,9 +699,9 @@ impl Config {
         Ok(())
     }
 
-    pub fn add_debug_assets(&mut self) {
+    pub fn add_debug_assets(&mut self, original_binaries: Vec<Asset>) {
         let mut assets_to_add: Vec<Asset> = Vec::new();
-        for asset in self.built_binaries_mut().into_iter().filter(|a| a.source.path().is_some()) {
+        for asset in original_binaries.into_iter().filter(|a| a.source.path().is_some()) {
             let debug_source = asset.source.debug_source().expect("debug asset");
             if debug_source.exists() {
                 log::debug!("added debug file {}", debug_source.display());

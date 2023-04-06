@@ -215,6 +215,8 @@ pub fn strip_binaries(options: &mut Config, target: Option<&str>, listener: &dyn
 
     let stripped_binaries_output_dir = options.default_deb_output_dir();
 
+    let original_binaries = options.built_binaries_mut().into_iter().map(|asset| asset.clone()).collect();
+
     options.built_binaries_mut().into_par_iter().enumerate()
         .filter(|(_, asset)| !asset.source.archive_as_symlink_only()) // data won't be included, so nothing to strip
         .try_for_each(|(i, asset)| {
@@ -224,35 +226,14 @@ pub fn strip_binaries(options: &mut Config, target: Option<&str>, listener: &dyn
                     return Err(CargoDebError::StripFailed(path.to_owned(), "The file doesn't exist".into()));
                 }
 
-                // The debug_path and debug_filename should never return None if we have an AssetSource::Path
-                let debug_path = asset.source.debug_source().expect("Failed to compute debug source path");
                 let conf_path = cargo_config.as_ref().map(|c| c.path())
                     .unwrap_or_else(|| Path::new(".cargo/config"));
-
-                if separate_file {
-                    log::debug!("extracting debug info of {} with {}", path.display(), objcopy_cmd.display());
-                    let _ = std::fs::remove_file(&debug_path);
-                    Command::new(objcopy_cmd)
-                        .arg("--only-keep-debug")
-                        .arg(path)
-                        .arg(&debug_path)
-                        .status()
-                        .and_then(ensure_success)
-                        .map_err(|err| {
-                            if let Some(target) = target {
-                                CargoDebError::StripFailed(path.to_owned(), format!("{}: {}.\nhint: Target-specific strip commands are configured in [target.{}] objcopy = {{ path =\"{}\" }} in {}", objcopy_cmd.display(), err, target, objcopy_cmd.display(), conf_path.display()))
-                            } else {
-                                CargoDebError::CommandFailed(err, "objcopy")
-                            }
-                        })?;
-                }
-
                 let file_name = path.file_name().ok_or(CargoDebError::Str("bad path"))?;
                 let file_name = format!("{}.tmp{}-stripped", file_name.to_string_lossy(), i);
                 let stripped_temp_path = stripped_binaries_output_dir.join(file_name);
                 let _ = std::fs::remove_file(&stripped_temp_path);
 
-                log::debug!("stripping {} with {}", path.display(), strip_cmd.display());
+                log::debug!("stripping with {} from {} into {}", strip_cmd.display(), path.display(), stripped_temp_path.display());
                 Command::new(strip_cmd)
                    .arg("--strip-unneeded")
                    .arg("-o")
@@ -273,7 +254,26 @@ pub fn strip_binaries(options: &mut Config, target: Option<&str>, listener: &dyn
                 }
 
                 if separate_file {
-                    log::debug!("linking debug info to {} with {}", debug_path.display(), objcopy_cmd.display());
+                    // The debug_path and debug_filename should never return None if we have an AssetSource::Path
+                    let debug_path = asset.source.debug_source().expect("Failed to compute debug source path");
+
+                    log::debug!("extracting debug info with {} from {} into {}", objcopy_cmd.display(), path.display(), debug_path.display());
+                    let _ = std::fs::remove_file(&debug_path);
+                    Command::new(objcopy_cmd)
+                        .arg("--only-keep-debug")
+                        .arg(path)
+                        .arg(&debug_path)
+                        .status()
+                        .and_then(ensure_success)
+                        .map_err(|err| {
+                            if let Some(target) = target {
+                                CargoDebError::StripFailed(path.to_owned(), format!("{}: {}.\nhint: Target-specific strip commands are configured in [target.{}] objcopy = {{ path =\"{}\" }} in {}", objcopy_cmd.display(), err, target, objcopy_cmd.display(), conf_path.display()))
+                            } else {
+                                CargoDebError::CommandFailed(err, "objcopy")
+                            }
+                        })?;
+
+                    log::debug!("linking debug info with {} from {} into {}", objcopy_cmd.display(), stripped_temp_path.display(), debug_path.display());
                     let debug_filename = debug_path.file_name().expect("Built binary has no filename");
                     Command::new(objcopy_cmd)
                         .current_dir(debug_path.parent().expect("Debug source file had no parent path"))
@@ -287,6 +287,7 @@ pub fn strip_binaries(options: &mut Config, target: Option<&str>, listener: &dyn
                         .map_err(|err| CargoDebError::CommandFailed(err, "objcopy"))?;
                 }
                 listener.info(format!("Stripped '{}'", path.display()));
+
                 AssetSource::Path(stripped_temp_path)
             },
             None => {
@@ -295,13 +296,14 @@ pub fn strip_binaries(options: &mut Config, target: Option<&str>, listener: &dyn
                 return Ok(());
             },
         };
+        log::debug!("Replacing asset {} with stripped asset {}", asset.source.path().unwrap().display(), new_source.path().unwrap().display());
         asset.source = new_source;
         Ok::<_, CargoDebError>(())
     })?;
 
     if separate_file {
         // If we want to debug symbols included in a separate file, add these files to the debian assets
-        options.add_debug_assets();
+        options.add_debug_assets(original_binaries);
     }
 
     Ok(())
