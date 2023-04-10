@@ -127,6 +127,28 @@ fn run_cargo_deb_command_on_example_dir() {
 }
 
 #[test]
+#[cfg(target_os = "linux")]
+fn run_cargo_deb_command_on_example_dir_with_separate_debug_symbols() {
+    let (_cdir, ddir) = extract_built_package_from_manifest("example/Cargo.toml", &["--separate-debug-symbols"]);
+
+    let stripped = ddir.path().join("usr/bin/example");
+    let debug = ddir.path().join("usr/lib/debug/usr/bin/example.debug");
+
+    assert!(stripped.exists());
+    assert!(
+        debug.exists(),
+        "unable to find executable with debug symbols {} for stripped executable {}",
+        debug.display(),
+        stripped.display()
+    );
+
+    assert!(
+        stripped.metadata().unwrap().len() < debug.metadata().unwrap().len(),
+        "stripped executable should be smaller than debug executable"
+    );
+}
+
+#[test]
 #[cfg(all(feature = "lzma"))]
 fn run_cargo_deb_command_on_example_dir_with_variant() {
     let args = ["--variant=debug", "--no-strip"];
