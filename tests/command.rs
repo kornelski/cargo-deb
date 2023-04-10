@@ -33,9 +33,7 @@ fn extract_built_package_from_manifest(manifest_path: &str, args: &[&str]) -> (T
         .current_dir(ardir.path())
         .arg("-x")
         .arg(deb_path)
-        .status()
-        .unwrap()
-        .success());
+        .status().unwrap().success());
 
     assert_eq!("2.0\n", fs::read_to_string(ardir.path().join("debian-binary")).unwrap());
 
@@ -48,18 +46,14 @@ fn extract_built_package_from_manifest(manifest_path: &str, args: &[&str]) -> (T
         .arg("xf")
         .current_dir(cdir.path())
         .arg(ardir.path().join(format!("control.tar.{ext}")))
-        .status()
-        .unwrap()
-        .success());
+        .status().unwrap().success());
 
     let ddir = tempfile::tempdir().unwrap();
     assert!(Command::new("tar")
         .arg("xJf")
         .current_dir(ddir.path())
         .arg(ardir.path().join(format!("data.tar.{ext}")))
-        .status()
-        .unwrap()
-        .success());
+        .status().unwrap().success());
 
     (cdir, ddir)
 }
@@ -144,9 +138,7 @@ fn run_cargo_deb_command_on_example_dir_with_variant() {
         .current_dir(ardir.path())
         .arg("-x")
         .arg(deb_path)
-        .status()
-        .unwrap()
-        .success());
+        .status().unwrap().success());
 
     assert_eq!("2.0\n", fs::read_to_string(ardir.path().join("debian-binary")).unwrap());
     let ext = if cfg!(feature = "lzma") { "xz" } else { "gz" };
@@ -158,9 +150,7 @@ fn run_cargo_deb_command_on_example_dir_with_variant() {
         .arg("xJf")
         .current_dir(cdir.path())
         .arg(ardir.path().join(format!("control.tar.{ext}")))
-        .status()
-        .unwrap()
-        .success());
+        .status().unwrap().success());
 
     let control = fs::read_to_string(cdir.path().join("control")).unwrap();
     assert!(control.contains("Package: example-debug\n"), "Control is: {:?}", control);
@@ -182,9 +172,7 @@ fn run_cargo_deb_command_on_example_dir_with_variant() {
         .arg("xJf")
         .current_dir(ddir.path())
         .arg(ardir.path().join(format!("data.tar.{ext}")))
-        .status()
-        .unwrap()
-        .success());
+        .status().unwrap().success());
 
     assert!(ddir.path().join("var/lib/example/1.txt").exists());
     assert!(ddir.path().join("var/lib/example/2.txt").exists());
@@ -205,9 +193,7 @@ fn run_cargo_deb_command_on_example_dir_with_version() {
         .current_dir(ardir.path())
         .arg("-x")
         .arg(deb_path)
-        .status()
-        .unwrap()
-        .success());
+        .status().unwrap().success());
 
     let ext = if cfg!(feature = "lzma") { "xz" } else { "gz" };
     assert_eq!("2.0\n", fs::read_to_string(ardir.path().join("debian-binary")).unwrap());
@@ -219,9 +205,7 @@ fn run_cargo_deb_command_on_example_dir_with_version() {
         .arg("xf")
         .current_dir(cdir.path())
         .arg(ardir.path().join(format!("control.tar.{ext}")))
-        .status()
-        .unwrap()
-        .success());
+        .status().unwrap().success());
 
     let control = fs::read_to_string(cdir.path().join("control")).unwrap();
     assert!(control.contains("Package: example\n"));
@@ -236,20 +220,14 @@ fn run_cargo_deb_command_on_example_dir_with_version() {
     assert!(md5sums.contains("b1946ac92492d2347c6235b4d2611184  var/lib/example/1.txt\n"));
     assert!(md5sums.contains("591785b794601e212b260e25925636fd  var/lib/example/2.txt\n"));
     assert!(md5sums.contains("1537684900f6b12358c88a612adf1049  var/lib/example/3.txt\n"));
-    assert!(
-        md5sums.contains("6f65f1e8907ea8a25171915b3bba45af  usr/share/doc/example/copyright\n"),
-        "has:\n{}",
-        md5sums
-    );
+    assert!(md5sums.contains("6f65f1e8907ea8a25171915b3bba45af  usr/share/doc/example/copyright\n"), "has:\n{}", md5sums);
 
     let ddir = tempfile::tempdir().unwrap();
     assert!(Command::new("tar")
         .arg("xJf")
         .current_dir(ddir.path())
         .arg(ardir.path().join(format!("data.tar.{ext}")))
-        .status()
-        .unwrap()
-        .success());
+        .status().unwrap().success());
 
     assert!(ddir.path().join("var/lib/example/1.txt").exists());
     assert!(ddir.path().join("var/lib/example/2.txt").exists());
