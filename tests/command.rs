@@ -25,7 +25,7 @@ fn build_workspaces() {
 
 #[track_caller]
 fn extract_built_package_from_manifest(manifest_path: &str, args: &[&str]) -> (TempDir, TempDir) {
-    let (_cdir, deb_path) = run_cargo_deb(manifest_path, args);
+    let (_bdir, deb_path) = cargo_deb(manifest_path, args);
 
     let ardir = tempfile::tempdir().expect("testdir");
     assert!(ardir.path().exists());
@@ -63,7 +63,7 @@ fn extract_built_package_from_manifest(manifest_path: &str, args: &[&str]) -> (T
 ///
 /// The `--manifest-path` and `--output` args are automatically set.
 #[track_caller]
-fn run_cargo_deb(manifest_path: &str, args: &[&str]) -> (TempDir, PathBuf) {
+fn cargo_deb(manifest_path: &str, args: &[&str]) -> (TempDir, PathBuf) {
     let cargo_dir = tempfile::tempdir().unwrap();
     let deb_path = cargo_dir.path().join("test.deb");
 
@@ -130,7 +130,7 @@ fn run_cargo_deb_command_on_example_dir() {
 #[cfg(all(feature = "lzma"))]
 fn run_cargo_deb_command_on_example_dir_with_variant() {
     let args = ["--variant=debug", "--no-strip"];
-    let (_cdir, deb_path) = run_cargo_deb("example/Cargo.toml", &args);
+    let (_bdir, deb_path) = cargo_deb("example/Cargo.toml", &args);
 
     let ardir = tempfile::tempdir().unwrap();
     assert!(ardir.path().exists());
@@ -185,7 +185,7 @@ fn run_cargo_deb_command_on_example_dir_with_variant() {
 #[test]
 #[cfg(all(feature = "lzma", target_os = "linux"))]
 fn run_cargo_deb_command_on_example_dir_with_version() {
-    let (cdir, deb_path) = run_cargo_deb("example/Cargo.toml", &args);
+    let (_bdir, deb_path) = cargo_deb("example/Cargo.toml", &["--deb-version=my-custom-version"]);
 
     let ardir = tempfile::tempdir().unwrap();
     assert!(ardir.path().exists());
