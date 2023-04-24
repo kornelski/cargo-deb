@@ -18,7 +18,7 @@ impl CargoConfig {
     fn new_(project_path: &Path) -> CDResult<Option<Self>> {
         let mut project_path = project_path;
         loop {
-            if let Some(conf) = Self::try_parse(project_path)? {
+            if let Some(conf) = Self::try_parse(&project_path.join(".cargo"))? {
                 return Ok(Some(conf));
             }
             if let Some(parent) = project_path.parent() {
@@ -27,21 +27,26 @@ impl CargoConfig {
                 break;
             }
         }
-        if let Some(home) = env::home_dir() {
+        if let Some(home) = env::var_os("CARGO_HOME").map(PathBuf::from) {
             if let Some(conf) = Self::try_parse(&home)? {
                 return Ok(Some(conf));
             }
         }
-        if let Some(conf) = Self::try_parse(Path::new("/etc"))? {
+        if let Some(home) = env::home_dir() {
+            if let Some(conf) = Self::try_parse(&home.join(".cargo"))? {
+                return Ok(Some(conf));
+            }
+        }
+        if let Some(conf) = Self::try_parse(Path::new("/etc/.cargo"))? {
             return Ok(Some(conf));
         }
         Ok(None)
     }
 
     fn try_parse(dir_path: &Path) -> CDResult<Option<Self>> {
-        let mut path = dir_path.join(".cargo/config.toml");
+        let mut path = dir_path.join("config.toml");
         if !path.exists() {
-            path = dir_path.join(".cargo/config");
+            path = dir_path.join("config");
             if !path.exists() {
                 return Ok(None);
             }
