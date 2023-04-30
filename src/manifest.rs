@@ -850,7 +850,7 @@ impl Config {
     }
 
     pub(crate) fn cargo_config(&self) -> CDResult<Option<CargoConfig>> {
-        CargoConfig::new(&self.target_dir)
+        CargoConfig::new(&self.package_manifest_dir)
     }
 
     /// similar files next to each other improve tarball compression
