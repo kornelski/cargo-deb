@@ -950,7 +950,8 @@ Please only use `target/release/` directory for built products, not `{}`.
 To add debug information or additional assertions use `[profile.release]` in `Cargo.toml` instead.
 This will be hard error in a future release of cargo-deb.", source_path.display()));
             }
-            let (is_built, source_path) = if let Ok(rel_path) = source_path.strip_prefix(&profile_target_dir) {
+            // target/release is treated as a magic prefix that resolves to any profile
+            let (is_built, source_path) = if let Ok(rel_path) = source_path.strip_prefix("target/release").or_else(|_| source_path.strip_prefix(&profile_target_dir)) {
                 (self.is_built_file_in_package(&rel_path, build_targets), self.path_in_build(rel_path, profile))
             } else {
                 (IsBuilt::No, self.path_in_package(&source_path))
