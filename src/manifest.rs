@@ -524,10 +524,10 @@ impl Config {
                 Ok(package.authors().get(0)
                     .ok_or("The package must have a maintainer or authors property")?.to_owned())
             })?,
-            depends: deb.depends.take().unwrap_or_else(|| "$auto".to_owned()),
-            pre_depends: deb.pre_depends.take(),
-            recommends: deb.recommends.take(),
-            suggests: deb.suggests.take(),
+            depends: deb.depends.take().map(DependencyList::into_depends_string).unwrap_or_else(|| "$auto".to_owned()),
+            pre_depends: deb.pre_depends.take().map(DependencyList::into_depends_string),
+            recommends: deb.recommends.take().map(DependencyList::into_depends_string),
+            suggests: deb.suggests.take().map(DependencyList::into_depends_string),
             enhances: deb.enhances.take(),
             conflicts: deb.conflicts.take(),
             breaks: deb.breaks.take(),
@@ -1062,6 +1062,21 @@ enum SystemUnitsSingleOrMultiple {
     Multi(Vec<SystemdUnitsConfig>)
 }
 
+#[derive(Clone, Debug, Deserialize)]
+#[serde(untagged)]
+enum DependencyList {
+    String(String),
+    Vec(Vec<String>),
+}
+
+impl DependencyList {
+    fn into_depends_string(self) -> String {
+        match self {
+            Self::String(s) => s,
+            Self::Vec(vals) => vals.join(", "),
+        }
+    }
+}
 
 #[derive(Clone, Debug, Deserialize, Default)]
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
@@ -1071,10 +1086,10 @@ struct CargoDeb {
     pub copyright: Option<String>,
     pub license_file: Option<LicenseFile>,
     pub changelog: Option<String>,
-    pub depends: Option<String>,
-    pub pre_depends: Option<String>,
-    pub recommends: Option<String>,
-    pub suggests: Option<String>,
+    pub depends: Option<DependencyList>,
+    pub pre_depends: Option<DependencyList>,
+    pub recommends: Option<DependencyList>,
+    pub suggests: Option<DependencyList>,
     pub enhances: Option<String>,
     pub conflicts: Option<String>,
     pub breaks: Option<String>,
