@@ -576,12 +576,15 @@ mod tests {
     }
 
     #[fixture]
+    #[allow(unused_braces)]
     fn empty_user_file() -> String { "".to_owned() }
 
     #[fixture]
+    #[allow(unused_braces)]
     fn invalid_user_file() -> String { "some content".to_owned() }
 
     #[fixture]
+    #[allow(unused_braces)]
     fn valid_user_file() -> String { "some #DEBHELPER# content".to_owned() }
 
     #[test]

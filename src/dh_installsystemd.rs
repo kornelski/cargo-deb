@@ -565,6 +565,7 @@ mod tests {
             PathBuf::new(),
             0o0,
             crate::manifest::IsBuilt::No,
+            false,
         )];
 
         let fragments = generate("mypkg", &assets, &Options::default(), &mock_listener).unwrap();
@@ -582,6 +583,7 @@ mod tests {
             Path::new("usr/lib/tmpfiles.d/blah").to_path_buf(),
             0o0,
             crate::manifest::IsBuilt::No,
+            false,
         )];
 
         let fragments = generate("mypkg", &assets, &Options::default(), &mock_listener).unwrap();
@@ -599,6 +601,7 @@ mod tests {
             Path::new("usr/lib/tmpfiles.d/blah").to_path_buf(),
             0o0,
             crate::manifest::IsBuilt::No,
+            false,
         )];
 
         let fragments = generate("mypkg", &assets, &Options::default(), &mock_listener).unwrap();
@@ -618,6 +621,7 @@ mod tests {
             Path::new("usr/lib/tmpfiles.d/blah").to_path_buf(),
             0o0,
             crate::manifest::IsBuilt::No,
+            false,
         )];
 
         let fragments = generate("mypkg", &assets, &Options::default(), &mock_listener).unwrap();
@@ -668,6 +672,7 @@ mod tests {
             Path::new("lib/systemd/system/").to_path_buf(),
             0o0,
             crate::manifest::IsBuilt::No,
+            false,
         )];
 
         let fragments = generate("mypkg", &assets, &Options::default(), &mock_listener).unwrap();
@@ -684,6 +689,7 @@ mod tests {
             Path::new("lib/systemd/system/foobar.service.d/").to_path_buf(),
             0o0,
             crate::manifest::IsBuilt::No,
+            false,
         )];
 
         let fragments = generate("mypkg", &assets, &Options::default(), &mock_listener).unwrap();
@@ -701,6 +707,7 @@ mod tests {
             Path::new("some/other/path/").to_path_buf(),
             0o0,
             crate::manifest::IsBuilt::No,
+            false,
         )];
 
         let fragments = generate("mypkg", &assets, &Options::default(), &mock_listener).unwrap();
@@ -766,6 +773,7 @@ mod tests {
             format!("{install_base_path}/mypkg.service").into(),
             0o0,
             crate::manifest::IsBuilt::No,
+            false,
         )];
 
         let options = Options {

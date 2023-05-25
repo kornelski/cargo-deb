@@ -183,6 +183,7 @@ pub struct AssetCommon {
     pub target_path: PathBuf,
     pub chmod: u32,
     is_built: IsBuilt,
+    is_example: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -193,7 +194,7 @@ pub struct Asset {
 
 impl Asset {
     #[must_use]
-    pub fn new(source: AssetSource, mut target_path: PathBuf, chmod: u32, is_built: IsBuilt) -> Self {
+    pub fn new(source: AssetSource, mut target_path: PathBuf, chmod: u32, is_built: IsBuilt, is_example: bool) -> Self {
         // is_dir() is only for paths that exist
         if target_path.to_string_lossy().ends_with('/') {
             let file_name = source.path().and_then(|p| p.file_name()).expect("source must be a file");
@@ -207,7 +208,7 @@ impl Asset {
         Self {
             source,
             c: AssetCommon {
-                target_path, chmod, is_built,
+                target_path, chmod, is_built, is_example,
             },
         }
     }
@@ -608,6 +609,7 @@ impl Config {
         }
 
         let mut build_bins = vec![];
+        let mut build_examples = vec![];
         let mut build_libs = false;
         let mut same_package = true;
         let resolved = self.assets.resolved.iter().map(|a| (&a.c, a.source.path()));
@@ -624,7 +626,11 @@ impl Config {
                 if let Some(source_path) = source_path {
                     let name = source_path.file_name().unwrap().to_str().expect("utf-8 target name");
                     let name = name.strip_suffix(EXE_SUFFIX).unwrap_or(name);
-                    build_bins.push(name);
+                    if asset_target.is_example {
+                        build_examples.push(name);
+                    } else {
+                        build_bins.push(name);
+                    }
                 }
             }
         }
@@ -636,13 +642,17 @@ impl Config {
             log::debug!("building bin for {}", name);
             format!("--bin={name}")
         }));
+        flags.extend(build_examples.iter().map(|name| {
+            log::debug!("building example for {}", name);
+            format!("--example={name}")
+        }));
         if build_libs {
             flags.push("--lib".into());
         }
     }
 
     pub fn resolve_assets(&mut self) -> CDResult<()> {
-        for UnresolvedAsset { source_path, c: AssetCommon { target_path, chmod, is_built } } in self.assets.unresolved.drain(..) {
+        for UnresolvedAsset { source_path, c: AssetCommon { target_path, chmod, is_built, is_example } } in self.assets.unresolved.drain(..) {
             let source_prefix: PathBuf = source_path.iter()
                 .take_while(|part| !is_glob_pattern(part.as_ref()))
                 .collect();
@@ -679,6 +689,7 @@ impl Config {
                     target_file,
                     chmod,
                     is_built,
+                    is_example,
                 ));
             }
         }
@@ -695,6 +706,7 @@ impl Config {
             Path::new("usr/share/doc").join(&self.deb_name).join("copyright"),
             0o644,
             IsBuilt::No,
+            false,
         ));
         Ok(())
     }
@@ -711,6 +723,7 @@ impl Config {
                     debug_target,
                     0o644,
                     IsBuilt::No,
+                    false,
                 ));
             } else {
                 log::debug!("no debug file {}", debug_source.display());
@@ -729,6 +742,7 @@ impl Config {
                     Path::new("usr/share/doc").join(&self.deb_name).join("changelog.Debian.gz"),
                     0o644,
                     IsBuilt::No,
+                    false,
                 ));
             }
         }
@@ -753,6 +767,7 @@ impl Config {
                             target.path,
                             target.mode,
                             IsBuilt::No,
+                            false,
                         ));
                     }
                 }
@@ -955,10 +970,12 @@ To add debug information or additional assertions use `[profile.release]` in `Ca
 This will be hard error in a future release of cargo-deb.", source_path.display()));
             }
             // target/release is treated as a magic prefix that resolves to any profile
-            let (is_built, source_path) = if let Ok(rel_path) = source_path.strip_prefix("target/release").or_else(|_| source_path.strip_prefix(&profile_target_dir)) {
-                (self.is_built_file_in_package(&rel_path, build_targets), self.path_in_build(rel_path, profile))
+            let (is_built, source_path, is_example) = if let Ok(rel_path) = source_path.strip_prefix("target/release").or_else(|_| source_path.strip_prefix(&profile_target_dir)) {
+                let is_example = rel_path.starts_with("examples");
+
+                (self.find_is_built_file_in_package(&rel_path, build_targets, if is_example { "example" } else { "bin" }), self.path_in_build(rel_path, profile), is_example)
             } else {
-                (IsBuilt::No, self.path_in_package(&source_path))
+                (IsBuilt::No, self.path_in_package(&source_path), false)
             };
             let target_path = PathBuf::from(asset_parts.next().ok_or("missing target (second array entry) for asset in Cargo.toml. Use something like \"usr/local/bin/\".")?);
             let chmod = u32::from_str_radix(&asset_parts.next().ok_or("missing chmod (third array entry) for asset in Cargo.toml. Use an octal string like \"777\".")?, 8)
@@ -966,7 +983,7 @@ This will be hard error in a future release of cargo-deb.", source_path.display(
 
             unresolved_assets.push(UnresolvedAsset {
                 source_path,
-                c: AssetCommon { target_path, chmod, is_built },
+                c: AssetCommon { target_path, chmod, is_built, is_example },
             })
         }
         Assets::with_unresolved_assets(unresolved_assets)
@@ -978,7 +995,8 @@ This will be hard error in a future release of cargo-deb.", source_path.display(
                         AssetSource::Path(self.path_in_build(&t.name, profile)),
                         Path::new("usr/bin").join(&t.name),
                         0o755,
-                        self.is_built_file_in_package(t.name.as_ref(), build_targets),
+                        self.is_built_file_in_package(t),
+                        false,
                     ))
                 } else if t.crate_types.iter().any(|ty| ty == "cdylib") && t.kind.iter().any(|k| k == "cdylib") {
                     // FIXME: std has constants for the host arch, but not for cross-compilation
@@ -987,7 +1005,8 @@ This will be hard error in a future release of cargo-deb.", source_path.display(
                         AssetSource::Path(self.path_in_build(&lib_name, profile)),
                         Path::new("usr/lib").join(lib_name),
                         0o644,
-                        self.is_built_file_in_package(t.name.as_ref(), build_targets),
+                        self.is_built_file_in_package(t),
+                        false,
                     ))
                 } else {
                     None
@@ -999,7 +1018,7 @@ This will be hard error in a future release of cargo-deb.", source_path.display(
             let target_path = Path::new("usr/share/doc")
                 .join(&package.name)
                 .join(path.file_name().ok_or("bad README path")?);
-            implied_assets.push(Asset::new(AssetSource::Path(path), target_path, 0o644, IsBuilt::No));
+            implied_assets.push(Asset::new(AssetSource::Path(path), target_path, 0o644, IsBuilt::No, false));
         }
         Assets::with_resolved_assets(implied_assets)
     };
@@ -1009,10 +1028,22 @@ This will be hard error in a future release of cargo-deb.", source_path.display(
     self.assets = assets;
     Ok(())
 }
-    fn is_built_file_in_package(&self, rel_path: &Path, build_targets: &[CargoMetadataTarget]) -> IsBuilt {
+    fn find_is_built_file_in_package(&self, rel_path: &Path, build_targets: &[CargoMetadataTarget], expected_kind: &str) -> IsBuilt {
         let source_name = rel_path.file_name().expect("asset filename").to_str().expect("utf-8 names");
         let source_name = source_name.strip_suffix(EXE_SUFFIX).unwrap_or(source_name);
-        if build_targets.iter().filter(|t| t.name == source_name).any(|t| t.src_path.starts_with(&self.package_manifest_dir)) {
+
+        if build_targets.iter()
+            .filter(|t| t.name == source_name && t.kind.iter().any(|k| k == expected_kind))
+            .any(|t| self.is_built_file_in_package(t) == IsBuilt::SamePackage)
+        {
+            IsBuilt::SamePackage
+        } else {
+            IsBuilt::Workspace
+        }
+    }
+
+    fn is_built_file_in_package(&self, build_target: &CargoMetadataTarget) -> IsBuilt {
+        if build_target.src_path.starts_with(&self.package_manifest_dir) {
             IsBuilt::SamePackage
         } else {
             IsBuilt::Workspace
@@ -1249,6 +1280,7 @@ mod tests {
             PathBuf::from("baz/"),
             0o644,
             IsBuilt::SamePackage,
+            false,
         );
         assert_eq!("baz/bar", a.c.target_path.to_str().unwrap());
         assert!(a.c.is_built != IsBuilt::No);
@@ -1258,6 +1290,7 @@ mod tests {
             PathBuf::from("/baz/quz"),
             0o644,
             IsBuilt::No,
+            false,
         );
         assert_eq!("baz/quz", a.c.target_path.to_str().unwrap());
         assert!(a.c.is_built == IsBuilt::No);
@@ -1280,6 +1313,7 @@ mod tests {
             PathBuf::from("/usr/bin/baz/"),
             0o644,
             IsBuilt::SamePackage,
+            false,
         );
         let debug_target = a.c.debug_target().expect("Got unexpected None");
         assert_eq!(debug_target, Path::new("/usr/lib/debug/usr/bin/baz/bar.debug"));
@@ -1294,6 +1328,7 @@ mod tests {
             PathBuf::from("baz/"),
             0o644,
             IsBuilt::Workspace,
+            false,
         );
         let debug_target = a.c.debug_target().expect("Got unexpected None");
         assert_eq!(debug_target, Path::new("/usr/lib/debug/baz/bar.debug"));
@@ -1308,6 +1343,7 @@ mod tests {
             PathBuf::from("baz/"),
             0o644,
             IsBuilt::No,
+            false,
         );
 
         assert_eq!(a.c.debug_target(), None);

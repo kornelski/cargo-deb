@@ -106,6 +106,7 @@ pub fn compress_assets(options: &mut Config, listener: &dyn Listener) -> CDResul
                 format!("{target_path_str}.gz").into(),
                 asset.c.chmod,
                 IsBuilt::No,
+                false,
             ));
 
             indices_to_remove.push(idx);

@@ -514,7 +514,7 @@ mod tests {
         // make the unit file available for systemd unit processing
         let source = AssetSource::Path(PathBuf::from(service_file));
         let target_path = PathBuf::from(format!("lib/systemd/system/{}", filename_from_path_str(service_file)));
-        config.assets.resolved.push(Asset::new(source, target_path, 0o000, IsBuilt::No));
+        config.assets.resolved.push(Asset::new(source, target_path, 0o000, IsBuilt::No, false));
 
         // look in the current dir for maintainer scripts (none, but the systemd
         // unit processing will be skipped if we don't set this)
