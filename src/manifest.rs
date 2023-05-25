@@ -812,6 +812,10 @@ impl Config {
     }
 
     pub(crate) fn path_in_build<P: AsRef<Path>>(&self, rel_path: P, profile: &str) -> PathBuf {
+        self.path_in_build_(rel_path.as_ref(), profile)
+    }
+
+    pub(crate) fn path_in_build_(&self, rel_path: &Path, profile: &str) -> PathBuf {
         let profile = match profile {
             "dev" => "debug",
             p => p,
