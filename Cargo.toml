@@ -75,7 +75,7 @@ debug = false
 
 [dev-dependencies]
 mockall = "0.11.3"
-rstest = "0.17.0"
+rstest = { version = "0.17.0", default-features = false }
 lazy_static = "1.4.0"
 
 [workspace]
