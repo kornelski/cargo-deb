@@ -49,6 +49,7 @@ enum Writer {
 impl Writer {
     fn finish(self) -> io::Result<Compressed> {
         match self {
+            #[cfg(feature = "lzma")]
             Self::Xz(w) => w.finish().map(|data| Compressed { compress_format: Format::Xz, data }),
             Self::StdIn {
                 compress_format,

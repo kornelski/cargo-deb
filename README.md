@@ -33,7 +33,6 @@ For a more complete Debian package, you may also define a new table, `[package.m
 
 For a Debian package that includes one or more systemd unit files you may also wish to define a new (inline) table, `[package.metadata.deb.systemd-units]`, so that the unit files are automatically added as assets and the units are properly installed. [Systemd integration](./systemd.md)
 
-
 ### `[package.metadata.deb]` options
 
 Everything is optional:
@@ -59,15 +58,15 @@ Everything is optional:
         - If is argument ends with `/` it will be inferred that the target is the directory where the file will be copied.
         - Otherwise, it will be inferred that the source argument will be renamed when copied.
     3. The third argument is the permissions (octal string) to assign that file.
- - **maintainer-scripts**: directory containing `templates`, `preinst`, `postinst`, `prerm`, or `postrm` [scripts](https://www.debian.org/doc/debian-policy/ch-maintainerscripts.html).
- - **conf-files**: [List of configuration files](https://www.debian.org/doc/manuals/maint-guide/dother.en.html#conffiles) that the package management system will not overwrite when the package is upgraded.
- - **triggers-file**: Path to triggers control file for use by the dpkg trigger facility.
- - **changelog**: Path to Debian-formatted [changelog file](https://www.debian.org/doc/manuals/maint-guide/dreq.en.html#changelog).
- - **features**: List of [Cargo features](https://doc.rust-lang.org/cargo/reference/manifest.html#the-features-section) to use when building the package.
- - **default-features**: whether to use default crate features in addition to the `features` list (default `true`).
- - **separate-debug-symbols**: whether to keep debug symbols, but strip them from executables and save them in separate files (default `false`).
- - **preserve-symlinks**: Whether to preserve symlinks in the asset files (default `false`).
- - **systemd-units**: Optional configuration settings for automated installation of [systemd units](./systemd.md).
+- **maintainer-scripts**: directory containing `templates`, `preinst`, `postinst`, `prerm`, or `postrm` [scripts](https://www.debian.org/doc/debian-policy/ch-maintainerscripts.html).
+- **conf-files**: [List of configuration files](https://www.debian.org/doc/manuals/maint-guide/dother.en.html#conffiles) that the package management system will not overwrite when the package is upgraded.
+- **triggers-file**: Path to triggers control file for use by the dpkg trigger facility.
+- **changelog**: Path to Debian-formatted [changelog file](https://www.debian.org/doc/manuals/maint-guide/dreq.en.html#changelog).
+- **features**: List of [Cargo features](https://doc.rust-lang.org/cargo/reference/manifest.html#the-features-section) to use when building the package.
+- **default-features**: whether to use default crate features in addition to the `features` list (default `true`).
+- **separate-debug-symbols**: whether to keep debug symbols, but strip them from executables and save them in separate files (default `false`).
+- **preserve-symlinks**: Whether to preserve symlinks in the asset files (default `false`).
+- **systemd-units**: Optional configuration settings for automated installation of [systemd units](./systemd.md).
 
 ### Example of custom `Cargo.toml` additions
 
@@ -90,7 +89,13 @@ assets = [
 
 ## Advanced usage
 
+Debian packages can use a number of different compression formats, but the target system may only support of them.
+The default format is currently xz, but this may change at any point to support newer formats.
+The format can be explicitly specified using the `--compress-type` command-line option. The supported formats are "gzip" and "xz".
+
 `--fast` flag uses lighter compression. Useful for very large packages or quick deployment.
+
+`--compress-system` forces the use of system command-line tools for data compression.
 
 ### `[package.metadata.deb.variants.$name]`
 
@@ -160,8 +165,4 @@ This happens when the system-provided LZMA library is too old. Try with a bundle
 cargo install cargo-deb --features=static-lzma
 ```
 
-or fall back to gzip:
-
-```sh
-cargo install cargo-deb --no-default-features
-```
+or use the xz command-line tool by setting the `--compress-system` flag.
