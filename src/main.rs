@@ -21,7 +21,7 @@ struct CliOptions {
     cargo_build_flags: Vec<String>,
     deb_version: Option<String>,
     deb_revision: Option<String>,
-    compress_type: compress::CompressType,
+    compress_type: compress::Format,
     compress_system: bool,
     system_xz: bool,
     profile: Option<String>,
@@ -50,9 +50,9 @@ fn main() {
     cli_opts.optflag("", "version", "Show the version of cargo-deb");
     cli_opts.optopt("", "deb-version", "Alternate version string for package", "version");
     cli_opts.optopt("", "deb-revision", "Alternate revision string for package", "revision");
-    cli_opts.optopt("", "compress-type", "Compress with the given compression format", "name");
-    cli_opts.optflag("", "compress-system", "Use the command-line version of the compression format");
-    cli_opts.optflag("", "system-xz", "Compress using command-line xz command instead of built-in. Deprecated. Use --compress-type xz combined with --compress-system instead");
+    cli_opts.optopt("Z", "compress-type", "Compress with the given compression format", "name");
+    cli_opts.optflag("", "compress-system", "Use the corresponding command-line tool for compression");
+    cli_opts.optflag("", "system-xz", "Compress using command-line xz command instead of built-in. Deprecated, use --compress-system instead");
     cli_opts.optopt("", "profile", "select which project profile to package", "profile");
     cli_opts.optopt("", "cargo-build", "Override cargo build subcommand", "subcommand");
 
@@ -75,10 +75,10 @@ fn main() {
     let install = matches.opt_present("install");
 
     let compress_type = match matches.opt_str("compress-type").as_deref() {
-        Some("gz" | "gzip") => compress::CompressType::Gzip,
-        Some("xz") | None => compress::CompressType::Xz,
+        Some("gz" | "gzip") => compress::Format::Gzip,
+        Some("xz") | None => compress::Format::Xz,
         _ => {
-            err_exit(&CargoDebError::Str("unrecognized compress-type. Supported: gzip, xz"));
+            err_exit(&CargoDebError::Str("unrecognized compression format. Supported: gzip, xz"));
         }
     };
 
@@ -178,7 +178,7 @@ fn process(
     if system_xz {
         listener.warning("--system-xz is deprecated, use --compress-system instead.".into());
 
-        compress_type = compress::CompressType::Xz;
+        compress_type = compress::Format::Xz;
         compress_system = true;
     }
 

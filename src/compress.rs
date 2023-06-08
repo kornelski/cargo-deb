@@ -5,14 +5,13 @@ use std::ops;
 use std::process::{ChildStdin, Child};
 use std::process::{Command, Stdio};
 
-#[derive(Clone, Copy, Default)]
-pub enum CompressType {
-    #[default]
+#[derive(Clone, Copy)]
+pub enum Format {
     Xz,
     Gzip,
 }
 
-impl CompressType {
+impl Format {
     pub fn extension(&self) -> &'static str {
         match self {
             Self::Xz => "xz",
@@ -26,6 +25,13 @@ impl CompressType {
             Self::Gzip => "gzip",
         }
     }
+
+    fn level(&self, fast: bool) -> u32 {
+        match self {
+            Self::Xz => if fast { 1 } else { 6 },
+            Self::Gzip => if fast { 1 } else { 9 },
+        }
+    }
 }
 
 enum Writer {
@@ -33,7 +39,7 @@ enum Writer {
     Xz(xz2::write::XzEncoder<Vec<u8>>),
     Gz(flate2::write::GzEncoder<Vec<u8>>),
     StdIn {
-        compress_type: CompressType,
+        compress_format: Format,
         child: Child, 
         handle: std::thread::JoinHandle<io::Result<Vec<u8>>>,
         stdin: BufWriter<ChildStdin>
@@ -43,13 +49,18 @@ enum Writer {
 impl Writer {
     fn finish(self) -> io::Result<Compressed> {
         match self {
-            Self::Xz(w) => w.finish().map(|data| Compressed {compress_type: CompressType::Xz, data}),
-            Self::StdIn{compress_type, mut child, handle: join_handle, stdin} => {
+            Self::Xz(w) => w.finish().map(|data| Compressed { compress_format: Format::Xz, data }),
+            Self::StdIn {
+                compress_format,
+                mut child,
+                handle,
+                stdin
+            } => {
                 drop(stdin);
                 child.wait()?;
-                join_handle.join().unwrap().map(|data| Compressed {compress_type, data})
+                handle.join().unwrap().map(|data| Compressed { compress_format, data })
             }
-            Self::Gz(w) => w.finish().map(|data| Compressed { compress_type: CompressType::Gzip, data }),   
+            Self::Gz(w) => w.finish().map(|data| Compressed { compress_format: Format::Gzip, data }),   
         }
     }
 }
@@ -74,7 +85,7 @@ impl io::Write for Compressor {
             #[cfg(feature = "lzma")]
             Writer::Xz(w) => w.write(buf),
             Writer::Gz(w) => w.write(buf),
-            Writer::StdIn{stdin, ..} =>stdin.write(buf),
+            Writer::StdIn { stdin, .. } => stdin.write(buf),
         }?;
         self.uncompressed_size += len;
         Ok(len)
@@ -106,13 +117,13 @@ impl Compressor {
 }
 
 pub struct Compressed {
-    compress_type: CompressType,
+    compress_format: Format,
     data: Vec<u8>,
 }
 
 impl Compressed {
     pub fn extension(&self) -> &'static str {
-        self.compress_type.extension()
+        self.compress_format.extension()
     }
 }
 
@@ -124,14 +135,14 @@ impl ops::Deref for Compressed {
     }
 }
 
-fn system_compressor(compress_type: CompressType, fast: bool) -> CDResult<Compressor> {
-    let mut child = Command::new(compress_type.program())
-        .arg(if fast { "-1" } else { "-6" })
+fn system_compressor(compress_format: Format, fast: bool) -> CDResult<Compressor> {
+    let mut child = Command::new(compress_format.program())
+        .arg(format!("-{}", compress_format.level(fast)))
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::inherit())
         .spawn()
-        .map_err(|e| CargoDebError::CommandFailed(e, compress_type.program()))?;
+        .map_err(|e| CargoDebError::CommandFailed(e, compress_format.program()))?;
     let mut stdout = child.stdout.take().unwrap();
 
     let handle = std::thread::spawn(move || {
@@ -140,22 +151,22 @@ fn system_compressor(compress_type: CompressType, fast: bool) -> CDResult<Compre
     });
 
     let stdin = BufWriter::with_capacity(1<<16, child.stdin.take().unwrap());
-    Ok(Compressor::new(Writer::StdIn{ compress_type, child, handle, stdin }))
+    Ok(Compressor::new(Writer::StdIn { compress_format, child, handle, stdin }))
 }
 
 
-pub fn select_compressor(fast: bool, compress_type: CompressType, use_system: bool) -> CDResult<Compressor> {
+pub fn select_compressor(fast: bool, compress_format: Format, use_system: bool) -> CDResult<Compressor> {
     if use_system {
-        return system_compressor(compress_type, fast);
+        return system_compressor(compress_format, fast);
     }
 
-    match compress_type {
+    match compress_format {
         #[cfg(feature = "lzma")]
-        CompressType::Xz => {
+        Format::Xz => {
             // Compression level 6 is a good trade off between size and [ridiculously] long compression time
             let encoder = xz2::stream::MtStreamBuilder::new()
                 .threads(num_cpus::get() as u32)
-                .preset(if fast { 1 } else { 6 })
+                .preset(compress_format.level(fast))
                 .encoder()
                 .map_err(CargoDebError::LzmaCompressionError)?;
         
@@ -163,12 +174,12 @@ pub fn select_compressor(fast: bool, compress_type: CompressType, use_system: bo
             Ok(Compressor::new(Writer::Xz(writer)))
         }
         #[cfg(not(feature = "lzma"))]
-        CompressType::Xz => system_compressor(compress_type, fast),
-        CompressType::Gzip => {
+        Format::Xz => system_compressor(compress_format, fast),
+        Format::Gzip => {
             use flate2::Compression;
             use flate2::write::GzEncoder;
         
-            let writer = GzEncoder::new(Vec::new(), if fast { Compression::fast() } else { Compression::best() });
+            let writer = GzEncoder::new(Vec::new(), Compression::new(compress_format.level(fast)));
             Ok(Compressor::new(Writer::Gz(writer)))
         }
     }

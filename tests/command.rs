@@ -9,7 +9,7 @@ use tempfile::TempDir;
 
 #[test]
 fn build_workspaces() {
-    let (cdir, ddir) = extract_built_package_from_manifest("tests/test-workspace/test-ws1/Cargo.toml", &["--no-strip", "--fast"]);
+    let (cdir, ddir) = extract_built_package_from_manifest("tests/test-workspace/test-ws1/Cargo.toml", "xz",&["--no-strip", "--fast"]);
     assert!(ddir.path().join("usr/local/bin/renamed2").exists());
     assert!(ddir.path().join("usr/local/bin/decoy").exists());
 
@@ -18,13 +18,35 @@ fn build_workspaces() {
     assert!(control.contains("Package: test1-crate-name\n"));
     assert!(control.contains("Maintainer: ws\n"));
 
-    let (_, ddir) = extract_built_package_from_manifest("tests/test-workspace/test-ws2/Cargo.toml", &["--no-strip"]);
+    let (_, ddir) = extract_built_package_from_manifest("tests/test-workspace/test-ws2/Cargo.toml", "xz", &["--no-strip"]);
     assert!(ddir.path().join("usr/bin/renamed2").exists());
     assert!(ddir.path().join(format!("usr/lib/{DLL_PREFIX}test2lib{DLL_SUFFIX}")).exists());
 }
 
+#[test]
+fn build_with_explicit_compress_type() {
+    // ws1 with gzip
+    let (_, ddir) = extract_built_package_from_manifest("tests/test-workspace/test-ws1/Cargo.toml", "gz", &["--no-strip", "--compress-type", "gzip"]);
+    assert!(ddir.path().join("usr/local/bin/decoy").exists());
+
+    // ws2 with xz
+    let (_, ddir) = extract_built_package_from_manifest("tests/test-workspace/test-ws2/Cargo.toml", "xz", &["--no-strip", "--compress-type", "xz"]);
+    assert!(ddir.path().join("usr/bin/renamed2").exists());
+}
+
+#[test]
+fn build_with_command_line_compress() {
+    // ws1 with system xz
+    let (_, ddir) = extract_built_package_from_manifest("tests/test-workspace/test-ws1/Cargo.toml", "xz", &["--no-strip", "--compress-system", "--compress-type", "xz"]);
+    assert!(ddir.path().join("usr/local/bin/decoy").exists());
+
+    // ws2 with system gzip
+    let (_, ddir) = extract_built_package_from_manifest("tests/test-workspace/test-ws2/Cargo.toml", "gz", &["--no-strip", "--compress-system", "--compress-type", "gz"]);
+    assert!(ddir.path().join("usr/bin/renamed2").exists());
+}
+
 #[track_caller]
-fn extract_built_package_from_manifest(manifest_path: &str, args: &[&str]) -> (TempDir, TempDir) {
+fn extract_built_package_from_manifest(manifest_path: &str, ext: &str, args: &[&str]) -> (TempDir, TempDir) {
     let (_bdir, deb_path) = cargo_deb(manifest_path, args);
 
     let ardir = tempfile::tempdir().expect("testdir");
@@ -37,7 +59,6 @@ fn extract_built_package_from_manifest(manifest_path: &str, args: &[&str]) -> (T
 
     assert_eq!("2.0\n", fs::read_to_string(ardir.path().join("debian-binary")).unwrap());
 
-    let ext = if cfg!(feature = "lzma") { "xz" } else { "gz" };
     assert!(ardir.path().join(format!("data.tar.{ext}")).exists());
     assert!(ardir.path().join(format!("control.tar.{ext}")).exists());
 
@@ -71,6 +92,7 @@ fn cargo_deb(manifest_path: &str, args: &[&str]) -> (TempDir, PathBuf) {
     let cmd_path = root.join(env!("CARGO_BIN_EXE_cargo-deb"));
     assert!(cmd_path.exists());
     let output = Command::new(cmd_path)
+        .env("CARGO_TARGET_DIR", cargo_dir.path()) // use isolated 'target' directories
         .arg(format!("--manifest-path={}", root.join(manifest_path).display()))
         .arg(format!("--output={}", deb_path.display()))
         .args(args)
