@@ -2,7 +2,7 @@ use crate::error::*;
 use std::io::{Read, BufWriter};
 use std::io;
 use std::ops;
-use std::process::{ChildStdin, Child};
+use std::process::{Child, ChildStdin};
 use std::process::{Command, Stdio};
 
 #[derive(Clone, Copy)]
@@ -77,7 +77,7 @@ impl io::Write for Compressor {
             #[cfg(feature = "lzma")]
             Writer::Xz(w) => w.flush(),
             Writer::Gz(w) => w.flush(),
-            Writer::StdIn{stdin, ..} => stdin.flush(),
+            Writer::StdIn { stdin, .. } => stdin.flush(),
         }
     }
 
@@ -97,7 +97,7 @@ impl io::Write for Compressor {
             #[cfg(feature = "lzma")]
             Writer::Xz(w) => w.write_all(buf),
             Writer::Gz(w) => w.write_all(buf),
-            Writer::StdIn{stdin, ..} => stdin.write_all(buf),
+            Writer::StdIn { stdin, .. } => stdin.write_all(buf),
         }?;
         self.uncompressed_size += buf.len();
         Ok(())
