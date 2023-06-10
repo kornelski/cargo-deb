@@ -21,6 +21,8 @@ struct CliOptions {
     cargo_build_flags: Vec<String>,
     deb_version: Option<String>,
     deb_revision: Option<String>,
+    compress_type: compress::Format,
+    compress_system: bool,
     system_xz: bool,
     profile: Option<String>,
 }
@@ -48,7 +50,9 @@ fn main() {
     cli_opts.optflag("", "version", "Show the version of cargo-deb");
     cli_opts.optopt("", "deb-version", "Alternate version string for package", "version");
     cli_opts.optopt("", "deb-revision", "Alternate revision string for package", "revision");
-    cli_opts.optflag("", "system-xz", "Compress using command-line xz command instead of built-in");
+    cli_opts.optopt("Z", "compress-type", "Compress with the given compression format", "name");
+    cli_opts.optflag("", "compress-system", "Use the corresponding command-line tool for compression");
+    cli_opts.optflag("", "system-xz", "Compress using command-line xz command instead of built-in. Deprecated, use --compress-system instead");
     cli_opts.optopt("", "profile", "select which project profile to package", "profile");
     cli_opts.optopt("", "cargo-build", "Override cargo build subcommand", "subcommand");
 
@@ -69,6 +73,15 @@ fn main() {
     }
 
     let install = matches.opt_present("install");
+
+    let compress_type = match matches.opt_str("compress-type").as_deref() {
+        Some("gz" | "gzip") => compress::Format::Gzip,
+        Some("xz") | None => compress::Format::Xz,
+        _ => {
+            err_exit(&CargoDebError::Str("unrecognized compression format. Supported: gzip, xz"));
+        }
+    };
+
     match process(CliOptions {
         no_build: matches.opt_present("no-build"),
         strip_override: if matches.opt_present("strip") { Some(true) } else if matches.opt_present("no-strip") { Some(false) } else { None },
@@ -85,6 +98,8 @@ fn main() {
         manifest_path: matches.opt_str("manifest-path"),
         deb_version: matches.opt_str("deb-version"),
         deb_revision: matches.opt_str("deb-revision"),
+        compress_type,
+        compress_system: matches.opt_present("compress-system"),
         system_xz: matches.opt_present("system-xz"),
         profile: matches.opt_str("profile"),
         cargo_build_cmd: matches.opt_str("cargo-build").unwrap_or("build".to_string()),
@@ -131,6 +146,8 @@ fn process(
         mut cargo_build_flags,
         deb_version,
         deb_revision,
+        mut compress_type,
+        mut compress_system,
         system_xz,
         profile,
     }: CliOptions,
@@ -157,6 +174,13 @@ fn process(
         listener_tmp2 = listener::StdErrListener { verbose };
         &listener_tmp2
     };
+
+    if system_xz {
+        listener.warning("--system-xz is deprecated, use --compress-system instead.".into());
+
+        compress_type = compress::Format::Xz;
+        compress_system = true;
+    }
 
     // The profile is selected based on the given ClI options and then passed to
     // cargo build accordingly. you could argue that the other way around is
@@ -207,13 +231,13 @@ fn process(
     let (control_builder, data_result) = rayon::join(
         move || {
             // The control archive is the metadata for the package manager
-            let mut control_builder = ControlArchiveBuilder::new(compress::xz_or_gz(fast, system_xz)?, default_timestamp, listener);
+            let mut control_builder = ControlArchiveBuilder::new(compress::select_compressor(fast, compress_type, compress_system)?, default_timestamp, listener);
             control_builder.generate_archive(options)?;
             Ok::<_, CargoDebError>(control_builder)
         },
         move || {
             // Initialize the contents of the data archive (files that go into the filesystem).
-            let (compressed, asset_hashes) = data::generate_archive(compress::xz_or_gz(fast, system_xz)?, &options, default_timestamp, listener)?;
+            let (compressed, asset_hashes) = data::generate_archive(compress::select_compressor(fast, compress_type, compress_system)?, &options, default_timestamp, listener)?;
             let original_data_size = compressed.uncompressed_size;
             Ok::<_, CargoDebError>((compressed.finish()?, original_data_size, asset_hashes))
         },
