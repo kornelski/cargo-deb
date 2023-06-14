@@ -432,7 +432,11 @@ impl Config {
         let manifest_bytes =
             fs::read(manifest_path).map_err(|e| CargoDebError::IoFile("unable to read manifest", e, manifest_path.to_owned()))?;
         let manifest_mdate = std::fs::metadata(manifest_path)?.modified().unwrap_or_else(|_| SystemTime::now());
-        let default_timestamp = manifest_mdate.duration_since(SystemTime::UNIX_EPOCH).expect("bad clock").as_secs();
+        let default_timestamp = if let Some(source_date_epoch) = std::env::var("SOURCE_DATE_EPOCH").ok() {
+            source_date_epoch.parse().map_err(|e| CargoDebError::NumParse("SOURCE_DATE_EPOCH", e))?
+        } else {
+            manifest_mdate.duration_since(SystemTime::UNIX_EPOCH).map_err(CargoDebError::SystemTime)?.as_secs()
+        };
 
         let mut manifest = cargo_toml::Manifest::<CargoPackageMetadata>::from_slice_with_metadata(&manifest_bytes)
             .map_err(|e| CargoDebError::TomlParsing(e, manifest_path.into()))?;
