@@ -1,7 +1,7 @@
-use std::io::Write;
 use crate::error::CDResult;
 use std::collections::HashSet;
 use std::io;
+use std::io::Write;
 use std::path::{Component, Path, PathBuf};
 use tar::EntryType;
 use tar::Header as TarHeader;

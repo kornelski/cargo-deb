@@ -174,7 +174,7 @@ fn run_cargo_deb_command_on_example_dir_with_separate_debug_symbols() {
 }
 
 #[test]
-#[cfg(all(feature = "lzma"))]
+#[cfg(feature = "lzma")]
 fn run_cargo_deb_command_on_example_dir_with_variant() {
     let args = ["--variant=debug", "--no-strip"];
     let (_bdir, deb_path) = cargo_deb("example/Cargo.toml", &args);

@@ -1,9 +1,9 @@
 use crate::dh_installsystemd;
 use crate::dh_lib;
-use crate::error::*;
+use crate::error::{CDResult, CargoDebError};
 use crate::listener::Listener;
 use crate::manifest::Config;
-use crate::pathbytes::*;
+use crate::pathbytes::AsUnixPathBytes;
 use crate::tararchive::Archive;
 use crate::util::{is_path_file, read_file_to_bytes};
 use crate::wordsplit::WordSplit;
@@ -21,7 +21,10 @@ pub struct ControlArchiveBuilder<'l, W: Write> {
 
 impl<'l, W: Write> ControlArchiveBuilder<'l, W> {
     pub fn new(dest: W, time: u64, listener: &'l dyn Listener) -> Self {
-        Self { archive: Archive::new(dest, time), listener }
+        Self {
+            archive: Archive::new(dest, time),
+            listener,
+        }
     }
 
     /// Generates an uncompressed tar archive with `control`, `md5sums`, and others
@@ -94,8 +97,8 @@ impl<'l, W: Write> ControlArchiveBuilder<'l, W> {
 
             // Add maintainer scripts to the archive, either those supplied by the
             // user or if available prefer modified versions generated above.
-            for name in &["config", "preinst", "postinst", "prerm", "postrm", "templates"] {
-                let mut script = scripts.remove(&name.to_string());
+            for name in ["config", "preinst", "postinst", "prerm", "postrm", "templates"] {
+                let mut script = scripts.remove(name);
 
                 if script.is_none() {
                     let script_path = maintainer_scripts_dir.join(name);
@@ -109,7 +112,7 @@ impl<'l, W: Write> ControlArchiveBuilder<'l, W> {
                     // control files should use mode 0755; all other control files should use 0644.
                     // See Debian Policy Manual section 10.9
                     // and lintian tag control-file-has-bad-permissions
-                    let permissions = if *name == "templates" { 0o644 } else { 0o755 };
+                    let permissions = if name == "templates" { 0o644 } else { 0o755 };
                     self.archive.file(name, &contents, permissions)?;
                 }
             }
@@ -125,7 +128,7 @@ impl<'l, W: Write> ControlArchiveBuilder<'l, W> {
         // Collect md5sums from each asset in the archive (excludes symlinks).
         for asset in &options.assets.resolved {
             if let Some(value) = asset_hashes.get(&asset.c.target_path) {
-                write!(md5sums, "{:x}", value)?;
+                write!(md5sums, "{value:x}")?;
                 md5sums.write_all(b"  ")?;
 
                 md5sums.write_all(&asset.c.target_path.as_path().as_unix_path())?;
@@ -282,7 +285,7 @@ mod tests {
 
     use super::*;
     use crate::listener::MockListener;
-    use crate::manifest::{Asset, AssetSource, SystemdUnitsConfig, IsBuilt};
+    use crate::manifest::{Asset, AssetSource, IsBuilt, SystemdUnitsConfig};
     use crate::util::tests::{add_test_fs_paths, set_test_fs_path_content};
     use std::io::prelude::Read;
 

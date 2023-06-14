@@ -85,7 +85,7 @@ pub fn reset_deb_temp_directory(options: &Config) -> io::Result<()> {
 /// Removes the target/debian/foo
 pub fn remove_deb_temp_directory(options: &Config) {
     let deb_temp_dir = options.deb_temp_dir();
-    let _ = fs::remove_dir(&deb_temp_dir);
+    let _ = fs::remove_dir(deb_temp_dir);
 }
 
 /// Builds a binary with `cargo build`
@@ -135,8 +135,7 @@ fn debian_triple_from_rust_triple(rust_target_triple: &str) -> String {
     let abi = p.last().unwrap_or("");
 
     let (darch, dabi) = match (arch, abi) {
-        ("i586", _) |
-        ("i686", _) => ("i386", "gnu"),
+        ("i586" | "i686", _) => ("i386", "gnu"),
         ("x86_64", _) => ("x86_64", "gnu"),
         ("aarch64", _) => ("aarch64", "gnu"),
         (arm, abi) if arm.starts_with("arm") || arm.starts_with("thumb") => {
@@ -148,7 +147,6 @@ fn debian_triple_from_rust_triple(rust_target_triple: &str) -> String {
     };
     format!("{darch}-linux-{dabi}")
 }
-
 
 /// Debianizes the architecture name. Weirdly, architecture and multiarch use different naming conventions in Debian!
 pub(crate) fn debian_architecture_from_rust_triple(target: &str) -> &str {
@@ -172,7 +170,7 @@ pub(crate) fn debian_architecture_from_rust_triple(target: &str) -> &str {
         ("powerpc64", _) => "ppc64",
         ("powerpc64le", _) => "ppc64el",
         ("riscv64gc", _) => "riscv64",
-        ("i586", _) | ("i686", _) | ("x86", _) => "i386",
+        ("i586" | "i686" | "x86", _) => "i386",
         ("x86_64", "gnux32") => "x32",
         ("x86_64", _) => "amd64",
         (arm, gnueabi) if arm.starts_with("arm") && gnueabi.ends_with("hf") => "armhf",

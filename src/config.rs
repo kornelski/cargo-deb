@@ -1,4 +1,4 @@
-use crate::error::*;
+use crate::error::CDResult;
 use std::borrow::Cow;
 use std::env;
 use std::fs;
@@ -87,7 +87,7 @@ impl CargoConfig {
                 let linker_file_name = linker.file_name().unwrap().to_str().unwrap();
                 // checks whether it's `/usr/bin/triple-ld` or `/custom-toolchain/ld`
                 let strip_path = if linker_file_name.starts_with(&debian_target_triple) {
-                    linker.with_file_name(format!("{}-{}", debian_target_triple, command_name))
+                    linker.with_file_name(format!("{debian_target_triple}-{command_name}"))
                 } else {
                     linker.with_file_name(command_name)
                 };

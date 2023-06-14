@@ -9,15 +9,15 @@
 ///
 /// # See also
 ///
-/// Ubuntu 20.04 dh_lib sources:
+/// Ubuntu 20.04 `dh_lib` sources:
 /// <https://git.launchpad.net/ubuntu/+source/debhelper/tree/lib/Debian/Debhelper/Dh_Lib.pm?h=applied/12.10ubuntu1>
 ///
-/// Ubuntu 20.04 dh_installsystemd man page (online HTML version):
+/// Ubuntu 20.04 `dh_installsystemd` man page (online HTML version):
 /// <http://manpages.ubuntu.com/manpages/focal/en/man1/dh_installdeb.1.html>
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
-use crate::error::*;
+use crate::error::CargoDebError;
 use crate::util::{is_path_file, read_file_to_string};
 use crate::{listener::Listener, CDResult};
 
@@ -62,7 +62,7 @@ pub(crate) type ScriptFragments = HashMap<String, Vec<u8>>;
 ///
 /// # Known limitations
 ///
-/// The pkgfile() subroutine in the actual dh_installsystemd code is capable of
+/// The pkgfile() subroutine in the actual `dh_installsystemd` code is capable of
 /// matching architecture and O/S specific unit files, but this implementation
 /// does not support architecture or O/S specific unit files.
 ///
@@ -260,7 +260,7 @@ fn debhelper_script_subst(user_scripts_dir: &Path, scripts: &mut ScriptFragments
 
     // merge the generated scripts if they exist into the user script
     let mut generated_text = String::new();
-    for generated_file_name in generated_scripts.iter() {
+    for generated_file_name in &generated_scripts {
         if let Some(contents) = scripts.get(generated_file_name) {
             generated_text.push_str(std::str::from_utf8(contents)?);
         }
@@ -279,7 +279,7 @@ fn debhelper_script_subst(user_scripts_dir: &Path, scripts: &mut ScriptFragments
         }
         scripts.insert(script.into(), new_text.into());
     } else if !generated_text.is_empty() {
-        listener.info(format!("Generating maintainer script {}", script));
+        listener.info(format!("Generating maintainer script {script}"));
 
         // give it a shebang header and rename it
         let mut new_text = String::new();

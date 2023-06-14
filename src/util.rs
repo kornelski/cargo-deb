@@ -32,11 +32,11 @@ pub(crate) fn read_file_to_bytes(path: &Path) -> std::io::Result<Vec<u8>> {
     std::fs::read(path)
 }
 
-/// Create a HashMap from one or more key => value pairs in a single statement.
+/// Create a `HashMap` from one or more key => value pairs in a single statement.
 ///
 /// # Usage
 ///
-/// Any types supported by HashMap for keys and values are supported:
+/// Any types supported by `HashMap` for keys and values are supported:
 ///
 /// ```rust,ignore
 /// let mut one = std::collections::HashMap::new();

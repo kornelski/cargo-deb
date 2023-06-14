@@ -1,8 +1,8 @@
-use ar::{Builder, Header};
 use crate::error::CDResult;
 use crate::manifest::Config;
-use std::fs::File;
+use ar::{Builder, Header};
 use std::fs;
+use std::fs::File;
 use std::path::PathBuf;
 
 pub struct DebArchive {

@@ -1,6 +1,6 @@
-use crate::error::*;
-use std::io::{Read, BufWriter};
+use crate::error::{CDResult, CargoDebError};
 use std::io;
+use std::io::{BufWriter, Read};
 use std::ops;
 use std::process::{Child, ChildStdin};
 use std::process::{Command, Stdio};
@@ -12,6 +12,7 @@ pub enum Format {
 }
 
 impl Format {
+    #[must_use]
     pub fn extension(&self) -> &'static str {
         match self {
             Self::Xz => "xz",
@@ -40,9 +41,9 @@ enum Writer {
     Gz(flate2::write::GzEncoder<Vec<u8>>),
     StdIn {
         compress_format: Format,
-        child: Child, 
+        child: Child,
         handle: std::thread::JoinHandle<io::Result<Vec<u8>>>,
-        stdin: BufWriter<ChildStdin>
+        stdin: BufWriter<ChildStdin>,
     },
 }
 
@@ -55,7 +56,7 @@ impl Writer {
                 compress_format,
                 mut child,
                 handle,
-                stdin
+                stdin,
             } => {
                 drop(stdin);
                 child.wait()?;
@@ -123,6 +124,7 @@ pub struct Compressed {
 }
 
 impl Compressed {
+    #[must_use]
     pub fn extension(&self) -> &'static str {
         self.compress_format.extension()
     }
@@ -170,16 +172,16 @@ pub fn select_compressor(fast: bool, compress_format: Format, use_system: bool) 
                 .preset(compress_format.level(fast))
                 .encoder()
                 .map_err(CargoDebError::LzmaCompressionError)?;
-        
+
             let writer = xz2::write::XzEncoder::new_stream(Vec::new(), encoder);
             Ok(Compressor::new(Writer::Xz(writer)))
         }
         #[cfg(not(feature = "lzma"))]
         Format::Xz => system_compressor(compress_format, fast),
         Format::Gzip => {
-            use flate2::Compression;
             use flate2::write::GzEncoder;
-        
+            use flate2::Compression;
+
             let writer = GzEncoder::new(Vec::new(), Compression::new(compress_format.level(fast)));
             Ok(Compressor::new(Writer::Gz(writer)))
         }

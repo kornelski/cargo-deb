@@ -1,15 +1,15 @@
-use std::io::{Read, self};
-use crate::error::*;
+use crate::error::{CDResult, CargoDebError};
 use crate::listener::Listener;
-use crate::manifest::{Asset, Config, IsBuilt, AssetSource};
+use crate::manifest::{Asset, AssetSource, Config, IsBuilt};
 use crate::tararchive::Archive;
+use flate2::bufread::GzEncoder;
 use flate2::Compression;
 use md5::Digest;
 use std::collections::HashMap;
 use std::fs;
 use std::io::Write;
+use std::io::{self, Read};
 use std::path::{Path, PathBuf};
-use flate2::bufread::GzEncoder;
 
 /// Generates an uncompressed tar archive and hashes of its files
 pub fn generate_archive<W: Write>(dest: W, options: &Config, time: u64, listener: &dyn Listener) -> CDResult<(W, HashMap<PathBuf, Digest>)> {
@@ -131,7 +131,7 @@ fn archive_files<W: Write>(archive: &mut Archive<W>, options: &Config, listener:
         let hash_thread = s.spawn(move || {
             let mut hashes = HashMap::with_capacity(num_items);
             hashes.extend(recv.into_iter().map(|(path, data)| {
-                (path, md5::compute(&data))
+                (path, md5::compute(data))
             }));
             hashes
         });

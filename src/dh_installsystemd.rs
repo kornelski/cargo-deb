@@ -1,15 +1,15 @@
 /// This module is a partial implementation of the Debian DebHelper command
 /// for properly installing systemd units as part of a .deb package install aka
-/// dh_installsystemd. Specifically this implementation is based on the Ubuntu
+/// `dh_installsystemd`. Specifically this implementation is based on the Ubuntu
 /// version labelled 12.10ubuntu1 which is included in Ubuntu 20.04 LTS. For
 /// more details on the source version see the comments in dh_lib.rs.
 ///
 /// # See also
 ///
-/// Ubuntu 20.04 dh_installsystemd sources:
+/// Ubuntu 20.04 `dh_installsystemd` sources:
 /// <https://git.launchpad.net/ubuntu/+source/debhelper/tree/dh_installsystemd?h=applied/12.10ubuntu1>
 ///
-/// Ubuntu 20.04 dh_installsystemd man page (online HTML version):
+/// Ubuntu 20.04 `dh_installsystemd` man page (online HTML version):
 /// <http://manpages.ubuntu.com/manpages/focal/en/man1/dh_installsystemd.1.html>
 use itertools::Itertools; // for .next_tuple()
 
@@ -75,14 +75,14 @@ pub type PackageUnitFiles = HashMap<PathBuf, InstallRecipe>;
 /// > --name=name
 /// > This option controls several things.
 /// >
-/// > It changes the name that dh_installsystemd uses when it looks for maintainer provided
-/// > systemd unit files as listed in the "FILES" section.  As an example, dh_installsystemd
+/// > It changes the name that `dh_installsystemd` uses when it looks for maintainer provided
+/// > systemd unit files as listed in the "FILES" section.  As an example, `dh_installsystemd`
 /// > --name foo will look for debian/package.foo.service instead of
 /// > debian/package.service).  These unit files are installed as name.unit-extension (in
 /// > the example, it would be installed as foo.service).
 /// >
 /// > Furthermore, if no unit files are passed explicitly as command line arguments,
-/// > dh_installsystemd will only act on unit files called name (rather than all unit files
+/// > `dh_installsystemd` will only act on unit files called name (rather than all unit files
 /// > found in the package).
 /// >
 /// > --restart-after-upgrade
@@ -115,7 +115,7 @@ pub type PackageUnitFiles = HashMap<PathBuf, InstallRecipe>;
 /// > Only process and generate maintscripts for the installed unit files with the
 /// > (base)name unit file.
 /// >
-/// > Note: dh_installsystemd will still install unit files from debian/ but it will not
+/// > Note: `dh_installsystemd` will still install unit files from debian/ but it will not
 /// > generate any maintscripts for them unless they are explicitly listed in unit file ...
 #[derive(Default, Debug)]
 pub struct Options {
@@ -137,7 +137,7 @@ pub struct Options {
 pub fn find_units(dir: &Path, main_package: &str, unit_name: Option<&str>) -> PackageUnitFiles {
     let mut installables = HashMap::new();
 
-    for (package_suffix, unit_type, install_dir) in SYSTEMD_UNIT_FILE_INSTALL_MAPPINGS.iter() {
+    for (package_suffix, unit_type, install_dir) in &SYSTEMD_UNIT_FILE_INSTALL_MAPPINGS {
         let package = &format!("{main_package}{package_suffix}");
         if let Some(src_path) = pkgfile(dir, main_package, package, unit_type, unit_name) {
             // .tmpfile files should be installed in a different directory and
@@ -179,7 +179,7 @@ pub fn find_units(dir: &Path, main_package: &str, unit_name: Option<&str>) -> Pa
 /// See:
 ///   <https://www.freedesktop.org/software/systemd/man/systemd.syntax.html#Introduction>
 fn is_comment(s: &str) -> bool {
-    matches!(s.chars().next(), Some('#') | Some(';'))
+    matches!(s.chars().next(), Some('#' | ';'))
 }
 
 /// Strip off any first layer of outer quotes according to systemd quoting
@@ -271,7 +271,7 @@ pub fn generate(package: &str, assets: &[Asset], options: &Options, listener: &d
         let mut also_units = BTreeSet::<String>::new();
 
         // for each unit that we have not yet processed
-        for unit in units.iter() {
+        for unit in &units {
             listener.info(format!("Determining augmentations needed for systemd unit {unit}"));
 
             // the unit has to be started

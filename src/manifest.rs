@@ -57,7 +57,7 @@ impl AssetSource {
         }
     }
 
-    pub fn archive_as_symlink_only(&self) -> bool {
+    #[must_use] pub fn archive_as_symlink_only(&self) -> bool {
         matches!(self, AssetSource::Symlink(_))
     }
 
@@ -117,8 +117,8 @@ pub(crate) struct SystemdUnitsConfig {
     pub stop_on_upgrade: Option<bool>,
 }
 
-/// Match the official dh_installsystemd defaults and rename the confusing
-/// dh_installsystemd option names to be consistently positive rather than
+/// Match the official `dh_installsystemd` defaults and rename the confusing
+/// `dh_installsystemd` option names to be consistently positive rather than
 /// mostly, but not always, negative.
 impl From<&SystemdUnitsConfig> for dh_installsystemd::Options {
     fn from(config: &SystemdUnitsConfig) -> Self {
@@ -424,7 +424,7 @@ impl Config {
             .ok_or_else(|| CargoDebError::NoRootFoundInWorkspace(available_package_names()))
         }?;
         let workspace_root_manifest_path = Path::new(&metadata.workspace_root).join("Cargo.toml");
-        let workspace_root_manifest = cargo_toml::Manifest::<CargoPackageMetadata>::from_path_with_metadata(&workspace_root_manifest_path).ok();
+        let workspace_root_manifest = cargo_toml::Manifest::<CargoPackageMetadata>::from_path_with_metadata(workspace_root_manifest_path).ok();
 
         let target_dir = Path::new(&metadata.target_directory);
         let manifest_path = Path::new(&target_package.manifest_path);
@@ -432,7 +432,7 @@ impl Config {
         let manifest_bytes =
             fs::read(manifest_path).map_err(|e| CargoDebError::IoFile("unable to read manifest", e, manifest_path.to_owned()))?;
         let manifest_mdate = std::fs::metadata(manifest_path)?.modified().unwrap_or_else(|_| SystemTime::now());
-        let default_timestamp = if let Some(source_date_epoch) = std::env::var("SOURCE_DATE_EPOCH").ok() {
+        let default_timestamp = if let Ok(source_date_epoch) = std::env::var("SOURCE_DATE_EPOCH") {
             source_date_epoch.parse().map_err(|e| CargoDebError::NumParse("SOURCE_DATE_EPOCH", e))?
         } else {
             manifest_mdate.duration_since(SystemTime::UNIX_EPOCH).map_err(CargoDebError::SystemTime)?.as_secs()
@@ -553,8 +553,8 @@ impl Config {
             preserve_symlinks: deb.preserve_symlinks.unwrap_or(false),
             systemd_units: match deb.systemd_units {
                 None => None,
-                Some(SystemUnitsSingleOrMultiple::Single(s)) => { Some(vec![s]) }
-                Some(SystemUnitsSingleOrMultiple::Multi(v)) => { Some(v) }
+                Some(SystemUnitsSingleOrMultiple::Single(s)) => Some(vec![s]),
+                Some(SystemUnitsSingleOrMultiple::Multi(v)) => Some(v),
             },
         };
         config.take_assets(package, deb.assets.take(), &cargo_metadata.targets, selected_profile, listener)?;
@@ -977,7 +977,7 @@ This will be hard error in a future release of cargo-deb.", source_path.display(
             let (is_built, source_path, is_example) = if let Ok(rel_path) = source_path.strip_prefix("target/release").or_else(|_| source_path.strip_prefix(&profile_target_dir)) {
                 let is_example = rel_path.starts_with("examples");
 
-                (self.find_is_built_file_in_package(&rel_path, build_targets, if is_example { "example" } else { "bin" }), self.path_in_build(rel_path, profile), is_example)
+                (self.find_is_built_file_in_package(rel_path, build_targets, if is_example { "example" } else { "bin" }), self.path_in_build(rel_path, profile), is_example)
             } else {
                 (IsBuilt::No, self.path_in_package(&source_path), false)
             };
@@ -1068,14 +1068,14 @@ fn manifest_version_string(package: &cargo_toml::Package<CargoPackageMetadata>, 
     let semver_main = parts.next().unwrap();
     if let Some(semver_pre) = parts.next() {
         let pre_ascii = semver_pre.as_bytes();
-        if pre_ascii.iter().any(|c| !c.is_ascii_digit()) && pre_ascii.iter().any(|c| c.is_ascii_digit()) {
-            debianized_version = format!("{}~{}", semver_main, semver_pre);
+        if pre_ascii.iter().any(|c| !c.is_ascii_digit()) && pre_ascii.iter().any(u8::is_ascii_digit) {
+            debianized_version = format!("{semver_main}~{semver_pre}");
             version = &debianized_version;
         }
     }
 
     if let Some(revision) = revision {
-        format!("{}-{}", version, revision)
+        format!("{version}-{revision}")
     } else {
         version.to_owned()
     }

@@ -1,5 +1,5 @@
-use cargo_deb::*;
 use cargo_deb::control::ControlArchiveBuilder;
+use cargo_deb::*;
 use std::env;
 use std::path::Path;
 use std::process;
@@ -237,7 +237,7 @@ fn process(
         },
         move || {
             // Initialize the contents of the data archive (files that go into the filesystem).
-            let (compressed, asset_hashes) = data::generate_archive(compress::select_compressor(fast, compress_type, compress_system)?, &options, default_timestamp, listener)?;
+            let (compressed, asset_hashes) = data::generate_archive(compress::select_compressor(fast, compress_type, compress_system)?, options, default_timestamp, listener)?;
             let original_data_size = compressed.uncompressed_size;
             Ok::<_, CargoDebError>((compressed.finish()?, original_data_size, asset_hashes))
         },
@@ -247,7 +247,7 @@ fn process(
     control_builder.generate_md5sums(options, asset_hashes)?;
     let control_compressed = control_builder.finish()?.finish()?;
 
-    let mut deb_contents = DebArchive::new(&options)?;
+    let mut deb_contents = DebArchive::new(options)?;
     deb_contents.add_data("debian-binary".into(), default_timestamp, b"2.0\n")?;
 
     // Order is important for Debian

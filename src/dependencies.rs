@@ -1,5 +1,5 @@
 use crate::debian_triple_from_rust_triple;
-use crate::error::*;
+use crate::error::{CDResult, CargoDebError};
 use std::io::BufRead;
 use std::path::Path;
 use std::process::Command;
@@ -12,7 +12,7 @@ pub fn resolve(path: &Path, target: &Option<String>) -> CDResult<Vec<String>> {
     std::fs::create_dir_all(&debian_folder)?;
     // dpkg-shlibdeps requires a (possibly empty) debian/control file to exist in its working
     // directory. The executable location doesn't matter.
-    let _ = std::fs::File::create(&control_file_path);
+    let _ = std::fs::File::create(control_file_path);
 
     // Print result to stdout instead of a file.
     let mut args = vec!["-O"];
