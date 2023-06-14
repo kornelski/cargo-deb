@@ -1,6 +1,5 @@
 use crate::debian_triple_from_rust_triple;
 use crate::error::{CDResult, CargoDebError};
-use std::io::BufRead;
 use std::path::Path;
 use std::process::Command;
 
@@ -39,15 +38,15 @@ pub fn resolve(path: &Path, target: &Option<String>) -> CDResult<Vec<String>> {
 
     log::debug!("dpkg-shlibdeps for {}: {}", path.display(), String::from_utf8_lossy(&output.stdout));
 
-    let deps = output.stdout.lines()
-        .filter_map(|line| line.ok())
-        .find(|line| line.starts_with("shlibs:Depends="))
+    let deps = output.stdout.as_slice().split(|&c| c == b'\n')
+        .find_map(|line| line.strip_prefix(b"shlibs:Depends="))
         .ok_or(CargoDebError::Str("Failed to find dependency specification."))?
-        .trim_start_matches("shlibs:Depends=")
-        .split(',')
-        .map(|dep| dep.trim().to_string())
+        .split(|&c| c == b',')
+        .filter_map(|dep| std::str::from_utf8(dep).ok())
+        .map(|dep| dep.trim_matches(|c: char| c.is_ascii_whitespace()))
         // libgcc guaranteed by LSB to always be present
         .filter(|dep| !dep.starts_with("libgcc-") && !dep.starts_with("libgcc1-"))
+        .map(|dep| dep.to_string())
         .collect();
 
     Ok(deps)
