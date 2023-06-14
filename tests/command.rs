@@ -7,9 +7,12 @@ use std::process::Command;
 
 use tempfile::TempDir;
 
+/// file extension of the compression format cargo-deb uses unless explicitly specified.
+const DEFAULT_COMPRESSION_EXT: &str = "xz";
+
 #[test]
 fn build_workspaces() {
-    let (cdir, ddir) = extract_built_package_from_manifest("tests/test-workspace/test-ws1/Cargo.toml", "xz",&["--no-strip", "--fast"]);
+    let (cdir, ddir) = extract_built_package_from_manifest("tests/test-workspace/test-ws1/Cargo.toml", DEFAULT_COMPRESSION_EXT, &["--no-strip", "--fast"]);
     assert!(ddir.path().join("usr/local/bin/renamed2").exists());
     assert!(ddir.path().join("usr/local/bin/decoy").exists());
 
@@ -18,7 +21,7 @@ fn build_workspaces() {
     assert!(control.contains("Package: test1-crate-name\n"));
     assert!(control.contains("Maintainer: ws\n"));
 
-    let (_, ddir) = extract_built_package_from_manifest("tests/test-workspace/test-ws2/Cargo.toml", "xz", &["--no-strip"]);
+    let (_, ddir) = extract_built_package_from_manifest("tests/test-workspace/test-ws2/Cargo.toml", DEFAULT_COMPRESSION_EXT, &["--no-strip"]);
     assert!(ddir.path().join("usr/bin/renamed2").exists());
     assert!(ddir.path().join(format!("usr/lib/{DLL_PREFIX}test2lib{DLL_SUFFIX}")).exists());
 }
@@ -71,7 +74,7 @@ fn extract_built_package_from_manifest(manifest_path: &str, ext: &str, args: &[&
 
     let ddir = tempfile::tempdir().unwrap();
     assert!(Command::new("tar")
-        .arg("xJf")
+        .arg("xf")
         .current_dir(ddir.path())
         .arg(ardir.path().join(format!("data.tar.{ext}")))
         .status().unwrap().success());
@@ -116,9 +119,9 @@ fn cargo_deb(manifest_path: &str, args: &[&str]) -> (TempDir, PathBuf) {
 }
 
 #[test]
-#[cfg(all(feature = "lzma", target_os = "linux"))]
+#[cfg(all(feature = "lzma", target_family = "unix"))]
 fn run_cargo_deb_command_on_example_dir() {
-    let (cdir, ddir) = extract_built_package_from_manifest("example/Cargo.toml", &[]);
+    let (cdir, ddir) = extract_built_package_from_manifest("example/Cargo.toml", DEFAULT_COMPRESSION_EXT, &[]);
 
     let control = fs::read_to_string(cdir.path().join("control")).unwrap();
     assert!(control.contains("Package: example\n"));
@@ -149,9 +152,9 @@ fn run_cargo_deb_command_on_example_dir() {
 }
 
 #[test]
-#[cfg(target_os = "linux")]
+#[cfg(target_family = "unix")]
 fn run_cargo_deb_command_on_example_dir_with_separate_debug_symbols() {
-    let (_cdir, ddir) = extract_built_package_from_manifest("example/Cargo.toml", &["--separate-debug-symbols"]);
+    let (_cdir, ddir) = extract_built_package_from_manifest("example/Cargo.toml", DEFAULT_COMPRESSION_EXT, &["--separate-debug-symbols"]);
 
     let stripped = ddir.path().join("usr/bin/example");
     let debug = ddir.path().join("usr/lib/debug/usr/bin/example.debug");
@@ -185,7 +188,7 @@ fn run_cargo_deb_command_on_example_dir_with_variant() {
         .status().unwrap().success());
 
     assert_eq!("2.0\n", fs::read_to_string(ardir.path().join("debian-binary")).unwrap());
-    let ext = if cfg!(feature = "lzma") { "xz" } else { "gz" };
+    let ext = DEFAULT_COMPRESSION_EXT;
     assert!(ardir.path().join(format!("data.tar.{ext}")).exists());
     assert!(ardir.path().join(format!("control.tar.{ext}")).exists());
 
@@ -227,7 +230,7 @@ fn run_cargo_deb_command_on_example_dir_with_variant() {
 }
 
 #[test]
-#[cfg(all(feature = "lzma", target_os = "linux"))]
+#[cfg(all(feature = "lzma", target_family = "unix"))]
 fn run_cargo_deb_command_on_example_dir_with_version() {
     let (_bdir, deb_path) = cargo_deb("example/Cargo.toml", &["--deb-version=my-custom-version"]);
 
@@ -239,7 +242,7 @@ fn run_cargo_deb_command_on_example_dir_with_version() {
         .arg(deb_path)
         .status().unwrap().success());
 
-    let ext = if cfg!(feature = "lzma") { "xz" } else { "gz" };
+    let ext = DEFAULT_COMPRESSION_EXT;
     assert_eq!("2.0\n", fs::read_to_string(ardir.path().join("debian-binary")).unwrap());
     assert!(ardir.path().join(format!("data.tar.{ext}")).exists());
     assert!(ardir.path().join(format!("control.tar.{ext}")).exists());
