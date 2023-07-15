@@ -196,7 +196,7 @@ systemd-units = [
 For a more advanced example you might want to look at the [NLnet Labs Krill project](https://github.com/NLnetLabs/krill/) use of cargo-deb (disclaimer: this author is a contributor) which shows:
 
 - Use of `unit-name` ([here](https://github.com/NLnetLabs/krill/blob/master/Cargo.toml#L102)).
-- Use of user provided maintainer scripts (e.g. [here](https://github.com/NLnetLabs/krill/blob/master/debian/postinst)) with included `#DEBHELPER#` token to add maintainer script fragments to existing scripts which create a shell user and create (and remove on purge) a config file.
+- Use of user provided maintainer scripts (e.g. [here](https://github.com/NLnetLabs/krill/blob/main/pkg/debian/postinst)) with included `#DEBHELPER#` token to add maintainer script fragments to existing scripts which create a shell user and create (and remove on purge) a config file.
 - Use of operating system specific systemd service unit files via cargo-deb [variants](https://github.com/NLnetLabs/krill/blob/master/Cargo.toml#L111) and symbolic links (e.g. [here](https://github.com/NLnetLabs/krill/blob/master/debian/krill-debian10.krill.service)).
 - Use of `--variant` and `--deb-version` command line arguments ([here](https://github.com/NLnetLabs/krill/blob/master/.github/workflows/pkg.yml#L191)).
 
