@@ -1074,10 +1074,10 @@ fn manifest_version_string(package: &cargo_toml::Package<CargoPackageMetadata>, 
         }
     }
 
-    if let Some(revision) = revision {
-        format!("{version}-{revision}")
-    } else {
-        version.to_owned()
+    match revision.as_deref() {
+        None => format!("{version}-1"),
+        Some("") => format!("{version}"),
+        Some(revision) => format!("{version}-{revision}")
     }
 }
 
@@ -1442,12 +1442,15 @@ mod tests {
 #[test]
 fn deb_ver() {
     let mut c = cargo_toml::Package::new("test", "1.2.3-1");
-    assert_eq!("1.2.3-1", manifest_version_string(&c, None));
+    assert_eq!("1.2.3-1-1", manifest_version_string(&c, None));
     assert_eq!("1.2.3-1-2", manifest_version_string(&c, Some("2".into())));
+    assert_eq!("1.2.3-1", manifest_version_string(&c, Some("".into())));
     c.version = cargo_toml::Inheritable::Set("1.2.0-beta.3".into());
-    assert_eq!("1.2.0~beta.3", manifest_version_string(&c, None));
+    assert_eq!("1.2.0~beta.3-1", manifest_version_string(&c, None));
     assert_eq!("1.2.0~beta.3-4", manifest_version_string(&c, Some("4".into())));
+    assert_eq!("1.2.0~beta.3", manifest_version_string(&c, Some("".into())));
     c.version = cargo_toml::Inheritable::Set("1.2.0-new".into());
-    assert_eq!("1.2.0-new", manifest_version_string(&c, None));
+    assert_eq!("1.2.0-new-1", manifest_version_string(&c, None));
     assert_eq!("1.2.0-new-11", manifest_version_string(&c, Some("11".into())));
+    assert_eq!("1.2.0-new", manifest_version_string(&c, Some("".into())));
 }
