@@ -19,6 +19,7 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::time::SystemTime;
 
+
 fn is_glob_pattern(s: &Path) -> bool {
     s.to_bytes().iter().any(|&c| c == b'*' || c == b'[' || c == b']' || c == b'!')
 }
@@ -510,7 +511,7 @@ impl Config {
             target_dir,
             name: package.name.clone(),
             deb_name: deb.name.take().unwrap_or_else(|| debian_package_name(&package.name)),
-            deb_version: deb_version.unwrap_or_else(|| manifest_version_string(package, deb_revision.or(deb.revision))),
+            deb_version: deb_version.unwrap_or_else(|| manifest_version_string(package, deb_revision.or(deb.revision).as_deref()).into_owned()),
             license: package.license.take().map(|v| v.unwrap()),
             license_file,
             license_file_skip_lines,
@@ -1057,9 +1058,8 @@ This will be hard error in a future release of cargo-deb.", source_path.display(
 
 
 /// Debian-compatible version of the semver version
-fn manifest_version_string(package: &cargo_toml::Package<CargoPackageMetadata>, revision: Option<String>) -> String {
-    let debianized_version;
-    let mut version = package.version();
+fn manifest_version_string<'a>(package: &'a cargo_toml::Package<CargoPackageMetadata>, revision: Option<&str>) -> Cow<'a, str> {
+    let mut version = Cow::Borrowed(package.version());
 
     // Make debian's version ordering (newer versions) more compatible with semver's.
     // Keep "semver-1" and "semver-xxx" as-is (assuming these are irrelevant, or debian revision already),
@@ -1069,15 +1069,14 @@ fn manifest_version_string(package: &cargo_toml::Package<CargoPackageMetadata>, 
     if let Some(semver_pre) = parts.next() {
         let pre_ascii = semver_pre.as_bytes();
         if pre_ascii.iter().any(|c| !c.is_ascii_digit()) && pre_ascii.iter().any(u8::is_ascii_digit) {
-            debianized_version = format!("{semver_main}~{semver_pre}");
-            version = &debianized_version;
+            version = Cow::Owned(format!("{semver_main}~{semver_pre}"));
         }
     }
 
-    match revision.as_deref() {
-        None => format!("{version}-1"),
-        Some("") => format!("{version}"),
-        Some(revision) => format!("{version}-{revision}")
+    match revision {
+        None => format!("{version}-1").into(),
+        Some("") => version,
+        Some(revision) => format!("{version}-{revision}").into()
     }
 }
 
