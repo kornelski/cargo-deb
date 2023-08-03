@@ -2,6 +2,9 @@
 
 This is a [Cargo](https://doc.rust-lang.org/cargo/) helper command which automatically creates binary [Debian packages](https://www.debian.org/doc/debian-policy/ch-binary.html) (`.deb`) from Cargo projects.
 
+> **Note**
+> Since v2.0.0 the deb package version will have a "-1" suffix. You can disable this by adding `--deb-revision=""` flag or `revision = ""` in Cargo metadata. The default suffix is for compliance with Debian's packaging standard.
+
 ## Installation
 
 ```sh
@@ -19,7 +22,7 @@ If you get a compilation error, run `rustup update`! If you get an error running
 cargo deb
 ```
 
-Upon running `cargo deb` from the base directory of your Rust project, the Debian package will be created in `target/debian/<project_name>_<version>_<arch>.deb` (or you can change the location with the `--output` option). This package can be installed with `dpkg -i target/debian/*.deb`.
+Upon running `cargo deb` from the base directory of your Rust project, the Debian package will be created in `target/debian/<project_name>_<version>-1_<arch>.deb` (or you can change the location with the `--output` option). This package can be installed with `dpkg -i target/debian/*.deb`.
 
 Debug symbols are stripped from the main binary by default, unless `[profile.release] debug = true` is set in `Cargo.toml`. If `cargo deb --separate-debug-symbols` is run, the debug symbols will be packaged as a separate file installed at `/usr/lib/debug/<path-to-binary>.debug`.
 
@@ -49,7 +52,7 @@ Everything is optional:
 - **conflicts**, **breaks**, **replaces**, **provides** — [package transition](https://wiki.debian.org/PackageTransition) control.
 - **extended-description**: An extended description of the project — the more detailed the better. Either **extended-description-file** (see below) or package's `readme` file is used if it is not provided.
 - **extended-description-file**: A file with extended description of the project. When specified, used if **extended-description** is not provided.
-- **revision**: Version of the Debian package (when the package is updated more often than the project).
+- **revision**: An additional version of the Debian package (when the package is updated more often than the project). It defaults to "1", but can be set to an empty string to omit the revision.
 - **section**: The [application category](https://packages.debian.org/stretch/) that the software belongs to.
 - **priority**: Defines if the package is `required` or `optional`.
 - **assets**: Files to be included in the package and the permissions to assign them. If assets are not specified, then defaults are taken from binaries listed in `[[bin]]` (copied to `/usr/bin/`) and package `readme` (copied to `usr/share/doc/…`).
@@ -155,7 +158,7 @@ Cargo-deb understands workspaces and can build all crates in the workspace if ne
 
     cargo deb --deb-version my-custom-version
 
-Overrides the version string generated from the Cargo manifest.
+Overrides the version string generated from the Cargo manifest. It also suppresses the `revision` option.
 
 ### Undefined reference to `lzma_stream_encoder_mt` error
 
