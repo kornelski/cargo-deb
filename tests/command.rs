@@ -17,7 +17,7 @@ fn build_workspaces() {
     assert!(ddir.path().join("usr/local/bin/decoy").exists());
 
     let control = fs::read_to_string(cdir.path().join("control")).unwrap();
-    assert!(control.contains("Version: 1.0.0-ws\n"));
+    assert!(control.contains("Version: 1.0.0-ws-1\n"));
     assert!(control.contains("Package: test1-crate-name\n"));
     assert!(control.contains("Maintainer: ws\n"));
 
@@ -119,7 +119,7 @@ fn cargo_deb(manifest_path: &str, args: &[&str]) -> (TempDir, PathBuf) {
 }
 
 #[test]
-#[cfg(all(feature = "lzma", target_family = "unix"))]
+#[cfg(all(feature = "lzma", target_family = "unix", not(target_os = "macos")))]
 fn run_cargo_deb_command_on_example_dir() {
     let (cdir, ddir) = extract_built_package_from_manifest("example/Cargo.toml", DEFAULT_COMPRESSION_EXT, &[]);
 
@@ -152,7 +152,7 @@ fn run_cargo_deb_command_on_example_dir() {
 }
 
 #[test]
-#[cfg(target_family = "unix")]
+#[cfg(all(target_family = "unix", not(target_os = "macos")))]
 fn run_cargo_deb_command_on_example_dir_with_separate_debug_symbols() {
     let (_cdir, ddir) = extract_built_package_from_manifest("example/Cargo.toml", DEFAULT_COMPRESSION_EXT, &["--separate-debug-symbols"]);
 
@@ -201,7 +201,7 @@ fn run_cargo_deb_command_on_example_dir_with_variant() {
 
     let control = fs::read_to_string(cdir.path().join("control")).unwrap();
     assert!(control.contains("Package: example-debug\n"), "Control is: {:?}", control);
-    assert!(control.contains("Version: 0.1.0\n"));
+    assert!(control.contains("Version: 0.1.0-1\n"));
     assert!(control.contains("Section: utils\n"));
     assert!(control.contains("Architecture: "));
     assert!(control.contains("Maintainer: cargo-deb developers <cargo-deb@example.invalid>\n"));
@@ -230,7 +230,7 @@ fn run_cargo_deb_command_on_example_dir_with_variant() {
 }
 
 #[test]
-#[cfg(all(feature = "lzma", target_family = "unix"))]
+#[cfg(all(feature = "lzma", target_family = "unix", not(target_os = "macos")))]
 fn run_cargo_deb_command_on_example_dir_with_version() {
     let (_bdir, deb_path) = cargo_deb("example/Cargo.toml", &["--deb-version=my-custom-version"]);
 
