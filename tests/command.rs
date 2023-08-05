@@ -125,7 +125,7 @@ fn run_cargo_deb_command_on_example_dir() {
 
     let control = fs::read_to_string(cdir.path().join("control")).unwrap();
     assert!(control.contains("Package: example\n"));
-    assert!(control.contains("Version: 0.1.0\n"));
+    assert!(control.contains("Version: 0.1.0-1\n"));
     assert!(control.contains("Section: utils\n"));
     assert!(control.contains("Architecture: "));
     assert!(control.contains("Maintainer: cargo-deb developers <cargo-deb@example.invalid>\n"));
