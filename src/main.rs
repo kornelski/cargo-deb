@@ -33,28 +33,28 @@ fn main() {
     let args: Vec<String> = env::args().collect();
 
     let mut cli_opts = getopts::Options::new();
-    cli_opts.optflag("", "no-build", "Assume project is already built");
     cli_opts.optflag("", "no-strip", "Do not strip debug symbols from the binary");
     cli_opts.optflag("", "strip", "Always try to strip debug symbols");
     cli_opts.optflag("", "separate-debug-symbols", "Strip debug symbols into a separate .debug file");
-    cli_opts.optflag("", "fast", "Use faster compression, which yields larger archive");
-    cli_opts.optflag("", "install", "Immediately install created package");
-    cli_opts.optopt("", "target", "Rust target for cross-compilation", "triple");
-    cli_opts.optopt("", "variant", "Alternative configuration section to use", "name");
-    cli_opts.optopt("", "manifest-path", "Cargo project file location", "./Cargo.toml");
-    cli_opts.optopt("p", "package", "Select one of packages belonging to a workspace", "name");
     cli_opts.optopt("o", "output", "Write .deb to this file or directory", "path");
+    cli_opts.optopt("p", "package", "Select which Cargo workspace package to use", "name");
+    cli_opts.optflag("", "install", "Immediately install the created deb package");
     cli_opts.optflag("q", "quiet", "Don't print warnings");
     cli_opts.optflag("v", "verbose", "Print progress");
-    cli_opts.optflag("h", "help", "Print this help menu");
-    cli_opts.optflag("", "version", "Show the version of cargo-deb");
-    cli_opts.optopt("", "deb-version", "Alternate version string for package", "version");
-    cli_opts.optopt("", "deb-revision", "Alternate revision string for package", "revision");
-    cli_opts.optopt("Z", "compress-type", "Compress with the given compression format", "name");
+    cli_opts.optflag("", "version", "Show version of the cargo-deb tool");
+    cli_opts.optopt("", "deb-version", "Alternate version string for the package", "version");
+    cli_opts.optopt("", "deb-revision", "Alternate revision suffix string for the package", "num");
+    cli_opts.optopt("", "manifest-path", "Cargo project file location", "./Cargo.toml");
+    cli_opts.optopt("", "variant", "Alternative Cargo.toml configuration section to use", "name");
+    cli_opts.optopt("", "target", "Rust target for cross-compilation", "triple");
+    cli_opts.optopt("", "profile", "Select which Cargo build profile to use", "release|<custom>");
+    cli_opts.optflag("", "no-build", "Assume the project is already built");
+    cli_opts.optopt("", "cargo-build", "Override cargo build subcommand", "subcommand");
+    cli_opts.optflag("", "fast", "Use faster compression, which makes a larger deb file");
+    cli_opts.optopt("Z", "compress-type", "Compress with the given compression format", "gz|xz");
     cli_opts.optflag("", "compress-system", "Use the corresponding command-line tool for compression");
     cli_opts.optflag("", "system-xz", "Compress using command-line xz command instead of built-in. Deprecated, use --compress-system instead");
-    cli_opts.optopt("", "profile", "select which project profile to package", "profile");
-    cli_opts.optopt("", "cargo-build", "Override cargo build subcommand", "subcommand");
+    cli_opts.optflag("h", "help", "Print this help menu");
 
     let matches = match cli_opts.parse(&args[1..]) {
         Ok(m) => m,
@@ -63,7 +63,17 @@ fn main() {
         }
     };
     if matches.opt_present("h") {
-        print!("{}", cli_opts.usage("Usage: cargo deb [options] [-- <cargo build flags>]"));
+        print!("{}", cli_opts.usage_with_format(|opts| {
+            let mut out = String::with_capacity(2000);
+            out.push_str("Usage: cargo deb [options] [-- <cargo build flags>]\nhttps://lib.rs/cargo-deb ");
+            out.push_str(env!("CARGO_PKG_VERSION"));
+            out.push_str("\n\n");
+            for opt in opts.filter(|opt| !opt.contains("--system-xz")) {
+                out.push_str(&opt);
+                out.push('\n');
+            }
+            out
+        }));
         return;
     }
 
