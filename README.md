@@ -53,7 +53,7 @@ Everything is optional:
 - **extended-description**: An extended description of the project — the more detailed the better. Either **extended-description-file** (see below) or package's `readme` file is used if it is not provided.
 - **extended-description-file**: A file with extended description of the project. When specified, used if **extended-description** is not provided.
 - **revision**: An additional version of the Debian package (when the package is updated more often than the project). It defaults to "1", but can be set to an empty string to omit the revision.
-- **section**: The [application category](https://packages.debian.org/stretch/) that the software belongs to.
+- **section**: The [application category](https://packages.debian.org/bookworm/) that the software belongs to.
 - **priority**: Defines if the package is `required` or `optional`.
 - **assets**: Files to be included in the package and the permissions to assign them. If assets are not specified, then defaults are taken from binaries listed in `[[bin]]` (copied to `/usr/bin/`) and package `readme` (copied to `usr/share/doc/…`).
     1. The first argument of each asset is the location of that asset in the Rust project. Glob patterns are allowed. You can use `target/release/` in asset paths, even if Cargo is configured to cross-compile or use custom `CARGO_TARGET_DIR`. The target dir paths will be automatically corrected.
