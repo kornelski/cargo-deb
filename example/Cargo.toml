@@ -1,7 +1,9 @@
 [package]
 name = "example"
+description = "just an example"
 version = "0.1.0"
 build = "build.rs"
+license = "MIT"
 publish = false
 
 [dependencies]
