@@ -502,6 +502,11 @@ impl Config {
             deb.extended_description.take(),
             deb.extended_description_file.as_ref().map(Path::new).or(package.readme().as_path()),
         )?;
+
+        if deb_version.is_none() && deb_revision.is_none() && deb.revision.is_none() {
+            listener.warning("The next version of cargo-deb will add a \"-1\" suffix to versions.\nUse --deb-revision=\"\" or package.metadata.deb.revision=\"\" to keep the current behavior.".to_string());
+        }
+
         let mut config = Config {
             default_timestamp,
             package_manifest_dir: package_manifest_dir.to_owned(),
@@ -1074,7 +1079,7 @@ fn manifest_version_string(package: &cargo_toml::Package<CargoPackageMetadata>, 
         }
     }
 
-    if let Some(revision) = revision {
+    if let Some(revision) = revision.filter(|r| !r.is_empty()) {
         format!("{version}-{revision}")
     } else {
         version.to_owned()
@@ -1449,5 +1454,6 @@ fn deb_ver() {
     assert_eq!("1.2.0~beta.3-4", manifest_version_string(&c, Some("4".into())));
     c.version = cargo_toml::Inheritable::Set("1.2.0-new".into());
     assert_eq!("1.2.0-new", manifest_version_string(&c, None));
+    assert_eq!("1.2.0-new", manifest_version_string(&c, Some("".into())));
     assert_eq!("1.2.0-new-11", manifest_version_string(&c, Some("11".into())));
 }
