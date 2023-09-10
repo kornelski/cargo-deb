@@ -31,7 +31,7 @@ impl<'l, W: Write> ControlArchiveBuilder<'l, W> {
     pub fn generate_archive(&mut self, options: &Config) -> CDResult<()> {
         self.generate_control(options)?;
         if let Some(ref files) = options.conf_files {
-            self.generate_conf_files(files)?;
+            self.add_conf_files(files)?;
         }
         self.generate_scripts(options)?;
         if let Some(ref file) = options.triggers_file {
@@ -242,12 +242,8 @@ impl<'l, W: Write> ControlArchiveBuilder<'l, W> {
     }
 
     /// If configuration files are required, the conffiles file will be created.
-    fn generate_conf_files(&mut self, files: &str) -> CDResult<()> {
-        let mut data = Vec::new();
-        data.write_all(files.as_bytes())?;
-        data.push(b'\n');
-        self.archive.file("./conffiles", &data, 0o644)?;
-        Ok(())
+    fn add_conf_files(&mut self, files: &str) -> CDResult<()> {
+        self.archive.file("./conffiles", files.as_bytes(), 0o644)
     }
 
     fn generate_triggers_file(&mut self, path: &Path) -> CDResult<()> {
