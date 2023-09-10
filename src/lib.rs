@@ -138,7 +138,7 @@ pub fn cargo_build(options: &Config, target: Option<&str>, build_command: &str, 
 fn debian_triple_from_rust_triple(rust_target_triple: &str) -> String {
     let mut p = rust_target_triple.split('-');
     let arch = p.next().unwrap();
-    let abi = p.last().unwrap_or("");
+    let abi = p.last().unwrap_or("gnu");
 
     let (darch, dabi) = match (arch, abi) {
         ("i586" | "i686", _) => ("i386", "gnu"),
@@ -148,6 +148,7 @@ fn debian_triple_from_rust_triple(rust_target_triple: &str) -> String {
             ("arm", if abi.ends_with("hf") {"gnueabihf"} else {"gnueabi"})
         },
         ("mipsel", _) => ("mipsel", "gnu"),
+        ("loongarch64", _) => ("loong64", "gnu"),
         (risc, _) if risc.starts_with("riscv64") => ("riscv64", "gnu"),
         (arch, abi) => (arch, abi),
     };
@@ -179,6 +180,7 @@ pub(crate) fn debian_architecture_from_rust_triple(target: &str) -> &str {
         ("i586" | "i686" | "x86", _) => "i386",
         ("x86_64", "gnux32") => "x32",
         ("x86_64", _) => "amd64",
+        ("loongarch64", _) => "loong64",
         (arm, gnueabi) if arm.starts_with("arm") && gnueabi.ends_with("hf") => "armhf",
         (arm, _) if arm.starts_with("arm") => "armel",
         (other_arch, _) => other_arch,
