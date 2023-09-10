@@ -36,10 +36,7 @@ impl<'l, W: Write> ControlArchiveBuilder<'l, W> {
         self.generate_scripts(options)?;
         if let Some(ref file) = options.triggers_file {
             let triggers_file = &options.package_manifest_dir.as_path().join(file);
-            if !triggers_file.exists() {
-                return Err(CargoDebError::AssetFileNotFound(file.to_path_buf()));
-            }
-            self.generate_triggers_file(triggers_file)?;
+            self.add_triggers_file(triggers_file)?;
         }
         Ok(())
     }
@@ -246,11 +243,11 @@ impl<'l, W: Write> ControlArchiveBuilder<'l, W> {
         self.archive.file("./conffiles", files.as_bytes(), 0o644)
     }
 
-    fn generate_triggers_file(&mut self, path: &Path) -> CDResult<()> {
-        if let Ok(content) = fs::read(path) {
-            self.archive.file("./triggers", &content, 0o644)?;
-        }
-        Ok(())
+    fn add_triggers_file(&mut self, path: &Path) -> CDResult<()> {
+        let content = fs::read(path).map_err(|e| {
+            CargoDebError::IoFile("triggers file", e, path.to_path_buf())
+        })?;
+        self.archive.file("./triggers", &content, 0o644)
     }
 }
 

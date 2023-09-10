@@ -149,7 +149,8 @@ fn archive_files<W: Write>(archive: &mut Archive<W>, options: &Config, listener:
 
             match &asset.source {
                 AssetSource::Symlink(source_path) => {
-                    let link_name = fs::read_link(source_path)?;
+                    let link_name = fs::read_link(source_path)
+                        .map_err(|e| CargoDebError::IoFile("symlink asset", e, source_path.to_owned()))?;
                     archive.symlink(&asset.c.target_path, &link_name)?;
                 }
                 _ => {
