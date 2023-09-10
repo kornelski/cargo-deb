@@ -498,7 +498,7 @@ mod tests {
         // supply a maintainer script as if it were available on disk
         // provide file content that we can easily verify
         let mut maintainer_script_contents = Vec::new();
-        for (script, content) in maintainer_scripts.iter() {
+        for &(script, content) in maintainer_scripts.iter() {
             if let Some(content) = content {
                 set_test_fs_path_content(script, content.to_string());
                 maintainer_script_contents.push(content);

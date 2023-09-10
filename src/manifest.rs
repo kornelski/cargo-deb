@@ -54,7 +54,7 @@ impl AssetSource {
         match self {
             AssetSource::Symlink(ref p) |
             AssetSource::Path(ref p) => Some(p),
-            _ => None,
+            AssetSource::Data(_) => None,
         }
     }
 
@@ -76,7 +76,7 @@ impl AssetSource {
         Ok(match self {
             AssetSource::Path(p) => {
                 let data = read_file_to_bytes(p)
-                    .map_err(|e| CargoDebError::IoFile("unable to read asset to add to archive", e, p.to_owned()))?;
+                    .map_err(|e| CargoDebError::IoFile("unable to read asset to add to archive", e, p.clone()))?;
                 Cow::Owned(data)
             },
             AssetSource::Data(d) => Cow::Borrowed(d),
@@ -269,7 +269,7 @@ enum ArchSpec {
 }
 
 fn get_architecture_specification(depend: &str) -> CDResult<(String, Option<ArchSpec>)> {
-    use ArchSpec::*;
+    use ArchSpec::{NegRequire, Require};
     let re = regex::Regex::new(r#"(.*)\[(!?)(.*)\]"#).unwrap();
     match re.captures(depend) {
         Some(caps) => {
@@ -429,7 +429,7 @@ impl Config {
 
         let target_dir = Path::new(&metadata.target_directory);
         let manifest_path = Path::new(&target_package.manifest_path);
-        let package_manifest_dir = manifest_path.parent().unwrap();
+        let package_manifest_dir = manifest_path.parent().ok_or("bad path")?;
         let manifest_bytes =
             fs::read(manifest_path).map_err(|e| CargoDebError::IoFile("unable to read manifest", e, manifest_path.to_owned()))?;
         let manifest_mdate = std::fs::metadata(manifest_path)?.modified().unwrap_or_else(|_| SystemTime::now());
@@ -899,10 +899,7 @@ fn debian_package_name(crate_name: &str) -> String {
 fn debug_flag(manifest: &cargo_toml::Manifest<CargoPackageMetadata>) -> bool {
     manifest.profile.release.as_ref()
         .and_then(|r| r.debug.as_ref())
-        .map_or(false, |debug| match debug {
-            DebugSetting::None => false,
-            _ => true,
-        })
+        .map_or(false, |debug| *debug != DebugSetting::None)
 }
 
 fn manifest_check_config(package: &cargo_toml::Package<CargoPackageMetadata>, manifest_dir: &Path, deb: &CargoDeb, listener: &dyn Listener) {
@@ -989,7 +986,7 @@ This will be hard error in a future release of cargo-deb.", source_path.display(
             unresolved_assets.push(UnresolvedAsset {
                 source_path,
                 c: AssetCommon { target_path, chmod, is_built, is_example },
-            })
+            });
         }
         Assets::with_unresolved_assets(unresolved_assets)
     } else {
@@ -1442,14 +1439,14 @@ mod tests {
 fn deb_ver() {
     let mut c = cargo_toml::Package::new("test", "1.2.3-1");
     assert_eq!("1.2.3-1-1", manifest_version_string(&c, None));
-    assert_eq!("1.2.3-1-2", manifest_version_string(&c, Some("2".into())));
-    assert_eq!("1.2.3-1", manifest_version_string(&c, Some("".into())));
+    assert_eq!("1.2.3-1-2", manifest_version_string(&c, Some("2")));
+    assert_eq!("1.2.3-1", manifest_version_string(&c, Some("")));
     c.version = cargo_toml::Inheritable::Set("1.2.0-beta.3".into());
     assert_eq!("1.2.0~beta.3-1", manifest_version_string(&c, None));
-    assert_eq!("1.2.0~beta.3-4", manifest_version_string(&c, Some("4".into())));
-    assert_eq!("1.2.0~beta.3", manifest_version_string(&c, Some("".into())));
+    assert_eq!("1.2.0~beta.3-4", manifest_version_string(&c, Some("4")));
+    assert_eq!("1.2.0~beta.3", manifest_version_string(&c, Some("")));
     c.version = cargo_toml::Inheritable::Set("1.2.0-new".into());
     assert_eq!("1.2.0-new-1", manifest_version_string(&c, None));
-    assert_eq!("1.2.0-new-11", manifest_version_string(&c, Some("11".into())));
-    assert_eq!("1.2.0-new", manifest_version_string(&c, Some("".into())));
+    assert_eq!("1.2.0-new-11", manifest_version_string(&c, Some("11")));
+    assert_eq!("1.2.0-new", manifest_version_string(&c, Some("")));
 }

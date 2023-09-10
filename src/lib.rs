@@ -1,5 +1,11 @@
 #![recursion_limit = "128"]
-
+#![allow(clippy::case_sensitive_file_extension_comparisons)]
+#![allow(clippy::if_not_else)]
+#![allow(clippy::missing_errors_doc)]
+#![allow(clippy::missing_panics_doc)]
+#![allow(clippy::module_name_repetitions)]
+#![allow(clippy::redundant_closure_for_method_calls)]
+#![allow(clippy::similar_names)]
 /*!
 
 ## Making deb packages
@@ -290,7 +296,7 @@ pub fn strip_binaries(options: &mut Config, target: Option<&str>, listener: &dyn
             },
             None => {
                 // This is unexpected - emit a warning if we come across it
-                listener.warning(format!("Found built asset with non-path source '{:?}'", asset));
+                listener.warning(format!("Found built asset with non-path source '{asset:?}'"));
                 return Ok(());
             },
         };

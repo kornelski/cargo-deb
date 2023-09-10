@@ -23,9 +23,9 @@ use crate::{listener::Listener, CDResult};
 
 /// DebHelper autoscripts are embedded in the Rust library binary.
 /// The autoscripts were taken from:
-///   https://git.launchpad.net/ubuntu/+source/debhelper/tree/autoscripts?h=applied/12.10ubuntu1
+///   <https://git.launchpad.net/ubuntu/+source/debhelper/tree/autoscripts?h=applied/12.10ubuntu1>
 /// To understand which scripts are invoked when, consult:
-///   https://www.debian.org/doc/debian-policy/ap-flowcharts.htm
+///   <https://www.debian.org/doc/debian-policy/ap-flowcharts.htm>
 
 static AUTOSCRIPTS: [(&str, &[u8]); 10] = [
     ("postinst-init-tmpfiles", include_bytes!("../autoscripts/postinst-init-tmpfiles")),
@@ -119,7 +119,7 @@ pub(crate) fn get_embedded_autoscript(snippet_filename: &str) -> String {
     // else load from embedded strings
     let mut snippet = snippet.unwrap_or_else(|| {
         let (_, snippet_bytes) = AUTOSCRIPTS.iter().find(|(s, _)| *s == snippet_filename)
-            .unwrap_or_else(|| panic!("Unknown autoscript '{}'", snippet_filename));
+            .unwrap_or_else(|| panic!("Unknown autoscript '{snippet_filename}'"));
 
         // convert to string
         String::from_utf8_lossy(snippet_bytes).into_owned()
@@ -144,7 +144,7 @@ pub(crate) fn get_embedded_autoscript(snippet_filename: &str) -> String {
 ///
 /// # Cargo Deb specific behaviour
 ///
-/// The autoscripts are sourced from within the binary via the rust_embed crate.
+/// The autoscripts are sourced from within the binary via the `rust_embed` crate.
 ///
 /// Results are stored as updated or new entries in the `ScriptFragments` map,
 /// rather than being written to temporary files on disk.
@@ -212,7 +212,7 @@ pub(crate) fn autoscript(
 /// # Known limitations
 ///
 /// Keys are replaced in arbitrary order, not in reverse sorted order. See:
-///   https://git.launchpad.net/ubuntu/+source/debhelper/tree/lib/Debian/Debhelper/Dh_Lib.pm?h=applied/12.10ubuntu1#n1214
+///   <https://git.launchpad.net/ubuntu/+source/debhelper/tree/lib/Debian/Debhelper/Dh_Lib.pm?h=applied/12.10ubuntu1#n1214>
 ///
 /// # References
 ///
@@ -240,7 +240,7 @@ fn autoscript_sed(snippet_filename: &str, replacements: &HashMap<&str, String>) 
 /// # Known limitations
 ///
 /// Only the #DEBHELPER# token is replaced. Is that enough? See:
-///   https://www.man7.org/linux/man-pages/man1/dh_installdeb.1.html#SUBSTITUTION_IN_MAINTAINER_SCRIPTS
+///   <https://www.man7.org/linux/man-pages/man1/dh_installdeb.1.html#SUBSTITUTION_IN_MAINTAINER_SCRIPTS>
 ///
 /// # References
 ///
@@ -297,7 +297,7 @@ fn debhelper_script_subst(user_scripts_dir: &Path, scripts: &mut ScriptFragments
 /// collected in the `ScriptFragments` map  with the maintainer scripts
 /// on disk supplied by the user.
 ///
-/// See: https://git.launchpad.net/ubuntu/+source/debhelper/tree/dh_installdeb?h=applied/12.10ubuntu1#n300
+/// See: <https://git.launchpad.net/ubuntu/+source/debhelper/tree/dh_installdeb?h=applied/12.10ubuntu1#n300>
 pub(crate) fn apply(user_scripts_dir: &Path, scripts: &mut ScriptFragments, package: &str, unit_name: Option<&str>,
     listener: &dyn Listener) -> CDResult<()>
 {
@@ -461,7 +461,7 @@ mod tests {
 
     #[test]
     fn autoscript_sanity_check_all_embedded_autoscripts() {
-        for (autoscript_filename, _) in AUTOSCRIPTS.iter() {
+        for (autoscript_filename, _) in &AUTOSCRIPTS {
             autoscript_test_wrapper("mypkg", "somescript", autoscript_filename, "dummyunit", None);
         }
     }
@@ -563,7 +563,7 @@ mod tests {
 
         let in_out = vec![(false, "debhelper"), (true, "service")];
 
-        for (service_order, expected_ext) in in_out.into_iter() {
+        for (service_order, expected_ext) in in_out {
             let mut scripts = ScriptFragments::new();
             autoscript(&mut scripts, "mypkg", "prerm", "postrm-systemd", &replacements, service_order, &mock_listener).unwrap();
 
@@ -577,7 +577,7 @@ mod tests {
 
     #[fixture]
     #[allow(unused_braces)]
-    fn empty_user_file() -> String { "".to_owned() }
+    fn empty_user_file() -> String { String::new() }
 
     #[fixture]
     #[allow(unused_braces)]
@@ -613,7 +613,7 @@ mod tests {
         match debhelper_script_subst(Path::new(""), &mut scripts, "mypkg", "myscript", None, &mock_listener) {
             Ok(_) => (),
             Err(CargoDebError::DebHelperReplaceFailed(_)) => panic!("Test failed as expected"),
-            Err(err) => panic!("Unexpected error {:?}", err),
+            Err(err) => panic!("Unexpected error {err:?}"),
         }
     }
 
@@ -635,7 +635,7 @@ mod tests {
     }
 
     fn script_to_string(scripts: &ScriptFragments, script: &str) -> String {
-        String::from_utf8(scripts.get(script).unwrap().to_vec()).unwrap()
+        String::from_utf8(scripts.get(script).unwrap().clone()).unwrap()
     }
 
     #[test]

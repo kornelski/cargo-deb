@@ -82,7 +82,7 @@ fn extract_built_package_from_manifest(manifest_path: &str, ext: &str, args: &[&
     (cdir, ddir)
 }
 
-/// Run `cargo-deb` for the manifest with extra args, returns the TempDir holding the built package
+/// Run `cargo-deb` for the manifest with extra args, returns the `TempDir` holding the built package
 /// and the path to the built package.
 ///
 /// The `--manifest-path` and `--output` args are automatically set.
@@ -101,13 +101,11 @@ fn cargo_deb(manifest_path: &str, args: &[&str]) -> (TempDir, PathBuf) {
         .args(args)
         .output()
         .unwrap();
-    if !output.status.success() {
-        panic!(
+    assert!(output.status.success(), 
             "Cmd failed: {}\n{}",
             String::from_utf8_lossy(&output.stdout),
             String::from_utf8_lossy(&output.stderr)
         );
-    }
 
     // prints deb path on the last line
     let last_line = output.stdout[..output.stdout.len() - 1].split(|&c| c == b'\n').last().unwrap();
@@ -200,7 +198,7 @@ fn run_cargo_deb_command_on_example_dir_with_variant() {
         .status().unwrap().success());
 
     let control = fs::read_to_string(cdir.path().join("control")).unwrap();
-    assert!(control.contains("Package: example-debug\n"), "Control is: {:?}", control);
+    assert!(control.contains("Package: example-debug\n"), "Control is: {control:?}");
     assert!(control.contains("Version: 0.1.0-1\n"));
     assert!(control.contains("Section: utils\n"));
     assert!(control.contains("Architecture: "));

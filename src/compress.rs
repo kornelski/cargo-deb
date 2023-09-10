@@ -13,21 +13,21 @@ pub enum Format {
 
 impl Format {
     #[must_use]
-    pub fn extension(&self) -> &'static str {
+    pub fn extension(self) -> &'static str {
         match self {
             Self::Xz => "xz",
             Self::Gzip => "gz",
         }
     }
 
-    fn program(&self) -> &'static str {
+    fn program(self) -> &'static str {
         match self {
             Self::Xz => "xz",
             Self::Gzip => "gzip",
         }
     }
 
-    fn level(&self, fast: bool) -> u32 {
+    fn level(self, fast: bool) -> u32 {
         match self {
             Self::Xz => if fast { 1 } else { 6 },
             Self::Gzip => if fast { 1 } else { 9 },

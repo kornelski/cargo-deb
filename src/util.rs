@@ -57,7 +57,7 @@ pub(crate) fn read_file_to_bytes(path: &Path) -> std::io::Result<Vec<u8>> {
 ///
 /// # Provenance
 ///
-/// From: https://stackoverflow.com/a/27582993
+/// From: <https://stackoverflow.com/a/27582993>
 macro_rules! map(
     { $($key:expr => $value:expr),+ } => {
         {
@@ -175,7 +175,7 @@ pub(crate) mod tests {
         MOCK_FS.with(|fs| {
             let mut fs_map = fs.lock().unwrap();
             for path in paths {
-                fs_map.insert(path, TestPath::new(path, "".to_owned()));
+                fs_map.insert(path, TestPath::new(path, String::new()));
             }
         });
         ResetFsGuard
@@ -218,7 +218,7 @@ pub(crate) mod tests {
         with_test_fs(|fs| match fs.get_mut(path.to_str().unwrap()) {
             None => Err(std::io::Error::new(
                 std::io::ErrorKind::NotFound,
-                format!("Test filesystem path {:?} does not exist", path),
+                format!("Test filesystem path {path:?} does not exist"),
             )),
             Some(test_path) => {
                 let contents = test_path.read();

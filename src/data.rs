@@ -51,7 +51,7 @@ pub(crate) fn generate_copyright_asset(options: &Config) -> CDResult<Vec<u8>> {
     let mut copyright: Vec<u8> = Vec::new();
     if let Some(ref path) = options.license_file {
         let license_string = fs::read_to_string(options.path_in_package(path))
-            .map_err(|e| CargoDebError::IoFile("unable to read license file", e, path.to_owned()))?;
+            .map_err(|e| CargoDebError::IoFile("unable to read license file", e, path.clone()))?;
         if !has_copyright_metadata(&license_string) {
             append_copyright_metadata(&mut copyright, options)?;
         }
@@ -83,8 +83,8 @@ fn has_copyright_metadata(file: &str) -> bool {
 ///
 /// # References
 ///
-/// https://www.debian.org/doc/debian-policy/ch-docs.html
-/// https://lintian.debian.org/tags/manpage-not-compressed.html
+/// <https://www.debian.org/doc/debian-policy/ch-docs.html>
+/// <https://lintian.debian.org/tags/manpage-not-compressed.html>
 pub fn compress_assets(options: &mut Config, listener: &dyn Listener) -> CDResult<()> {
     let mut indices_to_remove = Vec::new();
     let mut new_assets = Vec::new();
@@ -150,7 +150,7 @@ fn archive_files<W: Write>(archive: &mut Archive<W>, options: &Config, listener:
             match &asset.source {
                 AssetSource::Symlink(source_path) => {
                     let link_name = fs::read_link(source_path)
-                        .map_err(|e| CargoDebError::IoFile("symlink asset", e, source_path.to_owned()))?;
+                        .map_err(|e| CargoDebError::IoFile("symlink asset", e, source_path.clone()))?;
                     archive.symlink(&asset.c.target_path, &link_name)?;
                 }
                 _ => {

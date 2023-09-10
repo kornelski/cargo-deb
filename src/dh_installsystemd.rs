@@ -18,10 +18,10 @@ use std::io::prelude::*;
 use std::path::{Path, PathBuf};
 use std::str;
 
-use crate::dh_lib::*;
+use crate::dh_lib::{ScriptFragments, autoscript, pkgfile};
 use crate::listener::Listener;
 use crate::manifest::Asset;
-use crate::util::*;
+use crate::util::{MyJoin, fname_from_path};
 use crate::CDResult;
 
 /// From man 1 dh_installsystemd on Ubuntu 20.04 LTS. See:
@@ -65,7 +65,7 @@ pub struct InstallRecipe {
 pub type PackageUnitFiles = HashMap<PathBuf, InstallRecipe>;
 
 /// From man 1 dh_installsystemd on Ubuntu 20.04 LTS. See:
-///   http://manpages.ubuntu.com/manpages/focal/en/man1/dh_installsystemd.1.html
+///   <http://manpages.ubuntu.com/manpages/focal/en/man1/dh_installsystemd.1.html>
 /// > --no-enable
 /// > Disable the service(s) on purge, but do not enable them on install.
 /// >
@@ -353,16 +353,12 @@ pub fn generate(package: &str, assets: &[Asset], options: &Options, listener: &d
         let mut replace = map! { "UNITFILES" => start_units.join(" ") };
 
         if options.restart_after_upgrade {
-            let snippet;
-            match options.no_start {
-                true => {
-                    snippet = "postinst-systemd-restartnostart";
-                    replace.insert("RESTART_ACTION", "try-restart".into());
-                },
-                false => {
-                    snippet = "postinst-systemd-restart";
-                    replace.insert("RESTART_ACTION", "restart".into());
-                }
+            let snippet = if options.no_start {
+                replace.insert("RESTART_ACTION", "try-restart".into());
+                "postinst-systemd-restartnostart"
+            } else {
+                replace.insert("RESTART_ACTION", "restart".into());
+                "postinst-systemd-restart"
             };
             autoscript(&mut scripts, package, "postinst", snippet, &replace, true, listener)?;
         } else if !options.no_start {
@@ -610,6 +606,8 @@ mod tests {
 
     #[test]
     fn generate_with_empty_tmp_file_asset() {
+        use crate::dh_lib::get_embedded_autoscript;
+
         const TMP_FILE_NAME: &str = "my_tmp_file";
         let tmp_file_path = PathBuf::from(format!("debian/{TMP_FILE_NAME}"));
 
@@ -906,8 +904,8 @@ WantedBy=multi-user.target");
             _ => unreachable!(),
         }
 
-        for autoscript in autoscript_fragments_to_check_for.iter() {
-            let key = format!("mypkg.{}", autoscript);
+        for autoscript in &autoscript_fragments_to_check_for {
+            let key = format!("mypkg.{autoscript}");
             assert!(fragments.contains_key(&key), "{}", key);
         }
     }
