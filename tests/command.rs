@@ -136,7 +136,7 @@ fn run_cargo_deb_command_on_example_dir() {
     assert!(md5sums.contains("b1946ac92492d2347c6235b4d2611184  var/lib/example/1.txt\n"));
     assert!(md5sums.contains("591785b794601e212b260e25925636fd  var/lib/example/2.txt\n"));
     assert!(md5sums.contains("1537684900f6b12358c88a612adf1049  var/lib/example/3.txt\n"));
-    assert!(md5sums.contains("6f65f1e8907ea8a25171915b3bba45af  usr/share/doc/example/copyright\n"));
+    assert!(md5sums.contains("4009d4b433651f005773f43b703b62b1  usr/share/doc/example/copyright\n"), "{md5sums:?}");
 
     assert!(ddir.path().join("var/lib/example/1.txt").exists());
     assert!(ddir.path().join("var/lib/example/2.txt").exists());
@@ -212,7 +212,7 @@ fn run_cargo_deb_command_on_example_dir_with_variant() {
     assert!(md5sums.contains("b1946ac92492d2347c6235b4d2611184  var/lib/example/1.txt\n"));
     assert!(md5sums.contains("591785b794601e212b260e25925636fd  var/lib/example/2.txt\n"));
     assert!(md5sums.contains("835a3c46f2330925774ebf780aa74241  var/lib/example/4.txt\n"));
-    assert!(md5sums.contains("2455967cef930e647146a8c762199ed3  usr/share/doc/example-debug/copyright\n"));
+    assert!(md5sums.contains("72d6fae497d4bb5454bdf0ebe92d45f1  usr/share/doc/example-debug/copyright\n"), "{md5sums:?}");
 
     let ddir = tempfile::tempdir().unwrap();
     assert!(Command::new("tar")
@@ -267,7 +267,7 @@ fn run_cargo_deb_command_on_example_dir_with_version() {
     assert!(md5sums.contains("b1946ac92492d2347c6235b4d2611184  var/lib/example/1.txt\n"));
     assert!(md5sums.contains("591785b794601e212b260e25925636fd  var/lib/example/2.txt\n"));
     assert!(md5sums.contains("1537684900f6b12358c88a612adf1049  var/lib/example/3.txt\n"));
-    assert!(md5sums.contains("6f65f1e8907ea8a25171915b3bba45af  usr/share/doc/example/copyright\n"), "has:\n{}", md5sums);
+    assert!(md5sums.contains("4009d4b433651f005773f43b703b62b1  usr/share/doc/example/copyright\n"), "has:\n{md5sums}");
 
     let ddir = tempfile::tempdir().unwrap();
     assert!(Command::new("tar")
