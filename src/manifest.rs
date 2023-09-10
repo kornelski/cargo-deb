@@ -903,16 +903,17 @@ fn debug_flag(manifest: &cargo_toml::Manifest<CargoPackageMetadata>) -> bool {
 }
 
 fn manifest_check_config(package: &cargo_toml::Package<CargoPackageMetadata>, manifest_dir: &Path, deb: &CargoDeb, listener: &dyn Listener) {
-    let readme = package.readme().as_path();
+    let readme_rel_path = package.readme().as_path();
     if package.description().is_none() {
         listener.warning("description field is missing in Cargo.toml".to_owned());
     }
     if package.license().is_none() && package.license_file().is_none() {
         listener.warning("license field is missing in Cargo.toml".to_owned());
     }
-    if let Some(readme) = readme {
-        if deb.extended_description.is_none() && deb.extended_description_file.is_none() && (readme.ends_with(".md") || readme.ends_with(".markdown")) {
-            listener.info(format!("extended-description field missing. Using {}, but markdown may not render well.", readme.display()));
+    if let Some(readme_rel_path) = readme_rel_path {
+        let ext = readme_rel_path.extension().unwrap_or("".as_ref());
+        if deb.extended_description.is_none() && deb.extended_description_file.is_none() && (ext == "md" || ext == "markdown") {
+            listener.info(format!("extended-description field missing. Using {}, but markdown may not render well.", readme_rel_path.display()));
         }
     } else {
         for p in &["README.md", "README.markdown", "README.txt", "README"] {
