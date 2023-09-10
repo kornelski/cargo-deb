@@ -45,7 +45,7 @@ pub fn resolve(path: &Path, target: &Option<String>) -> CDResult<Vec<String>> {
         .filter_map(|dep| std::str::from_utf8(dep).ok())
         .map(|dep| dep.trim_matches(|c: char| c.is_ascii_whitespace()))
         // libgcc guaranteed by LSB to always be present
-        .filter(|dep| !dep.starts_with("libgcc-") && !dep.starts_with("libgcc1-"))
+        .filter(|dep| !dep.starts_with("libgcc-") && !dep.starts_with("libgcc1"))
         .map(|dep| dep.to_string())
         .collect();
 
@@ -58,5 +58,5 @@ fn resolve_test() {
     let exe = std::env::current_exe().unwrap();
     let deps = resolve(&exe, &None).unwrap();
     assert!(deps.iter().any(|d| d.starts_with("libc")));
-    assert!(!deps.iter().any(|d| d.starts_with("libgcc")));
+    assert!(!deps.iter().any(|d| d.starts_with("libgcc")), "{deps:?}");
 }
