@@ -7,7 +7,6 @@ use crate::ok_or::OkOrThen;
 use crate::pathbytes::AsUnixPathBytes;
 use crate::util::read_file_to_bytes;
 use cargo_toml::DebugSetting;
-use cargo_toml::OptionalFile;
 use rayon::prelude::*;
 use serde::Deserialize;
 use std::borrow::Cow;
@@ -499,10 +498,15 @@ impl Config {
         let (license_file, license_file_skip_lines) = manifest_license_file(package, deb.license_file.as_ref())?;
 
         manifest_check_config(package, package_manifest_dir, &deb, listener);
+
+        let extended_description_file = deb.extended_description_file.is_none()
+            .then(|| package.readme().as_path()).flatten()
+            .map(|readme_rel_path| package_manifest_dir.join(readme_rel_path));
         let extended_description = manifest_extended_description(
             deb.extended_description.take(),
-            deb.extended_description_file.as_ref().map(Path::new).or(package.readme().as_path()),
+            deb.extended_description_file.as_ref().map(Path::new).or(extended_description_file.as_deref()),
         )?;
+
         let mut config = Config {
             default_timestamp,
             package_manifest_dir: package_manifest_dir.to_owned(),
@@ -1016,8 +1020,8 @@ This will be hard error in a future release of cargo-deb.", source_path.display(
                 }
             })
             .collect();
-        if let OptionalFile::Path(readme) = package.readme() {
-            let path = PathBuf::from(readme);
+        if let Some(readme_rel_path) = package.readme().as_path() {
+            let path = self.path_in_package(readme_rel_path);
             let target_path = Path::new("usr/share/doc")
                 .join(&package.name)
                 .join(path.file_name().ok_or("bad README path")?);

@@ -4,6 +4,7 @@ version = "1.39.3"
 edition = "2021"
 authors = ["test2"]
 description = "test2"
+readme = "a-read-me"
 
 [lib]
 crate-type = ["cdylib", "rlib"]
