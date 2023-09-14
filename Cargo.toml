@@ -39,25 +39,25 @@ path = "src/main.rs"
 doc = false
 
 [dependencies]
-flate2 = "1.0.26"
+flate2 = "1.0.27"
 getopts = "0.2.21"
 md5 = "0.7.0"
 quick-error = "2.0.1"
 xz2 = { version = "0.1.7", optional = true }
-serde = { version = "1.0.180", features = ["derive"] }
-serde_json = "1.0.104"
-tar = "0.4.39"
-toml = "0.7.3"
+serde = { version = "1.0.188", features = ["derive"] }
+serde_json = "1.0.107"
+tar = "0.4.40"
+toml = "0.8"
 glob = "0.3.1"
 ar = "0.9.0"
-cargo_toml = "0.15.2"
+cargo_toml = "0.16"
 rayon = "1.7.0"
-regex = { version = "1.9.1", default-features = false, features = ["std"] }
+regex = { version = "1.9.5", default-features = false, features = ["std"] }
 itertools = "0.11.0"
 num_cpus = { version = "1.16.0", optional = true }
-tempfile = "3.7.0"
+tempfile = "3.8.0"
 env_logger = "0.10.0"
-log = "0.4.19"
+log = "0.4.20"
 crossbeam-channel = "0.5.8"
 
 [features]
@@ -75,7 +75,7 @@ debug = false
 
 [dev-dependencies]
 mockall = "0.11.4"
-rstest = { version = "0.18.1", default-features = false }
+rstest = { version = "0.18.2", default-features = false }
 lazy_static = "1.4.0"
 
 [workspace]
