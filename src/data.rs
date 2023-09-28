@@ -2,14 +2,13 @@ use crate::error::{CDResult, CargoDebError};
 use crate::listener::Listener;
 use crate::manifest::{Asset, AssetSource, Config, IsBuilt};
 use crate::tararchive::Archive;
-use flate2::bufread::GzEncoder;
-use flate2::Compression;
 use md5::Digest;
 use std::collections::HashMap;
 use std::fs;
 use std::io::Write;
-use std::io::{self, Read};
+use std::io;
 use std::path::{Path, PathBuf};
+use zopfli::{BlockType, GzipEncoder, Options};
 
 /// Generates an uncompressed tar archive and hashes of its files
 pub fn generate_archive<W: Write>(dest: W, options: &Config, time: u64, listener: &dyn Listener) -> CDResult<(W, HashMap<PathBuf, Digest>)> {
@@ -175,8 +174,10 @@ fn human_size(len: u64) -> (u64, &'static str) {
     ((len + 999_999) / 1_000_000, "MB")
 }
 
-fn gzipped(content: &[u8]) -> io::Result<Vec<u8>> {
+fn gzipped(mut content: &[u8]) -> io::Result<Vec<u8>> {
     let mut compressed = Vec::with_capacity(content.len() * 2 / 3);
-    GzEncoder::new(content, Compression::default()).read_to_end(&mut compressed)?;
+    let mut encoder = GzipEncoder::new(Options::default(), BlockType::Dynamic, &mut compressed)?;
+    io::copy(&mut content, &mut encoder)?;
+    encoder.finish()?;
     Ok(compressed)
 }

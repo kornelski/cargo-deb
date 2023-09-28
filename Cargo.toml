@@ -39,7 +39,7 @@ path = "src/main.rs"
 doc = false
 
 [dependencies]
-flate2 = "1.0.27"
+zopfli = { version = "0.8.0", default-features = false, features = ["std", "gzip"] }
 getopts = "0.2.21"
 md5 = "0.7.0"
 quick-error = "2.0.1"

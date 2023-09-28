@@ -39,7 +39,7 @@ impl Format {
 enum Writer {
     #[cfg(feature = "lzma")]
     Xz(xz2::write::XzEncoder<Vec<u8>>),
-    Gz(flate2::write::GzEncoder<Vec<u8>>),
+    Gz(BufWriter<zopfli::GzipEncoder<Vec<u8>>>),
     StdIn {
         compress_format: Format,
         child: Child,
@@ -63,7 +63,7 @@ impl Writer {
                 child.wait()?;
                 handle.join().unwrap().map(|data| Compressed { compress_format, data })
             }
-            Self::Gz(w) => w.finish().map(|data| Compressed { compress_format: Format::Gzip, data }),   
+            Self::Gz(w) => w.into_inner()?.finish().map(|data| Compressed { compress_format: Format::Gzip, data }),
         }
     }
 }
@@ -180,10 +180,9 @@ pub fn select_compressor(fast: bool, compress_format: Format, use_system: bool) 
         #[cfg(not(feature = "lzma"))]
         Format::Xz => system_compressor(compress_format, fast),
         Format::Gzip => {
-            use flate2::write::GzEncoder;
-            use flate2::Compression;
+            use zopfli::{GzipEncoder, Options, BlockType};
 
-            let writer = GzEncoder::new(Vec::new(), Compression::new(compress_format.level(fast)));
+            let writer = GzipEncoder::new_buffered(Options::default(), BlockType::Dynamic, Vec::new()).unwrap();
             Ok(Compressor::new(Writer::Gz(writer)))
         }
     }
