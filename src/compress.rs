@@ -1,6 +1,7 @@
 use crate::error::{CDResult, CargoDebError};
 use std::io;
 use std::io::{BufWriter, Read};
+use std::num::NonZeroUsize;
 use std::ops;
 use std::process::{Child, ChildStdin};
 use std::process::{Command, Stdio};
@@ -168,7 +169,7 @@ pub fn select_compressor(fast: bool, compress_format: Format, use_system: bool) 
         Format::Xz => {
             // Compression level 6 is a good trade off between size and [ridiculously] long compression time
             let encoder = xz2::stream::MtStreamBuilder::new()
-                .threads(num_cpus::get() as u32)
+                .threads(std::thread::available_parallelism().unwrap_or(NonZeroUsize::new(1).unwrap()).get() as u32)
                 .preset(compress_format.level(fast))
                 .encoder()
                 .map_err(CargoDebError::LzmaCompressionError)?;
