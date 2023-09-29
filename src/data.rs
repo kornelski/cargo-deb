@@ -7,6 +7,7 @@ use std::collections::HashMap;
 use std::fs;
 use std::io::Write;
 use std::io;
+use std::num::NonZeroU64;
 use std::path::{Path, PathBuf};
 use zopfli::{BlockType, GzipEncoder, Options};
 
@@ -176,7 +177,10 @@ fn human_size(len: u64) -> (u64, &'static str) {
 
 fn gzipped(mut content: &[u8]) -> io::Result<Vec<u8>> {
     let mut compressed = Vec::with_capacity(content.len() * 2 / 3);
-    let mut encoder = GzipEncoder::new(Options::default(), BlockType::Dynamic, &mut compressed)?;
+    let mut encoder = GzipEncoder::new(Options {
+        iteration_count: NonZeroU64::new(7).unwrap(),
+        ..Options::default()
+    }, BlockType::Dynamic, &mut compressed)?;
     io::copy(&mut content, &mut encoder)?;
     encoder.finish()?;
     Ok(compressed)

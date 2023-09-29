@@ -2,6 +2,7 @@ use crate::error::{CDResult, CargoDebError};
 use std::io;
 use std::io::{BufWriter, Read};
 use std::num::NonZeroUsize;
+use std::num::NonZeroU64;
 use std::ops;
 use std::process::{Child, ChildStdin};
 use std::process::{Command, Stdio};
@@ -39,7 +40,8 @@ impl Format {
 enum Writer {
     #[cfg(feature = "lzma")]
     Xz(xz2::write::XzEncoder<Vec<u8>>),
-    Gz(BufWriter<zopfli::GzipEncoder<Vec<u8>>>),
+    Gz(flate2::write::GzEncoder<Vec<u8>>),
+    ZopfliGz(BufWriter<zopfli::GzipEncoder<Vec<u8>>>),
     StdIn {
         compress_format: Format,
         child: Child,
@@ -63,7 +65,8 @@ impl Writer {
                 child.wait()?;
                 handle.join().unwrap().map(|data| Compressed { compress_format, data })
             }
-            Self::Gz(w) => w.into_inner()?.finish().map(|data| Compressed { compress_format: Format::Gzip, data }),
+            Self::Gz(w) => w.finish().map(|data| Compressed { compress_format: Format::Gzip, data }),
+            Self::ZopfliGz(w) => w.into_inner()?.finish().map(|data| Compressed { compress_format: Format::Gzip, data }),
         }
     }
 }
@@ -79,6 +82,7 @@ impl io::Write for Compressor {
             #[cfg(feature = "lzma")]
             Writer::Xz(w) => w.flush(),
             Writer::Gz(w) => w.flush(),
+            Writer::ZopfliGz(w) => w.flush(),
             Writer::StdIn { stdin, .. } => stdin.flush(),
         }
     }
@@ -88,6 +92,7 @@ impl io::Write for Compressor {
             #[cfg(feature = "lzma")]
             Writer::Xz(w) => w.write(buf),
             Writer::Gz(w) => w.write(buf),
+            Writer::ZopfliGz(w) => w.write(buf),
             Writer::StdIn { stdin, .. } => stdin.write(buf),
         }?;
         self.uncompressed_size += len;
@@ -99,6 +104,7 @@ impl io::Write for Compressor {
             #[cfg(feature = "lzma")]
             Writer::Xz(w) => w.write_all(buf),
             Writer::Gz(w) => w.write_all(buf),
+            Writer::ZopfliGz(w) => w.write_all(buf),
             Writer::StdIn { stdin, .. } => stdin.write_all(buf),
         }?;
         self.uncompressed_size += buf.len();
@@ -181,9 +187,20 @@ pub fn select_compressor(fast: bool, compress_format: Format, use_system: bool) 
         Format::Xz => system_compressor(compress_format, fast),
         Format::Gzip => {
             use zopfli::{GzipEncoder, Options, BlockType};
+            use flate2::write::GzEncoder;
+            use flate2::Compression;
 
-            let writer = GzipEncoder::new_buffered(Options::default(), BlockType::Dynamic, Vec::new()).unwrap();
-            Ok(Compressor::new(Writer::Gz(writer)))
+            let writer = if !fast {
+                let inner_writer = GzipEncoder::new_buffered(Options {
+                    iteration_count: NonZeroU64::new(7).unwrap(),
+                    ..Options::default()
+                }, BlockType::Dynamic, Vec::new()).unwrap();
+                Writer::ZopfliGz(inner_writer)
+            } else {
+               let inner_writer = GzEncoder::new(Vec::new(), Compression::new(compress_format.level(fast)));
+               Writer::Gz(inner_writer)
+            };
+            Ok(Compressor::new(writer))
         }
     }
 }
