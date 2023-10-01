@@ -1,6 +1,7 @@
 use crate::error::{CDResult, CargoDebError};
 use std::io;
 use std::io::{BufWriter, Read};
+#[cfg(feature = "lzma")]
 use std::num::NonZeroUsize;
 use std::num::NonZeroU64;
 use std::ops;
