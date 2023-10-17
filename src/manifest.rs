@@ -1125,7 +1125,7 @@ type AssetList = Vec<Vec<String>>;
 
 /// Type-alias for a merge map,
 /// 
-type MergeMap<'a> = BTreeMap<&'a String, [&'a String; 2]>;
+type MergeMap<'a> = BTreeMap<&'a str, [&'a str; 2]>;
 
 #[derive(Clone, Debug, Deserialize, Default)]
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
@@ -1177,14 +1177,12 @@ struct MergeAssets {
 
 /// Enumeration of merge by key strategies
 /// 
-#[derive(Clone, Debug, Deserialize, Default)]
+#[derive(Clone, Debug, Deserialize)]
 enum MergeByKey {
     #[serde(rename = "src")]
     Src(AssetList),
     #[serde(rename = "dest")]
     Dest(AssetList),
-    #[default]
-    Unknown,
 }
 
 impl MergeByKey {
@@ -1203,8 +1201,6 @@ impl MergeByKey {
 
     /// Folds the parent asset into a merge-map preparing to prepare for a merge,
     /// 
-    /// **Note** No-op if unknown strategy
-    /// 
     fn prep_parent_item<'a>(&'a self, mut parent: MergeMap<'a>, asset: &'a Vec<String>) -> MergeMap {
         if let [src, dest, perm, ..] = &asset[..] {
             match &self {
@@ -1213,10 +1209,6 @@ impl MergeByKey {
                 },
                 MergeByKey::Dest(_) => {
                     parent.insert(dest, [src, perm]);
-                },
-                MergeByKey::Unknown => {
-                    // No-op
-                    warn!("Unknown merge strategy");
                 },
             }
             parent
@@ -1260,7 +1252,6 @@ impl MergeByKey {
                     vec![src.to_string(), dest.to_string(), perm.to_string()]
                 }).collect()
             },
-            MergeByKey::Unknown => todo!(),
         }
     }
 }
