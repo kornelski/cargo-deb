@@ -61,6 +61,7 @@ Everything is optional:
         - If is argument ends with `/` it will be inferred that the target is the directory where the file will be copied.
         - Otherwise, it will be inferred that the source argument will be renamed when copied.
     3. The third argument is the permissions (octal string) to assign that file.
+- **merge-assets**: [See "Merging Assets" section under "Advanced Usage"](#merging-assets)
 - **maintainer-scripts**: directory containing `templates`, `preinst`, `postinst`, `prerm`, or `postrm` [scripts](https://www.debian.org/doc/debian-policy/ch-maintainerscripts.html).
 - **conf-files**: [List of configuration files](https://www.debian.org/doc/manuals/maint-guide/dother.en.html#conffiles) that the package management system will not overwrite when the package is upgraded.
 - **triggers-file**: Path to triggers control file for use by the dpkg trigger facility.
@@ -103,6 +104,60 @@ The format can be explicitly specified using the `--compress-type` command-line 
 ### `[package.metadata.deb.variants.$name]`
 
 There can be multiple variants of the metadata in one `Cargo.toml` file. `--variant=name` selects the variant to use. Options set in a variant override `[package.metadata.deb]` options. It automatically adjusts package name.
+
+#### Merging Assets
+
+When defining a variant it can be useful to also define a asset merging strategy.
+
+If the `merge-assets` option is used, `cargo-deb` will merge the list of assets provided to the option with the parent asset list. There are three merging strategies, `append`, `by.dest`, and `by.src`.
+
+- **merge-assets.append**: Appends this list of assets to the parent list of assets.
+- **merge-assets.by.dest**: Merges this list of assets to the parent list of assets, joining on the destination path. Will replace both the source path and permissions.
+- **merge-assets.by.src**: Merges this list of assets to the parent list of assets, joining on the source path. Will replace both the destination path and permissions.
+
+**Note**: Using both `append`, and a `by.*` option are allowed, w/ the former being applied before the latter.
+
+#### Example of `merge-assets`
+```
+# Example parent asset list
+[package.metadata.deb]
+assets = [
+    # binary
+    ["target/release/example", "usr/bin/", "755"],
+    # assets
+    ["assets/*", "var/lib/example", "644"],
+    ["target/release/assets/*", "var/lib/example", "644"],
+    ["3.txt", "var/lib/example/3.txt", "644"],
+    ["3.txt", "var/lib/example/merged.txt", "644"],
+]
+
+# Example merging by appending asset list
+[package.metadata.deb.variants.mergeappend]
+merge-assets.append = [
+    ["4.txt", "var/lib/example/appended/4.txt", "644"]
+]
+
+# Example merging by `dest` path
+[package.metadata.deb.variants.mergedest]
+merge-assets.by.dest = [
+    ["4.txt", "var/lib/example/merged.txt", "644"]
+]
+
+# Example merging by `src` path
+[package.metadata.deb.variants.mergesrc]
+merge-assets.by.src = [
+    ["3.txt", "var/lib/example/merged-2.txt", "644"]
+]
+
+# Example merging by appending and by `src` path
+[package.metadata.deb.variants.mergeappendandsrc]
+merge-assets.append = [
+    ["4.txt", "var/lib/example/appended/4.txt", "644"]
+]
+merge-assets.by.src = [
+    ["3.txt", "var/lib/example/merged-2.txt", "644"]
+]
+```
 
 ### `[package.metadata.deb.systemd-units]`
 

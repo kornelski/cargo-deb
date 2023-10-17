@@ -7,10 +7,11 @@ use crate::ok_or::OkOrThen;
 use crate::pathbytes::AsUnixPathBytes;
 use crate::util::read_file_to_bytes;
 use cargo_toml::DebugSetting;
+use log::{debug, warn};
 use rayon::prelude::*;
 use serde::Deserialize;
 use std::borrow::Cow;
-use std::collections::{HashMap, HashSet};
+use std::collections::{HashMap, HashSet, BTreeMap};
 use std::env::consts::EXE_SUFFIX;
 use std::env::consts::{DLL_PREFIX, DLL_SUFFIX};
 use std::fs;
@@ -1118,6 +1119,14 @@ impl DependencyList {
     }
 }
 
+/// Type-alias for list of assets
+/// 
+type AssetList = Vec<Vec<String>>;
+
+/// Type-alias for a merge map,
+/// 
+type MergeMap<'a> = BTreeMap<&'a str, [&'a str; 2]>;
+
 #[derive(Clone, Debug, Deserialize, Default)]
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
 struct CargoDeb {
@@ -1141,7 +1150,8 @@ struct CargoDeb {
     pub priority: Option<String>,
     pub revision: Option<String>,
     pub conf_files: Option<Vec<String>>,
-    pub assets: Option<Vec<Vec<String>>>,
+    pub assets: Option<AssetList>,
+    pub merge_assets: Option<MergeAssets>,
     pub triggers_file: Option<String>,
     pub maintainer_scripts: Option<String>,
     pub features: Option<Vec<String>>,
@@ -1152,8 +1162,118 @@ struct CargoDeb {
     pub variants: Option<HashMap<String, CargoDeb>>,
 }
 
+/// Struct containing merge configuration
+/// 
+#[derive(Clone, Debug, Deserialize, Default)]
+#[serde(deny_unknown_fields)]
+struct MergeAssets {
+    /// Merge assets by appending this list,
+    /// 
+    append: Option<AssetList>,
+    /// Merge assets using the src as the key,
+    /// 
+    by: Option<MergeByKey>,
+}
+
+/// Enumeration of merge by key strategies
+/// 
+#[derive(Clone, Debug, Deserialize)]
+enum MergeByKey {
+    #[serde(rename = "src")]
+    Src(AssetList),
+    #[serde(rename = "dest")]
+    Dest(AssetList),
+}
+
+impl MergeByKey {
+    /// Merges w/ a parent asset list
+    /// 
+    fn merge(self, parent: &AssetList) -> AssetList {
+        let merge_map = { 
+            parent.iter().fold(BTreeMap::new(), |parent, asset| {
+                self.prep_parent_item(parent, asset)
+            })
+        };
+
+        self.merge_with(merge_map)
+    }
+
+
+    /// Folds the parent asset into a merge-map preparing to prepare for a merge,
+    /// 
+    fn prep_parent_item<'a>(&'a self, mut parent: MergeMap<'a>, asset: &'a Vec<String>) -> MergeMap {
+        if let [src, dest, perm, ..] = &asset[..] {
+            match &self {
+                MergeByKey::Src(_) => {
+                    parent.insert(src, [dest, perm]);
+                },
+                MergeByKey::Dest(_) => {
+                    parent.insert(dest, [src, perm]);
+                },
+            }
+            parent
+        } else {
+            warn!("Incomplete asset entry {:?}", asset);
+            parent
+        }
+    }
+
+    /// Merges w/ a parent merge map and returns the resulting asset list,
+    /// 
+    fn merge_with(&self, parent: MergeMap) -> AssetList {
+        match self {
+            MergeByKey::Src(assets) => {
+               assets.iter().fold(parent, |mut acc, asset| {
+                    if let [src, dest, perm, ..] = &asset[..] {
+                        if let Some([replaced_dest, replaced_perm]) = acc.insert(src, [dest, perm]) {
+                            debug!("Replacing {:?} w/ {:?}", [replaced_dest, replaced_perm], [dest, perm]);
+                        }
+                        acc
+                    } else {
+                        warn!("Incomplete asset entry {:?}", asset);
+                        acc
+                    }
+                }).iter().map(|(src, [dest, perm])| {
+                    vec![src.to_string(), dest.to_string(), perm.to_string()]
+                }).collect()
+            },
+            MergeByKey::Dest(assets) => {
+                assets.iter().fold(parent, |mut acc, asset| {
+                    if let [src, dest, perm, ..] = &asset[..] {
+                        if let Some([replaced_src, replaced_perm]) = acc.insert(dest, [src, perm]) {
+                            debug!("Replacing {:?} w/ {:?}", [replaced_src, replaced_perm], [src, perm]);
+                        }
+                        acc
+                    } else {
+                        warn!("Incomplete asset entry {:?}", asset);
+                        acc
+                    }
+                }).iter().map(|(dest, [src, perm])| {
+                    vec![src.to_string(), dest.to_string(), perm.to_string()]
+                }).collect()
+            },
+        }
+    }
+}
+
 impl CargoDeb {
+    /// Inherit unset fields from parent,
+    /// 
+    /// **Note**: For backwards compat, if merge_assets is set, this will apply **after** the variant has overridden the assets.
+    /// 
     fn inherit_from(self, parent: CargoDeb) -> CargoDeb {
+        let mut assets = self.assets.or(parent.assets);
+
+        if let (Some(merge_assets), Some(_assets)) = (self.merge_assets, assets.as_mut()) {
+            if let Some(mut append) = merge_assets.append {
+                _assets.append(&mut append);
+            }
+            
+            if let Some(strategy) = merge_assets.by {
+                assets = Some(strategy.merge(_assets));
+            }
+        }
+
         CargoDeb {
             name: self.name.or(parent.name),
             maintainer: self.maintainer.or(parent.maintainer),
@@ -1175,7 +1295,8 @@ impl CargoDeb {
             priority: self.priority.or(parent.priority),
             revision: self.revision.or(parent.revision),
             conf_files: self.conf_files.or(parent.conf_files),
-            assets: self.assets.or(parent.assets),
+            assets,
+            merge_assets: None,
             triggers_file: self.triggers_file.or(parent.triggers_file),
             maintainer_scripts: self.maintainer_scripts.or(parent.maintainer_scripts),
             features: self.features.or(parent.features),
@@ -1437,6 +1558,123 @@ mod tests {
         let actual = format_conffiles(&["/etc/my-pkg/conf.toml", "etc/my-pkg/conf2.toml"]);
 
         assert_eq!("/etc/my-pkg/conf.toml\n/etc/my-pkg/conf2.toml\n", actual);
+    }
+
+    #[test]
+    fn test_merge_assets() {
+        // Test merging assets by dest
+        fn create_test_asset(src: impl Into<String>, dest: impl Into<String>, perm: impl Into<String>) -> Vec<String> {
+            vec![src.into(), dest.into(), perm.into()]
+        }
+
+        // Test merging assets by dest
+        let original_asset = create_test_asset(
+            "lib/test/empty.txt",
+            "/opt/test/empty.txt",
+            "777"
+        );
+
+        let merge_asset = create_test_asset(
+            "lib/test_variant/empty.txt",
+            "/opt/test/empty.txt",
+            "655"
+        );
+
+        let parent = CargoDeb { assets: Some(vec![ original_asset ]), .. Default::default() };
+        let variant = CargoDeb { merge_assets: Some(MergeAssets { append: None, by: Some(MergeByKey::Dest(vec![ merge_asset ])) }), .. Default::default() };
+
+        let merged = variant.inherit_from(parent);
+        let mut merged = merged.assets.expect("should have assets");
+        let merged_asset = merged.pop().expect("should have an asset");
+        assert_eq!("lib/test_variant/empty.txt", merged_asset[0].as_str(), "should have merged the source location");
+        assert_eq!("/opt/test/empty.txt", merged_asset[1].as_str(), "should preserve dest location");
+        assert_eq!("655", merged_asset[2].as_str(), "should have merged the dest location");
+
+        // Test merging assets by src
+        let original_asset = create_test_asset(
+            "lib/test/empty.txt",
+            "/opt/test/empty.txt",
+            "777"
+        );
+
+        let merge_asset = create_test_asset(
+            "lib/test/empty.txt",
+            "/opt/test_variant/empty.txt",
+            "655"
+        );
+
+        let parent = CargoDeb { assets: Some(vec![ original_asset ]), .. Default::default() };
+        let variant = CargoDeb { merge_assets: Some(MergeAssets { append: None, by: Some(MergeByKey::Src(vec![ merge_asset ])) }), .. Default::default() };
+
+        let merged = variant.inherit_from(parent);
+        let mut merged = merged.assets.expect("should have assets");
+        let merged_asset = merged.pop().expect("should have an asset");
+        assert_eq!("lib/test/empty.txt", merged_asset[0].as_str(), "should have merged the source location");
+        assert_eq!("/opt/test_variant/empty.txt", merged_asset[1].as_str(), "should preserve dest location");
+        assert_eq!("655", merged_asset[2].as_str(), "should have merged the dest location");
+
+        // Test merging assets by appending
+        let original_asset = create_test_asset(
+            "lib/test/empty.txt",
+            "/opt/test/empty.txt",
+            "777"
+        );
+
+        let merge_asset = create_test_asset(
+            "lib/test/empty.txt",
+            "/opt/test_variant/empty.txt",
+            "655"
+        );
+        
+        let parent = CargoDeb { assets: Some(vec![ original_asset ]), .. Default::default() };
+        let variant = CargoDeb { merge_assets: Some(MergeAssets { append: Some(vec![merge_asset]), by: None }), .. Default::default() };
+        
+        let merged = variant.inherit_from(parent);
+        let mut merged = merged.assets.expect("should have assets");
+        
+        let merged_asset = merged.pop().expect("should have an asset");
+        assert_eq!("lib/test/empty.txt", merged_asset[0].as_str(), "should have merged the source location");
+        assert_eq!("/opt/test_variant/empty.txt", merged_asset[1].as_str(), "should preserve dest location");
+        assert_eq!("655", merged_asset[2].as_str(), "should have merged the dest location");
+
+        let merged_asset = merged.pop().expect("should have an asset");
+        assert_eq!("lib/test/empty.txt", merged_asset[0].as_str(), "should have merged the source location");
+        assert_eq!("/opt/test/empty.txt", merged_asset[1].as_str(), "should preserve dest location");
+        assert_eq!("777", merged_asset[2].as_str(), "should have merged the dest location");
+
+        // Test backwards compatibility for variants that have set assets
+        let original_asset = create_test_asset(
+            "lib/test/empty.txt",
+            "/opt/test/empty.txt",
+            "777"
+        );
+
+        let merge_asset = create_test_asset(
+            "lib/test_variant/empty.txt",
+            "/opt/test/empty.txt",
+            "655"
+        );
+
+        let additional_asset = create_test_asset(
+            "lib/test/other-empty.txt",
+            "/opt/test/other-empty.txt",
+            "655"
+        );
+
+        let parent = CargoDeb { assets: Some(vec![ original_asset ]), .. Default::default() };
+        let variant = CargoDeb { merge_assets: Some(MergeAssets { append: None, by: Some(MergeByKey::Dest(vec![ merge_asset.clone() ])) }), assets: Some(vec![ merge_asset, additional_asset ]), .. Default::default() };
+
+        let merged = variant.inherit_from(parent);
+        let mut merged = merged.assets.expect("should have assets");
+        let merged_asset = merged.remove(0);
+        assert_eq!("lib/test_variant/empty.txt", merged_asset[0].as_str(), "should have merged the source location");
+        assert_eq!("/opt/test/empty.txt", merged_asset[1].as_str(), "should preserve dest location");
+        assert_eq!("655", merged_asset[2].as_str(), "should have merged the dest location");
+
+        let additional_asset = merged.remove(0);
+        assert_eq!("lib/test/other-empty.txt", additional_asset[0].as_str(), "should have merged the source location");
+        assert_eq!("/opt/test/other-empty.txt", additional_asset[1].as_str(), "should preserve dest location");
+        assert_eq!("655", additional_asset[2].as_str(), "should have merged the dest location");
     }
 }
 
