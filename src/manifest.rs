@@ -1276,7 +1276,9 @@ impl CargoDeb {
         if let (Some(merge_assets), Some(_assets)) = (self.merge_assets, assets.as_mut()) {
             if let Some(mut append) = merge_assets.append {
                 _assets.append(&mut append);
-            } else if let Some(strategy) = merge_assets.by {
+            }
+            
+            if let Some(strategy) = merge_assets.by {
                 assets = Some(strategy.merge(_assets));
             }
         }

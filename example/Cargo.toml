@@ -54,6 +54,14 @@ merge-assets.by.src = [
     ["3.txt", "var/lib/example/merged-2.txt", "644"]
 ]
 
+[package.metadata.deb.variants.mergeappendandsrc]
+merge-assets.append = [
+    ["4.txt", "var/lib/example/appended/4.txt", "644"]
+]
+merge-assets.by.src = [
+    ["3.txt", "var/lib/example/merged-2.txt", "644"]
+]
+
 
 [features]
 default = ["example_non_debian_build"]
