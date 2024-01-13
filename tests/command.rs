@@ -52,7 +52,11 @@ fn build_with_command_line_compress() {
 #[track_caller]
 fn extract_built_package_from_manifest(manifest_path: &str, ext: &str, args: &[&str]) -> (TempDir, TempDir) {
     let (_bdir, deb_path) = cargo_deb(manifest_path, args);
+    extract_package(&deb_path, ext)
+}
 
+#[track_caller]
+fn extract_package(deb_path: &Path, ext: &str) -> (TempDir, TempDir) {
     let ardir = tempfile::tempdir().expect("testdir");
     assert!(ardir.path().exists());
     assert!(Command::new("ar")
@@ -286,4 +290,45 @@ fn run_cargo_deb_command_on_example_dir_with_version() {
         &[0x1F, 0x8B],
         &fs::read(ddir.path().join("usr/share/doc/example/changelog.Debian.gz")).unwrap()[..2]
     );
+}
+
+
+fn dir_test_run_in_subdir(subdir_path: &str) {
+    let cargo_dir = tempfile::tempdir().unwrap();
+
+    let root = PathBuf::from(env::var_os("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR"));
+    let cmd_path = root.join(env!("CARGO_BIN_EXE_cargo-deb"));
+
+    let output = Command::new(cmd_path)
+        .current_dir(root.join(subdir_path))
+        .env("CARGO_TARGET_DIR", cargo_dir.path()) // use isolated 'target' directories
+        .arg("-p").arg("sub-crate")
+        .arg("--no-strip")
+        .arg("-q")
+        .arg(format!("--output={}", cargo_dir.path().display()))
+        .output()
+        .unwrap();
+    assert!(output.status.success(),
+        "Cmd failed: {}\n{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let (_, ddir) = extract_package(&cargo_dir.path().join("sub-crate_0.1.0-1_arm64.deb"), DEFAULT_COMPRESSION_EXT);
+    assert!(ddir.path().join("usr/share/doc/sub-crate/README.md").exists(), "must package README");
+}
+
+#[test]
+fn cwd_dir1() {
+    dir_test_run_in_subdir("tests/dir-confusion");
+}
+
+#[test]
+fn cwd_dir2() {
+    dir_test_run_in_subdir("tests/dir-confusion/sub-crate");
+}
+
+#[test]
+fn cwd_dir3() {
+    dir_test_run_in_subdir("tests/dir-confusion/src");
 }

@@ -406,8 +406,8 @@ impl Config {
     /// Makes a new config from `Cargo.toml` in the `manifest_path`
     ///
     /// `None` target means the host machine's architecture.
-    pub fn from_manifest(manifest_path: &Path, selected_package_name: Option<&str>, output_path: Option<String>, target: Option<&str>, variant: Option<&str>, deb_version: Option<String>, deb_revision: Option<String>, listener: &dyn Listener, selected_profile: &str) -> CDResult<Config> {
-        let metadata = cargo_metadata(manifest_path)?;
+    pub fn from_manifest(root_manifest_path: Option<&Path>, selected_package_name: Option<&str>, output_path: Option<String>, target: Option<&str>, variant: Option<&str>, deb_version: Option<String>, deb_revision: Option<String>, listener: &dyn Listener, selected_profile: &str) -> CDResult<Config> {
+        let metadata = cargo_metadata(root_manifest_path)?;
         let available_package_names = || {
             metadata.packages.iter()
                 .filter(|p| metadata.workspace_members.iter().any(|w| w == &p.id))
@@ -1342,11 +1342,14 @@ struct CargoMetadataTarget {
 }
 
 /// Returns the path of the `Cargo.toml` that we want to build.
-fn cargo_metadata(manifest_path: &Path) -> CDResult<CargoMetadata> {
+fn cargo_metadata(manifest_path: Option<&Path>) -> CDResult<CargoMetadata> {
     let mut cmd = Command::new("cargo");
     cmd.arg("metadata");
     cmd.arg("--format-version=1");
-    cmd.arg("--manifest-path"); cmd.arg(manifest_path);
+    if let Some(path) = manifest_path {
+        cmd.arg("--manifest-path");
+        cmd.arg(path);
+    }
 
     let output = cmd.output()
         .map_err(|e| CargoDebError::CommandFailed(e, "cargo (is it in your PATH?)"))?;
@@ -1509,7 +1512,7 @@ mod tests {
         // supply a systemd unit file as if it were available on disk
         let _g = add_test_fs_paths(&[to_canon_static_str("cargo-deb.service")]);
 
-        let config = Config::from_manifest(Path::new("Cargo.toml"), None, None, None, None, None, None, &mock_listener, "release").unwrap();
+        let config = Config::from_manifest(Some(Path::new("Cargo.toml")), None, None, None, None, None, None, &mock_listener, "release").unwrap();
 
         let num_unit_assets = config.assets.resolved.iter()
             .filter(|a| a.c.target_path.starts_with("lib/systemd/system/"))
@@ -1526,7 +1529,7 @@ mod tests {
         // supply a systemd unit file as if it were available on disk
         let _g = add_test_fs_paths(&[to_canon_static_str("cargo-deb.service")]);
 
-        let mut config = Config::from_manifest(Path::new("Cargo.toml"), None, None, None, None, None, None, &mock_listener, "release").unwrap();
+        let mut config = Config::from_manifest(Some(Path::new("Cargo.toml")), None, None, None, None, None, None, &mock_listener, "release").unwrap();
 
         config.systemd_units.get_or_insert(vec![SystemdUnitsConfig::default()]);
         config.maintainer_scripts.get_or_insert(PathBuf::new());

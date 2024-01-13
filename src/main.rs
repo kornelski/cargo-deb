@@ -206,9 +206,9 @@ fn process(
     }
     cargo_build_flags.push(format!("--profile={selected_profile}"));
 
-    let manifest_path = manifest_path.as_ref().map_or("Cargo.toml", |s| s.as_str());
+    let root_manifest_path = manifest_path.as_deref().map(Path::new);
     let mut options = Config::from_manifest(
-        Path::new(manifest_path),
+        root_manifest_path,
         selected_package_name.as_deref(),
         output_path,
         target,

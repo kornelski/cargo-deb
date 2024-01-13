@@ -316,7 +316,7 @@ mod tests {
         mock_listener.expect_info().return_const(());
 
         let mut config = Config::from_manifest(
-            Path::new("test-resources/testroot/Cargo.toml"),
+            Some(Path::new("test-resources/testroot/Cargo.toml")),
             package_name,
             None,
             None,

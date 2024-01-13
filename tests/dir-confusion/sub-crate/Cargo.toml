@@ -1,0 +1,8 @@
+[package]
+name = "sub-crate"
+version = "0.1.0"
+edition = "2021"
+description = "The sub crate"
+readme = "../README.md"
+license = "MIT"
+authors = ["x"]
