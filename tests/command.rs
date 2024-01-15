@@ -298,6 +298,7 @@ fn dir_test_run_in_subdir(subdir_path: &str) {
 
     let root = PathBuf::from(env::var_os("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR"));
     let cmd_path = root.join(env!("CARGO_BIN_EXE_cargo-deb"));
+    let deb_path = cargo_dir.path().join("test.deb");
 
     let output = Command::new(cmd_path)
         .current_dir(root.join(subdir_path))
@@ -305,7 +306,7 @@ fn dir_test_run_in_subdir(subdir_path: &str) {
         .arg("-p").arg("sub-crate")
         .arg("--no-strip")
         .arg("-q")
-        .arg(format!("--output={}", cargo_dir.path().display()))
+        .arg(format!("--output={}", deb_path.display()))
         .output()
         .unwrap();
     assert!(output.status.success(),
@@ -314,7 +315,7 @@ fn dir_test_run_in_subdir(subdir_path: &str) {
         String::from_utf8_lossy(&output.stderr)
     );
 
-    let (_, ddir) = extract_package(&cargo_dir.path().join("sub-crate_0.1.0-1_arm64.deb"), DEFAULT_COMPRESSION_EXT);
+    let (_, ddir) = extract_package(&deb_path, DEFAULT_COMPRESSION_EXT);
     assert!(ddir.path().join("usr/share/doc/sub-crate/README.md").exists(), "must package README");
 }
 
