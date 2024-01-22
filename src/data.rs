@@ -9,6 +9,7 @@ use std::io::Write;
 use std::io;
 use std::num::NonZeroU64;
 use std::path::{Path, PathBuf};
+use std::sync::mpsc;
 use zopfli::{BlockType, GzipEncoder, Options};
 
 /// Generates an uncompressed tar archive and hashes of its files
@@ -125,7 +126,7 @@ pub fn compress_assets(options: &mut Config, listener: &dyn Listener) -> CDResul
 /// Copies all the files to be packaged into the tar archive.
 /// Returns MD5 hashes of files copied
 fn archive_files<W: Write>(archive: &mut Archive<W>, options: &Config, listener: &dyn Listener) -> CDResult<HashMap<PathBuf, Digest>> {
-    let (send, recv) = crossbeam_channel::bounded(2);
+    let (send, recv) = mpsc::sync_channel(2);
     std::thread::scope(move |s| {
         let num_items = options.assets.resolved.len();
         let hash_thread = s.spawn(move || {
