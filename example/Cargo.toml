@@ -62,6 +62,9 @@ merge-assets.by.src = [
     ["3.txt", "var/lib/example/merged-2.txt", "644"]
 ]
 
+[profile.release]
+# You must enable debug symbols explicitly if you want them in the package
+debug = true
 
 [features]
 default = ["example_non_debian_build"]

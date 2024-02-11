@@ -170,9 +170,11 @@ fn run_cargo_deb_command_on_example_dir_with_separate_debug_symbols() {
         stripped.display()
     );
 
+    let stripped_len = stripped.metadata().unwrap().len();
+    let debug_len = debug.metadata().unwrap().len();
     assert!(
-        stripped.metadata().unwrap().len() < debug.metadata().unwrap().len(),
-        "stripped executable should be smaller than debug executable"
+        stripped_len < debug_len,
+        "stripped executable {stripped_len} should be smaller than debug executable {debug_len}"
     );
 }
 
