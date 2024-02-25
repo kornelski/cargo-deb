@@ -84,6 +84,10 @@ impl<W: Write> Archive<W> {
         Ok(())
     }
 
+    pub fn flush(&mut self) -> io::Result<()> {
+        self.tar.get_mut().flush()
+    }
+
     pub fn into_inner(self) -> io::Result<W> {
         self.tar.into_inner()
     }

@@ -224,6 +224,10 @@ impl AssetCommon {
         is_dynamic_library_filename(&self.target_path)
     }
 
+    pub(crate) fn is_built(&self) -> bool {
+        self.is_built != IsBuilt::No
+    }
+
     /// Returns the target path for the debug symbol file, which will be
     /// /usr/lib/debug/<path-to-executable>.debug
     #[must_use]

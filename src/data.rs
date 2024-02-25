@@ -13,9 +13,9 @@ use std::sync::mpsc;
 use zopfli::{BlockType, GzipEncoder, Options};
 
 /// Generates an uncompressed tar archive and hashes of its files
-pub fn generate_archive<W: Write>(dest: W, options: &Config, time: u64, listener: &dyn Listener) -> CDResult<(W, HashMap<PathBuf, Digest>)> {
+pub fn generate_archive<W: Write>(dest: W, options: &Config, time: u64, rsyncable: bool, listener: &dyn Listener) -> CDResult<(W, HashMap<PathBuf, Digest>)> {
     let mut archive = Archive::new(dest, time);
-    let copy_hashes = archive_files(&mut archive, options, listener)?;
+    let copy_hashes = archive_files(&mut archive, options, rsyncable, listener)?;
     Ok((archive.into_inner()?, copy_hashes))
 }
 
@@ -125,7 +125,7 @@ pub fn compress_assets(options: &mut Config, listener: &dyn Listener) -> CDResul
 
 /// Copies all the files to be packaged into the tar archive.
 /// Returns MD5 hashes of files copied
-fn archive_files<W: Write>(archive: &mut Archive<W>, options: &Config, listener: &dyn Listener) -> CDResult<HashMap<PathBuf, Digest>> {
+fn archive_files<W: Write>(archive: &mut Archive<W>, options: &Config, rsyncable: bool, listener: &dyn Listener) -> CDResult<HashMap<PathBuf, Digest>> {
     let (send, recv) = mpsc::sync_channel(2);
     std::thread::scope(move |s| {
         let num_items = options.assets.resolved.len();
@@ -136,6 +136,8 @@ fn archive_files<W: Write>(archive: &mut Archive<W>, options: &Config, listener:
             }));
             hashes
         });
+        let mut archive_data_added = 0;
+        let mut prev_is_built = false;
         for asset in &options.assets.resolved {
             let mut log_line = format!("{} -> {}",
                 asset.source.path().unwrap_or_else(|| Path::new("-")).display(),
@@ -156,6 +158,15 @@ fn archive_files<W: Write>(archive: &mut Archive<W>, options: &Config, listener:
                 }
                 _ => {
                     let out_data = asset.source.data()?;
+                    if rsyncable {
+                        if archive_data_added > 2_000_000 || prev_is_built != asset.c.is_built() {
+                            archive.flush()?;
+                            archive_data_added = 0;
+                        }
+                        // puts synchronization point between non-code and code assets
+                        prev_is_built = asset.c.is_built();
+                        archive_data_added += out_data.len();
+                    }
                     archive.file(&asset.c.target_path, &out_data, asset.c.chmod)?;
                     send.send((asset.c.target_path.clone(), out_data)).unwrap();
                 },

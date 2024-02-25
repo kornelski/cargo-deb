@@ -26,6 +26,7 @@ struct CliOptions {
     compress_type: compress::Format,
     compress_system: bool,
     system_xz: bool,
+    rsyncable: bool,
     profile: Option<String>,
 }
 
@@ -56,6 +57,7 @@ fn main() {
     cli_opts.optopt("Z", "compress-type", "Compress with the given compression format", "gz|xz");
     cli_opts.optflag("", "compress-system", "Use the corresponding command-line tool for compression");
     cli_opts.optflag("", "system-xz", "Compress using command-line xz command instead of built-in. Deprecated, use --compress-system instead");
+    cli_opts.optflag("", "rsyncable", "Use worse compression, but reduce differences between versions of packages");
     cli_opts.optflag("h", "help", "Print this help menu");
 
     let matches = match cli_opts.parse(&args[1..]) {
@@ -113,6 +115,7 @@ fn main() {
         compress_type,
         compress_system: matches.opt_present("compress-system"),
         system_xz: matches.opt_present("system-xz"),
+        rsyncable: matches.opt_present("rsyncable"),
         profile: matches.opt_str("profile"),
         cargo_build_cmd: matches.opt_str("cargo-build").unwrap_or("build".to_string()),
         cargo_build_flags: matches.free,
@@ -161,6 +164,7 @@ fn process(
         mut compress_type,
         mut compress_system,
         system_xz,
+        rsyncable,
         profile,
     }: CliOptions,
 ) -> CDResult<()> {
@@ -249,7 +253,7 @@ fn process(
         },
         move || {
             // Initialize the contents of the data archive (files that go into the filesystem).
-            let (compressed, asset_hashes) = data::generate_archive(compress::select_compressor(fast, compress_type, compress_system)?, options, default_timestamp, listener)?;
+            let (compressed, asset_hashes) = data::generate_archive(compress::select_compressor(fast, compress_type, compress_system)?, options, default_timestamp, rsyncable, listener)?;
             let original_data_size = compressed.uncompressed_size;
             Ok::<_, CargoDebError>((compressed.finish()?, original_data_size, asset_hashes))
         },
