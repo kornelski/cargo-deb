@@ -16,9 +16,9 @@ The exact behaviour can be tuned using the following options:
  - **enable**: Enable the systemd unit on package installation and disable it on package removal (default `true`).
  - **start**: Start the systemd unit on package installation and stop it on package removal (default `true`).
  - **restart-after-upgrade**: If true, postpone systemd service restart until after upgrade is complete (+ = less downtime, - = can confuse some programs), otherwise stop the service before upgrade and start it again after upgrade (default `true`).
- - **stop-on-upgrade**: If true stop the systemd on package upgrade and removal, otherwise stop the sytemsd service only on package removal (default `true`).
+ - **stop-on-upgrade**: If true, stop the systemd service on package upgrade and removal, otherwise stop the service only on package removal (default `true`).
 
-#### System unit file naming
+#### Systemd unit file naming
 
 Systemd unit file names must match one of the following patterns:
 
@@ -171,7 +171,7 @@ Note that two shell script fragments have been injected into the maintainer scri
 
 #### Multiple Systemd Units Example
 
-There is also an option to specify multiple systemd unit files, To expand on the minimal example, here is a minumal example with multiple systemd unit files.
+There is also an option to specify multiple systemd unit files, To expand on the minimal example, here is a minimal example with multiple systemd unit files.
 
 `Cargo.toml`:
 

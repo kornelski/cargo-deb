@@ -93,7 +93,7 @@ assets = [
 
 ## Advanced usage
 
-Debian packages can use a number of different compression formats, but the target system may only support of them.
+Debian packages can use a number of different compression formats, but the target system may only support some of them.
 The default format is currently xz, but this may change at any point to support newer formats.
 The format can be explicitly specified using the `--compress-type` command-line option. The supported formats are "gzip" and "xz".
 
@@ -179,7 +179,7 @@ merge-assets.by.src = [
    * `export CC_x86_64_unknown_linux_gnu=/usr/bin/x86_64-linux-gnu-gcc` (correct the target and paths for your OS)
 * Stripping probably won't work, unless you install versions compatible with the target and configure their paths in `.cargo/config` by adding `[target.<target triple>] strip = { path = "…" } objcopy = { path = "…" }`. Alternatively, use `--no-strip`.
 
-Yes, these requiremens are onerous. You can also try [`cross`](https://lib.rs/crates/cross) or [`cargo zigbuild`](https://lib.rs/crates/cargo-zigbuild), since Zig is way better at cross-compiling, and then run `cargo deb --target=… --no-build`.
+Yes, these requirements are onerous. You can also try [`cross`](https://lib.rs/crates/cross) or [`cargo zigbuild`](https://lib.rs/crates/cargo-zigbuild), since Zig is way better at cross-compiling, and then run `cargo deb --target=… --no-build`.
 
 ```sh
 cargo deb --target=i686-unknown-linux-gnu
@@ -187,7 +187,7 @@ cargo deb --target=i686-unknown-linux-gnu
 
 Cross-compiled archives are saved in `target/<target triple>/debian/*.deb`. The actual archive path is printed on success.
 
-Note that you can't use cross-compilation to build for an older verison of Debian. If you need to support Debian releases older than the host, consider using a container or a VM, or make a completely static binary for MUSL instead.
+Note that you can't use cross-compilation to build for an older version of Debian. If you need to support Debian releases older than the host, consider using a container or a VM, or make a completely static binary for MUSL instead.
 
 ### Separate debug info
 
