@@ -159,7 +159,7 @@ fn archive_files<W: Write>(archive: &mut Archive<W>, options: &Config, rsyncable
                 _ => {
                     let out_data = asset.source.data()?;
                     if rsyncable {
-                        if archive_data_added > 2_000_000 || prev_is_built != asset.c.is_built() {
+                        if archive_data_added > 1_000_000 || prev_is_built != asset.c.is_built() {
                             archive.flush()?;
                             archive_data_added = 0;
                         }
