@@ -2,8 +2,10 @@
 
 This is a [Cargo](https://doc.rust-lang.org/cargo/) helper command which automatically creates binary [Debian packages](https://www.debian.org/doc/debian-policy/ch-binary.html) (`.deb`) from Cargo projects.
 
-> **Note**
-> Since v2.0.0 the deb package version will have a "-1" suffix. You can disable this by adding `--deb-revision=""` flag or `revision = ""` in Cargo metadata. The default suffix is for compliance with Debian's packaging standard.
+
+> [!NOTE]
+> cargo-deb uses the [xz2](https://lib.rs/crates/xz2) crate that bundles an old safe version of liblzma 5.2 by the original maintainer, and a simple Cargo-based build script.
+> It is **unaffected** by the CVE-2024-3094.
 
 ## Installation
 
@@ -29,6 +31,9 @@ Debug symbols are stripped from the main binary by default, unless `[profile.rel
 `cargo deb --install` builds and installs the project system-wide.
 
 ## Configuration
+
+> [!IMPORTANT]
+> Since v2.0.0 the deb package version will have a "-1" suffix. You can disable this by adding `--deb-revision=""` flag or `revision = ""` in Cargo metadata. The default suffix is for compliance with Debian's packaging standard.
 
 No configuration is necessary to make a basic package from a Cargo project with a binary. This command obtains basic information it needs from [the `Cargo.toml` file](https://doc.rust-lang.org/cargo/reference/manifest.html). It uses Cargo fields: `name`, `version`, `license`, `license-file`, `description`, `readme`, `homepage`, and `repository`.
 
