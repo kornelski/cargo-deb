@@ -32,7 +32,7 @@ impl DebArchive {
 
     pub fn add_data(&mut self, dest_path: String, mtime_timestamp: u64, data: &[u8]) -> CDResult<()> {
         let mut header = Header::new(dest_path.into(), data.len() as u64);
-        header.set_mode(0o644);
+        header.set_mode(0o100644); // dpkg uses 100644
         header.set_mtime(mtime_timestamp);
         header.set_uid(0);
         header.set_gid(0);
