@@ -6,6 +6,7 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 
 use tempfile::TempDir;
+use std::io::{BufReader, BufRead, Read, Seek};
 
 /// file extension of the compression format cargo-deb uses unless explicitly specified.
 const DEFAULT_COMPRESSION_EXT: &str = "xz";
@@ -56,7 +57,72 @@ fn extract_built_package_from_manifest(manifest_path: &str, ext: &str, args: &[&
 }
 
 #[track_caller]
+fn check_ar(deb_path: &Path) {
+    let mut file = BufReader::new(fs::File::open(deb_path).unwrap());
+    let mut line = String::new();
+    file.read_line(&mut line).unwrap();
+    assert_eq!(line, "!<arch>\n");
+    struct Expected {
+        name_prefix: &'static str,
+        data: Option<&'static [u8]>,
+    }
+    const EXPECTED: &'static [Expected] = &[
+        Expected {
+            name_prefix: "debian-binary   ",
+            data: Some(b"2.0\n"),
+        },
+        Expected {
+            name_prefix: "control.tar.",
+            data: None,
+        },
+        Expected {
+            name_prefix: "data.tar.",
+            data: None,
+        },
+    ];
+    let mut data = Vec::new();
+    for expected in EXPECTED {
+        if file.stream_position().unwrap() % 2 != 0 {
+            line.clear();
+            file.read_line(&mut line).unwrap();
+            assert_eq!(line, "\n");
+        }
+        line.clear();
+        file.read_line(&mut line).unwrap();
+        assert_eq!(line.len(), 60);
+        let name = &line[..16];
+        assert!(name.starts_with(expected.name_prefix));
+        let mtime_str = &line[16..28];
+        let mtime: u64 = mtime_str.trim().parse().unwrap();
+        assert_eq!(mtime_str, format!("{mtime:<12}"));
+        let owner_id = &line[28..34];
+        assert_eq!(owner_id, "0     ");
+        let group_id = &line[34..40];
+        assert_eq!(group_id, "0     ");
+        let file_type_and_mode = &line[40..48];
+        assert_eq!(file_type_and_mode, "100644  "); // dpkg uses 100644
+        let file_size_str = &line[48..58];
+        let file_size: u64 = file_size_str.trim().parse().unwrap();
+        assert_eq!(file_size_str, format!("{file_size:<10}"));
+        data.resize(file_size.try_into().unwrap(), 0);
+        file.read_exact(&mut data).unwrap();
+        if let Some(expected_data) = expected.data {
+            assert_eq!(data, expected_data);
+        }
+    }
+    let allowed_trailing_nl = file.stream_position().unwrap() % 2 != 0;
+    data.clear();
+    file.read_to_end(&mut data).unwrap();
+    match &*data {
+        [] => {}
+        b"\n" if allowed_trailing_nl => {}
+        _ => panic!("unexpected trailing data"),
+    }
+}
+
+#[track_caller]
 fn extract_package(deb_path: &Path, ext: &str) -> (TempDir, TempDir) {
+    check_ar(deb_path);
     let ardir = tempfile::tempdir().expect("testdir");
     assert!(ardir.path().exists());
     assert!(Command::new("ar")
@@ -106,7 +172,7 @@ fn cargo_deb(manifest_path: &str, args: &[&str]) -> (TempDir, PathBuf) {
         .args(args)
         .output()
         .unwrap();
-    assert!(output.status.success(), 
+    assert!(output.status.success(),
             "Cmd failed: {}\n{}",
             String::from_utf8_lossy(&output.stdout),
             String::from_utf8_lossy(&output.stderr)
