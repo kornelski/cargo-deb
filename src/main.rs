@@ -240,6 +240,8 @@ fn process(
         log::debug!("not stripping profile.release.debug={} strip-flag={:?}", options.debug_enabled, strip_override);
     }
 
+    options.sort_assets_by_type();
+
     // Obtain the current time which will be used to stamp the generated files in the archives.
     let default_timestamp = options.default_timestamp;
 

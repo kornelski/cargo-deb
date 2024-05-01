@@ -707,8 +707,6 @@ impl Config {
                 ));
             }
         }
-
-        self.sort_assets_by_type();
         Ok(())
     }
 
@@ -887,12 +885,12 @@ impl Config {
     }
 
     /// similar files next to each other improve tarball compression
-    pub(crate) fn sort_assets_by_type(&mut self) {
+    pub fn sort_assets_by_type(&mut self) {
         self.assets.resolved.sort_by(|a,b| {
             a.c.is_executable().cmp(&b.c.is_executable())
             .then(a.c.is_dynamic_library().cmp(&b.c.is_dynamic_library()))
             .then(a.c.target_path.extension().cmp(&b.c.target_path.extension()))
-            .then(a.c.target_path.parent().cmp(&b.c.target_path.parent()))
+            .then(a.c.target_path.cmp(&b.c.target_path))
         });
     }
 }
