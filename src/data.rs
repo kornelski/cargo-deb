@@ -2,7 +2,7 @@ use crate::error::{CDResult, CargoDebError};
 use crate::listener::Listener;
 use crate::manifest::{Asset, AssetSource, Config, IsBuilt};
 use crate::tararchive::Archive;
-use md5::Digest;
+use sha2::{Digest, Sha256};
 use std::collections::HashMap;
 use std::fs;
 use std::io::Write;
@@ -13,7 +13,7 @@ use std::sync::mpsc;
 use zopfli::{BlockType, GzipEncoder, Options};
 
 /// Generates an uncompressed tar archive and hashes of its files
-pub fn generate_archive<W: Write>(dest: W, options: &Config, time: u64, rsyncable: bool, listener: &dyn Listener) -> CDResult<(W, HashMap<PathBuf, Digest>)> {
+pub fn generate_archive<W: Write>(dest: W, options: &Config, time: u64, rsyncable: bool, listener: &dyn Listener) -> CDResult<(W, HashMap<PathBuf, [u8; 32]>)> {
     let mut archive = Archive::new(dest, time);
     let copy_hashes = archive_files(&mut archive, options, rsyncable, listener)?;
     Ok((archive.into_inner()?, copy_hashes))
@@ -125,14 +125,14 @@ pub fn compress_assets(options: &mut Config, listener: &dyn Listener) -> CDResul
 
 /// Copies all the files to be packaged into the tar archive.
 /// Returns MD5 hashes of files copied
-fn archive_files<W: Write>(archive: &mut Archive<W>, options: &Config, rsyncable: bool, listener: &dyn Listener) -> CDResult<HashMap<PathBuf, Digest>> {
+fn archive_files<W: Write>(archive: &mut Archive<W>, options: &Config, rsyncable: bool, listener: &dyn Listener) -> CDResult<HashMap<PathBuf, [u8; 32]>> {
     let (send, recv) = mpsc::sync_channel(2);
     std::thread::scope(move |s| {
         let num_items = options.assets.resolved.len();
         let hash_thread = s.spawn(move || {
             let mut hashes = HashMap::with_capacity(num_items);
             hashes.extend(recv.into_iter().map(|(path, data)| {
-                (path, md5::compute(data))
+                (path, Sha256::digest(data).into())
             }));
             hashes
         });

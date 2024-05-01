@@ -260,7 +260,7 @@ fn process(
     );
     let mut control_builder = control_builder?;
     let (data_compressed, original_data_size, asset_hashes) = data_result?;
-    control_builder.generate_md5sums(options, asset_hashes)?;
+    control_builder.generate_sha256sums(options, asset_hashes)?;
     let control_compressed = control_builder.finish()?.finish()?;
 
     let mut deb_contents = DebArchive::new(options)?;

@@ -8,7 +8,6 @@ use crate::tararchive::Archive;
 use crate::util::{is_path_file, read_file_to_bytes};
 use crate::wordsplit::WordSplit;
 use dh_lib::ScriptFragments;
-use md5::Digest;
 use std::collections::HashMap;
 use std::fs;
 use std::io::Write;
@@ -27,7 +26,7 @@ impl<'l, W: Write> ControlArchiveBuilder<'l, W> {
         }
     }
 
-    /// Generates an uncompressed tar archive with `control`, `md5sums`, and others
+    /// Generates an uncompressed tar archive with `control`, `sha256sums`, and others
     pub fn generate_archive(&mut self, options: &Config) -> CDResult<()> {
         self.generate_control(options)?;
         if let Some(ref files) = options.conf_files {
@@ -118,23 +117,25 @@ impl<'l, W: Write> ControlArchiveBuilder<'l, W> {
         Ok(())
     }
 
-    /// Creates the md5sums file which contains a list of all contained files and the md5sums of each.
-    pub fn generate_md5sums(&mut self, options: &Config, asset_hashes: HashMap<PathBuf, Digest>) -> CDResult<()> {
-        let mut md5sums: Vec<u8> = Vec::new();
+    /// Creates the sha256sums file which contains a list of all contained files and the sha256sums of each.
+    pub fn generate_sha256sums(&mut self, options: &Config, asset_hashes: HashMap<PathBuf, [u8; 32]>) -> CDResult<()> {
+        let mut sha256sums: Vec<u8> = Vec::with_capacity(options.assets.resolved.len() * 80);
 
-        // Collect md5sums from each asset in the archive (excludes symlinks).
+        // Collect sha256sums from each asset in the archive (excludes symlinks).
         for asset in &options.assets.resolved {
             if let Some(value) = asset_hashes.get(&asset.c.target_path) {
-                write!(md5sums, "{value:x}")?;
-                md5sums.write_all(b"  ")?;
+                for &b in value {
+                    write!(sha256sums, "{b:02x}")?;
+                }
+                sha256sums.write_all(b"  ")?;
 
-                md5sums.write_all(&asset.c.target_path.as_path().as_unix_path())?;
-                md5sums.write_all(&[b'\n'])?;
+                sha256sums.write_all(&asset.c.target_path.as_path().as_unix_path())?;
+                sha256sums.write_all(b"\n")?;
             }
         }
 
         // Write the data to the archive
-        self.archive.file("./md5sums", &md5sums, 0o644)?;
+        self.archive.file("./sha256sums", &sha256sums, 0o644)?;
         Ok(())
     }
 
