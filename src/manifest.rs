@@ -410,7 +410,18 @@ impl Config {
     /// Makes a new config from `Cargo.toml` in the `manifest_path`
     ///
     /// `None` target means the host machine's architecture.
-    pub fn from_manifest(root_manifest_path: Option<&Path>, selected_package_name: Option<&str>, output_path: Option<String>, target: Option<&str>, variant: Option<&str>, deb_version: Option<String>, deb_revision: Option<String>, listener: &dyn Listener, selected_profile: &str) -> CDResult<Config> {
+    pub fn from_manifest(
+        root_manifest_path: Option<&Path>,
+        selected_package_name: Option<&str>,
+        output_path: Option<String>,
+        target: Option<&str>,
+        variant: Option<&str>,
+        deb_version: Option<String>,
+        deb_revision: Option<String>,
+        listener: &dyn Listener,
+        selected_profile: &str,
+        separate_debug_symbols: Option<bool>
+    ) -> CDResult<Config> {
         let metadata = cargo_metadata(root_manifest_path)?;
         let available_package_names = || {
             metadata.packages.iter()
@@ -448,7 +459,22 @@ impl Config {
         let ws_root = workspace_root_manifest.as_ref().map(|ws| (ws, Path::new(&metadata.workspace_root)));
         manifest.complete_from_path_and_workspace(manifest_path, ws_root)
             .map_err(move |e| CargoDebError::TomlParsing(e, manifest_path.to_path_buf()))?;
-        Self::from_manifest_inner(manifest, workspace_root_manifest.as_ref(), target_package, package_manifest_dir, output_path, target_dir, target, variant, deb_version, deb_revision, listener, selected_profile, default_timestamp)
+        Self::from_manifest_inner(
+            manifest,
+            workspace_root_manifest.as_ref(),
+            target_package,
+            package_manifest_dir,
+            output_path,
+            target_dir,
+            target,
+            variant,
+            deb_version,
+            deb_revision,
+            listener,
+            selected_profile,
+            separate_debug_symbols,
+            default_timestamp
+        )
     }
 
     /// Convert Cargo.toml/metadata information into internal config structure
@@ -468,6 +494,7 @@ impl Config {
         deb_revision: Option<String>,
         listener: &dyn Listener,
         selected_profile: &str,
+        separate_debug_symbols: Option<bool>,
         default_timestamp: u64,
     ) -> CDResult<Self> {
         // Cargo cross-compiles to a dir
@@ -558,7 +585,7 @@ impl Config {
             maintainer_scripts: deb.maintainer_scripts.map(PathBuf::from),
             features: deb.features.take().unwrap_or_default(),
             default_features: deb.default_features.unwrap_or(true),
-            separate_debug_symbols: deb.separate_debug_symbols.unwrap_or(false),
+            separate_debug_symbols: separate_debug_symbols.unwrap_or_else(|| deb.separate_debug_symbols.unwrap_or(false)),
             debug_enabled,
             preserve_symlinks: deb.preserve_symlinks.unwrap_or(false),
             systemd_units: match deb.systemd_units {
@@ -1514,7 +1541,7 @@ mod tests {
         // supply a systemd unit file as if it were available on disk
         let _g = add_test_fs_paths(&[to_canon_static_str("cargo-deb.service")]);
 
-        let config = Config::from_manifest(Some(Path::new("Cargo.toml")), None, None, None, None, None, None, &mock_listener, "release").unwrap();
+        let config = Config::from_manifest(Some(Path::new("Cargo.toml")), None, None, None, None, None, None, &mock_listener, "release", None).unwrap();
 
         let num_unit_assets = config.assets.resolved.iter()
             .filter(|a| a.c.target_path.starts_with("lib/systemd/system/"))
@@ -1531,7 +1558,7 @@ mod tests {
         // supply a systemd unit file as if it were available on disk
         let _g = add_test_fs_paths(&[to_canon_static_str("cargo-deb.service")]);
 
-        let mut config = Config::from_manifest(Some(Path::new("Cargo.toml")), None, None, None, None, None, None, &mock_listener, "release").unwrap();
+        let mut config = Config::from_manifest(Some(Path::new("Cargo.toml")), None, None, None, None, None, None, &mock_listener, "release", None).unwrap();
 
         config.systemd_units.get_or_insert(vec![SystemdUnitsConfig::default()]);
         config.maintainer_scripts.get_or_insert(PathBuf::new());

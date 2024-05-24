@@ -26,7 +26,7 @@ cargo deb
 
 Upon running `cargo deb` from the base directory of your Rust project, the Debian package will be created in `target/debian/<project_name>_<version>-1_<arch>.deb` (or you can change the location with the `--output` option). This package can be installed with `dpkg -i target/debian/*.deb`.
 
-Debug symbols are stripped from the main binary by default, unless `[profile.release] debug = true` is set in `Cargo.toml`. If `cargo deb --separate-debug-symbols` is run, the debug symbols will be packaged as a separate file installed at `/usr/lib/debug/<path-to-binary>.debug`.
+Debug symbols are stripped from the main binary by default, unless `[profile.release] debug = true` is set in `Cargo.toml`. If `cargo deb --separate-debug-symbols` is run, the debug symbols will be packaged as a separate file installed at `/usr/lib/debug/<path-to-binary>.debug`. This can also be configured in the `[package.metadata.deb]` section with the **separate-debug-symbols** key. If it is enabled there the parameter `cargo deb --no-separate-debug-symbols` can be used to suppress inclusion of the debug symbols.
 
 `cargo deb --install` builds and installs the project system-wide.
 
