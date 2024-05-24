@@ -326,6 +326,7 @@ mod tests {
             None,
             mock_listener,
             "release",
+            None,
         )
         .unwrap();
 

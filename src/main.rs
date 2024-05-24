@@ -9,7 +9,7 @@ use std::process;
 struct CliOptions {
     no_build: bool,
     strip_override: Option<bool>,
-    separate_debug_symbols: bool,
+    separate_debug_symbols: Option<bool>,
     fast: bool,
     verbose: bool,
     quiet: bool,
@@ -38,6 +38,7 @@ fn main() {
     let mut cli_opts = getopts::Options::new();
     cli_opts.optflag("", "no-strip", "Do not strip debug symbols from the binary");
     cli_opts.optflag("", "strip", "Always try to strip debug symbols");
+    cli_opts.optflag("", "no-separate-debug-symbols", "Do not strip debug symbols into a separate .debug file");
     cli_opts.optflag("", "separate-debug-symbols", "Strip debug symbols into a separate .debug file");
     cli_opts.optopt("o", "output", "Write .deb to this file or directory", "path");
     cli_opts.optopt("p", "package", "Select which Cargo workspace package to use", "name");
@@ -99,7 +100,7 @@ fn main() {
     match process(CliOptions {
         no_build: matches.opt_present("no-build"),
         strip_override: if matches.opt_present("strip") { Some(true) } else if matches.opt_present("no-strip") { Some(false) } else { None },
-        separate_debug_symbols: matches.opt_present("separate-debug-symbols"),
+        separate_debug_symbols: if matches.opt_present("separate-debug-symbols") { Some(true) } else if matches.opt_present("no-separate-debug-symbols") { Some(false) } else { None },
         quiet: matches.opt_present("quiet"),
         verbose: matches.opt_present("verbose"),
         install,
@@ -221,6 +222,7 @@ fn process(
         deb_revision,
         listener,
         selected_profile,
+        separate_debug_symbols,
     )?;
     reset_deb_temp_directory(&options)?;
 
@@ -234,7 +236,8 @@ fn process(
 
     crate::data::compress_assets(&mut options, listener)?;
 
-    if strip_override.unwrap_or(separate_debug_symbols || !options.debug_enabled) {
+    if strip_override.unwrap_or(options.separate_debug_symbols || !options.debug_enabled) {
+        let separate_debug_symbols = options.separate_debug_symbols.clone();
         strip_binaries(&mut options, target, listener, separate_debug_symbols)?;
     } else {
         log::debug!("not stripping profile.release.debug={} strip-flag={:?}", options.debug_enabled, strip_override);
