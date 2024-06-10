@@ -233,9 +233,11 @@ fn run_cargo_deb_command_on_example_dir_with_separate_debug_symbols() {
     let (_cdir, ddir) = extract_built_package_from_manifest("example/Cargo.toml", DEFAULT_COMPRESSION_EXT, &["--separate-debug-symbols"]);
 
     let stripped = ddir.path().join("usr/bin/example");
-    let debug = ddir.path().join("usr/lib/debug/usr/bin/example.debug");
-
     assert!(stripped.exists());
+
+    let debug = glob::glob(ddir.path().join("usr/lib/debug/.build-id/*/*.debug").to_str().unwrap())
+        .unwrap().flatten().next().expect("can't find gnu-debuglink file in usr/lib/debug/.build-id/");
+
     assert!(
         debug.exists(),
         "unable to find executable with debug symbols {} for stripped executable {}",

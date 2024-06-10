@@ -39,6 +39,7 @@ path = "src/main.rs"
 doc = false
 
 [dependencies]
+elf = { version = "0.7.4", default-features = false, features = ["std"], optional = true }
 flate2 = "1.0.28"
 zopfli = { version = "0.8", default-features = false, features = ["std", "gzip"] }
 getopts = "0.2.21"
@@ -60,8 +61,12 @@ log = "0.4.20"
 sha2 = "0.10.8"
 
 [features]
-default = ["lzma"]
+default = ["lzma", "debug-id"]
+# Compress with a built-in LZMA library
 lzma = ["dep:xz2"]
+# Read GNU Debug Id when exporting separate debug symbols
+debug-id = ["dep:elf"]
+# Compile it instead of trying to use system solib
 static-lzma = ["lzma", "xz2?/static"]
 
 [profile.dev]

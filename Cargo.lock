@@ -98,6 +98,7 @@ version = "2.2.0"
 dependencies = [
  "ar",
  "cargo_toml",
+ "elf",
  "env_logger",
  "flate2",
  "getopts",
@@ -222,6 +223,12 @@ name = "either"
 version = "1.11.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a47c1c47d2f5964e29c61246e81db715514cd532db6b5116a25ea3c03d6780a2"
+
+[[package]]
+name = "elf"
+version = "0.7.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4445909572dbd556c457c849c4ca58623d84b27c8fff1e74b0b4227d8b90d17b"
 
 [[package]]
 name = "env_filter"

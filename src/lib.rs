@@ -54,7 +54,7 @@ use rayon::prelude::*;
 use std::env;
 use std::fs;
 use std::io;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::process::{Command, ExitStatus};
 
 const TAR_REJECTS_CUR_DIR: bool = true;
@@ -232,9 +232,8 @@ pub fn strip_binaries(options: &mut Config, target: Option<&str>, listener: &dyn
 
                 let conf_path = cargo_config.as_ref().map(|c| c.path())
                     .unwrap_or_else(|| Path::new(".cargo/config"));
-                let file_name = path.file_name().ok_or(CargoDebError::Str("bad path"))?;
-                let file_name = format!("{}.tmp{}-stripped", file_name.to_string_lossy(), i);
-                let stripped_temp_path = stripped_binaries_output_dir.join(file_name);
+                let file_name = path.file_stem().ok_or(CargoDebError::Str("bad path"))?.to_string_lossy();
+                let stripped_temp_path = stripped_binaries_output_dir.join(format!("{file_name}.tmp{i}-stripped"));
                 let _ = std::fs::remove_file(&stripped_temp_path);
 
                 log::debug!("stripping with {} from {} into {}", strip_cmd.display(), path.display(), stripped_temp_path.display());
@@ -257,18 +256,21 @@ pub fn strip_binaries(options: &mut Config, target: Option<&str>, listener: &dyn
                     return Err(CargoDebError::StripFailed(path.to_owned(), format!("{} command failed to create output '{}'", strip_cmd.display(), stripped_temp_path.display())));
                 }
 
-                let mut new_debug_asset = None;
-                if separate_file {
-                    // The debug_path and debug_filename should never return None if we have an AssetSource::Path
-                    let debug_path = asset.source.debug_source().expect("Failed to compute debug source path");
-                    let debug_target = asset.c.debug_target().unwrap();
+                let new_debug_asset = if separate_file && asset.c.is_built() {
+                    log::debug!("extracting debug info with {} from {}", objcopy_cmd.display(), path.display());
 
-                    log::debug!("extracting debug info with {} from {} into {}", objcopy_cmd.display(), path.display(), debug_path.display());
-                    let _ = std::fs::remove_file(&debug_path);
+                    // parse the ELF and use debug-id-based path if available
+                    let debug_target_path = get_target_debug_path(asset, path)?;
+
+                    // --add-gnu-debuglink reads the file path given, so it can't get to-be-installed target path
+                    // and the recommended fallback solution is to give it relative path in the same dir
+                    let debug_temp_path = stripped_temp_path.with_file_name(debug_target_path.file_name().ok_or(CargoDebError::Str("bad path"))?);
+
+                    let _ = std::fs::remove_file(&debug_temp_path);
                     Command::new(objcopy_cmd)
                         .arg("--only-keep-debug")
                         .arg(path)
-                        .arg(&debug_path)
+                        .arg(&debug_temp_path)
                         .status()
                         .and_then(ensure_success)
                         .map_err(|err| {
@@ -279,27 +281,28 @@ pub fn strip_binaries(options: &mut Config, target: Option<&str>, listener: &dyn
                             }
                         })?;
 
-                    log::debug!("linking debug info with {} from {} into {}", objcopy_cmd.display(), stripped_temp_path.display(), debug_path.display());
-                    let debug_filename = debug_path.file_name().expect("Built binary has no filename");
+                    let relative_debug_temp_path = debug_temp_path.file_name().ok_or(CargoDebError::Str("bad path"))?;
+                    log::debug!("linking debug info with {} from {} into {:?}", objcopy_cmd.display(), stripped_temp_path.display(), relative_debug_temp_path);
                     Command::new(objcopy_cmd)
-                        .current_dir(debug_path.parent().expect("Debug source file had no parent path"))
-                        .arg(format!(
-                            "--add-gnu-debuglink={}",
-                            debug_filename.to_str().expect("Debug source file had no filename")
-                        ))
+                        .current_dir(debug_temp_path.parent().ok_or(CargoDebError::Str("bad path"))?)
+                        .arg("--add-gnu-debuglink")
+                        // intentionally relative - the file name must match debug_target_path
+                        .arg(relative_debug_temp_path)
                         .arg(&stripped_temp_path)
                         .status()
                         .and_then(ensure_success)
                         .map_err(|err| CargoDebError::CommandFailed(err, "objcopy"))?;
 
-                    new_debug_asset = Some(Asset::new(
-                        AssetSource::Path(debug_path),
-                        debug_target,
+                    Some(Asset::new(
+                        AssetSource::Path(debug_temp_path),
+                        debug_target_path,
                         0o644,
                         IsBuilt::No,
                         false,
-                    ));
-                }
+                    ))
+                } else {
+                    None // no new asset
+                };
                 listener.info(format!("Stripped '{}'", path.display()));
 
                 (AssetSource::Path(stripped_temp_path), new_debug_asset)
@@ -319,4 +322,54 @@ pub fn strip_binaries(options: &mut Config, target: Option<&str>, listener: &dyn
         .extend(added_debug_assets.into_iter().filter_map(|debug_file| debug_file));
 
     Ok(())
+}
+
+fn get_target_debug_path(asset: &Asset, asset_path: &Path) -> Result<PathBuf, CargoDebError> {
+    let target_debug_path = match elf_gnu_debug_id(asset_path) {
+        Ok(Some(path)) => {
+            log::debug!("got gnu debug-id: {} for {}", path.display(), asset_path.display());
+            path
+        },
+        Ok(None) => {
+            log::debug!("debug-id not found in {}", asset_path.display());
+            asset.c.default_debug_target_path()
+        },
+        Err(e) => {
+            log::debug!("elf: {e} in {}", asset_path.display());
+            asset.c.default_debug_target_path()
+        },
+    };
+    Ok(target_debug_path)
+}
+
+#[cfg(not(feature = "debug-id"))]
+fn elf_gnu_debug_id(_: &Path) -> io::Result<Option<PathBuf>> {
+    Ok(None)
+}
+
+#[cfg(feature = "debug-id")]
+fn elf_gnu_debug_id(elf_file_path: &Path) -> Result<Option<PathBuf>, elf::ParseError> {
+    use elf::endian::AnyEndian;
+    use elf::note::Note;
+    use elf::ElfStream;
+
+    let mut stream = ElfStream::<AnyEndian, _>::open_stream(fs::File::open(elf_file_path)?)?;
+    let Some(abi_shdr) = stream.section_header_by_name(".note.gnu.build-id")?
+        else { return Ok(None) };
+
+    let abi_shdr = abi_shdr.clone();
+    for note in stream.section_data_as_notes(&abi_shdr)? {
+        if let Note::GnuBuildId(note) = note {
+            if let Some((byte, rest)) = note.0.split_first() {
+                let mut s = format!("usr/lib/debug/.build-id/{byte:02x}/");
+                for b in rest {
+                    use std::fmt::Write;
+                    write!(&mut s, "{b:02x}").unwrap();
+                }
+                s.push_str(".debug");
+                return Ok(Some(s.into()));
+            }
+        }
+    }
+    Ok(None)
 }

@@ -83,17 +83,6 @@ impl AssetSource {
             AssetSource::Symlink(_) => return Err(CargoDebError::Str("Symlink unexpectedly used to read file data")),
         })
     }
-
-    /// Return the file that will hold debug symbols for this asset.
-    /// This is just `<original-file>.debug`
-    #[must_use]
-    pub fn debug_source(&self) -> Option<PathBuf> {
-        match self {
-            AssetSource::Path(p) |
-            AssetSource::Symlink(p) => Some(debug_filename(p)),
-            _ => None,
-        }
-    }
 }
 
 /// Configuration settings for the systemd_units functionality.
@@ -231,22 +220,16 @@ impl AssetCommon {
     /// Returns the target path for the debug symbol file, which will be
     /// /usr/lib/debug/<path-to-executable>.debug
     #[must_use]
-    pub fn debug_target(&self) -> Option<PathBuf> {
-        if self.is_built != IsBuilt::No {
-            // Turn an absolute path into one relative to "/"
-            let relative = match self.target_path.strip_prefix(Path::new("/")) {
-                Ok(path) => path,
-                Err(_) => self.target_path.as_path(),
-            };
+    pub(crate) fn default_debug_target_path(&self) -> PathBuf {
+        // Turn an absolute path into one relative to "/"
+        let relative = self.target_path.strip_prefix(Path::new("/"))
+            .unwrap_or(self.target_path.as_path());
 
-            // Prepend the debug location
-            let debug_path = Path::new("/usr/lib/debug").join(relative);
+        // Prepend the debug location
+        let debug_path = Path::new("/usr/lib/debug").join(relative);
 
-            // Add `.debug` to the end of the filename
-            Some(debug_filename(&debug_path))
-        } else {
-            None
-        }
+        // Add `.debug` to the end of the filename
+        debug_filename(&debug_path)
     }
 }
 
@@ -255,7 +238,7 @@ impl AssetCommon {
 fn debug_filename(path: &Path) -> PathBuf {
     let mut debug_filename = path.as_os_str().to_os_string();
     debug_filename.push(".debug");
-    Path::new(&debug_filename).to_path_buf()
+    debug_filename.into()
 }
 
 fn is_dynamic_library_filename(path: &Path) -> bool {
@@ -1452,7 +1435,7 @@ mod tests {
             IsBuilt::SamePackage,
             false,
         );
-        let debug_target = a.c.debug_target().expect("Got unexpected None");
+        let debug_target = a.c.default_debug_target_path();
         assert_eq!(debug_target, Path::new("/usr/lib/debug/usr/bin/baz/bar.debug"));
     }
 
@@ -1467,42 +1450,8 @@ mod tests {
             IsBuilt::Workspace,
             false,
         );
-        let debug_target = a.c.debug_target().expect("Got unexpected None");
+        let debug_target = a.c.default_debug_target_path();
         assert_eq!(debug_target, Path::new("/usr/lib/debug/baz/bar.debug"));
-    }
-
-    /// Tests that getting the debug target for an Asset that with `is_built` false
-    /// returns None
-    #[test]
-    fn test_debug_target_not_built() {
-        let a = Asset::new(
-            AssetSource::Path(PathBuf::from("target/release/bar")),
-            PathBuf::from("baz/"),
-            0o644,
-            IsBuilt::No,
-            false,
-        );
-
-        assert_eq!(a.c.debug_target(), None);
-    }
-
-    /// Tests that debug_source() for an AssetSource::Path returns the same path
-    /// but with ".debug" appended
-    #[test]
-    fn test_debug_source_path() {
-        let a = AssetSource::Path(PathBuf::from("target/release/bar"));
-
-        let debug_source = a.debug_source().expect("Got unexpected None");
-        assert_eq!(debug_source, Path::new("target/release/bar.debug"));
-    }
-
-    /// Tests that debug_source() for an AssetSource::Data returns None
-    #[test]
-    fn test_debug_source_data() {
-        let data: Vec<u8> = Vec::new();
-        let a = AssetSource::Data(data);
-
-        assert_eq!(a.debug_source(), None);
     }
 
     fn to_canon_static_str(s: &str) -> &'static str {
