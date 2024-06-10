@@ -300,5 +300,6 @@ fn warn_if_not_linux() {}
 
 #[cfg(not(target_os = "linux"))]
 fn warn_if_not_linux() {
-    eprintln!("warning: You're creating a package for your current operating system only, and not for Linux. Use --target if you want to cross-compile.");
+    const DEFAULT_TARGET: &str = env!("CARGO_DEB_DEFAULT_TARGET");
+    eprintln!("warning: You're creating a package for your current operating system only ({DEFAULT_TARGET}), and not for Linux.\nUse --target if you want to cross-compile.");
 }
