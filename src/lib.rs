@@ -241,9 +241,9 @@ pub fn strip_binaries(options: &mut Config, target: Option<&str>, listener: &dyn
 
                 log::debug!("stripping with {} from {} into {}", strip_cmd.display(), path.display(), stripped_temp_path.display());
                 Command::new(strip_cmd)
-                   .arg("--strip-unneeded")
-                   .arg("-o")
-                   .arg(&stripped_temp_path)
+                   // same as dh_strip
+                   .args(["--strip-unneeded", "--remove-section=.comment", "--remove-section=.note"])
+                   .arg("-o").arg(&stripped_temp_path)
                    .arg(path)
                    .status()
                    .and_then(ensure_success)
