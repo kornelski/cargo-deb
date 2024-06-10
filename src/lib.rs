@@ -49,7 +49,7 @@ mod tararchive;
 mod wordsplit;
 
 use crate::listener::Listener;
-use crate::manifest::AssetSource;
+use crate::manifest::{Asset, AssetSource, IsBuilt};
 use rayon::prelude::*;
 use std::env;
 use std::fs;
@@ -221,12 +221,10 @@ pub fn strip_binaries(options: &mut Config, target: Option<&str>, listener: &dyn
 
     let stripped_binaries_output_dir = options.default_deb_output_dir();
 
-    let original_binaries = options.built_binaries_mut().into_iter().map(|asset| asset.clone()).collect();
-
-    options.built_binaries_mut().into_par_iter().enumerate()
+    let added_debug_assets = options.built_binaries_mut().into_par_iter().enumerate()
         .filter(|(_, asset)| !asset.source.archive_as_symlink_only()) // data won't be included, so nothing to strip
-        .try_for_each(|(i, asset)| {
-        let new_source = match asset.source.path() {
+        .map(|(i, asset)| {
+        let (new_source, new_debug_asset) = match asset.source.path() {
             Some(path) => {
                 if !path.exists() {
                     return Err(CargoDebError::StripFailed(path.to_owned(), "The file doesn't exist".into()));
@@ -259,9 +257,11 @@ pub fn strip_binaries(options: &mut Config, target: Option<&str>, listener: &dyn
                     return Err(CargoDebError::StripFailed(path.to_owned(), format!("{} command failed to create output '{}'", strip_cmd.display(), stripped_temp_path.display())));
                 }
 
+                let mut new_debug_asset = None;
                 if separate_file {
                     // The debug_path and debug_filename should never return None if we have an AssetSource::Path
                     let debug_path = asset.source.debug_source().expect("Failed to compute debug source path");
+                    let debug_target = asset.c.debug_target().unwrap();
 
                     log::debug!("extracting debug info with {} from {} into {}", objcopy_cmd.display(), path.display(), debug_path.display());
                     let _ = std::fs::remove_file(&debug_path);
@@ -291,26 +291,32 @@ pub fn strip_binaries(options: &mut Config, target: Option<&str>, listener: &dyn
                         .status()
                         .and_then(ensure_success)
                         .map_err(|err| CargoDebError::CommandFailed(err, "objcopy"))?;
+
+                    new_debug_asset = Some(Asset::new(
+                        AssetSource::Path(debug_path),
+                        debug_target,
+                        0o644,
+                        IsBuilt::No,
+                        false,
+                    ));
                 }
                 listener.info(format!("Stripped '{}'", path.display()));
 
-                AssetSource::Path(stripped_temp_path)
+                (AssetSource::Path(stripped_temp_path), new_debug_asset)
             },
             None => {
                 // This is unexpected - emit a warning if we come across it
                 listener.warning(format!("Found built asset with non-path source '{asset:?}'"));
-                return Ok(());
+                return Ok(None);
             },
         };
         log::debug!("Replacing asset {} with stripped asset {}", asset.source.path().unwrap().display(), new_source.path().unwrap().display());
         asset.source = new_source;
-        Ok::<_, CargoDebError>(())
-    })?;
+        Ok::<_, CargoDebError>(new_debug_asset)
+    }).collect::<Result<Vec<_>, _>>()?;
 
-    if separate_file {
-        // If we want to debug symbols included in a separate file, add these files to the debian assets
-        options.add_debug_assets(original_binaries);
-    }
+    options.assets.resolved
+        .extend(added_debug_assets.into_iter().filter_map(|debug_file| debug_file));
 
     Ok(())
 }
