@@ -102,7 +102,7 @@ fn main() {
         strip_override: if matches.opt_present("strip") { Some(true) } else if matches.opt_present("no-strip") { Some(false) } else { None },
         separate_debug_symbols: if matches.opt_present("separate-debug-symbols") { Some(true) } else if matches.opt_present("no-separate-debug-symbols") { Some(false) } else { None },
         quiet: matches.opt_present("quiet"),
-        verbose: matches.opt_present("verbose"),
+        verbose: matches.opt_present("verbose") || std::env::var_os("RUST_LOG").is_some_and(|v| v == "debug"),
         install,
         // when installing locally it won't be transferred anywhere, so allow faster compression
         fast: install || matches.opt_present("fast"),

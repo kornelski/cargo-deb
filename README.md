@@ -32,9 +32,6 @@ Debug symbols are stripped from the main binary by default, unless `[profile.rel
 
 ## Configuration
 
-> [!IMPORTANT]
-> Since v2.0.0 the deb package version will have a "-1" suffix. You can disable this by adding `--deb-revision=""` flag or `revision = ""` in Cargo metadata. The default suffix is for compliance with Debian's packaging standard.
-
 No configuration is necessary to make a basic package from a Cargo project with a binary. This command obtains basic information it needs from [the `Cargo.toml` file](https://doc.rust-lang.org/cargo/reference/manifest.html). It uses Cargo fields: `name`, `version`, `license`, `license-file`, `description`, `readme`, `homepage`, and `repository`.
 
 For a more complete Debian package, you may also define a new table, `[package.metadata.deb]` that contains `maintainer`, `copyright`, `license-file`, `changelog`, `depends`, `conflicts`, `breaks`, `replaces`, `provides`, `extended-description`/`extended-description-file`, `section`, `priority`, and `assets`.
@@ -123,7 +120,8 @@ If the `merge-assets` option is used, `cargo-deb` will merge the list of assets 
 **Note**: Using both `append`, and a `by.*` option are allowed, w/ the former being applied before the latter.
 
 #### Example of `merge-assets`
-```
+
+```toml
 # Example parent asset list
 [package.metadata.deb]
 assets = [
@@ -219,6 +217,14 @@ Cargo-deb understands workspaces and can build all crates in the workspace if ne
     cargo deb --deb-version my-custom-version
 
 Overrides the version string generated from the Cargo manifest. It also suppresses the `revision` option.
+
+## Troubleshooting
+
+For maximum logging, use:
+
+```sh
+RUST_LOG=debug cargo deb --verbose
+```
 
 ### Undefined reference to `lzma_stream_encoder_mt` error
 
