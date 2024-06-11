@@ -49,7 +49,7 @@ mod tararchive;
 mod wordsplit;
 
 use crate::listener::Listener;
-use crate::manifest::{Asset, AssetSource, IsBuilt};
+use crate::manifest::{Asset, AssetSource, IsBuilt, ProcessedFrom};
 use rayon::prelude::*;
 use std::env;
 use std::fs;
@@ -314,7 +314,11 @@ pub fn strip_binaries(options: &mut Config, target: Option<&str>, listener: &dyn
             },
         };
         log::debug!("Replacing asset {} with stripped asset {}", asset.source.path().unwrap().display(), new_source.path().unwrap().display());
-        asset.source = new_source;
+        let old_source = std::mem::replace(&mut asset.source, new_source);
+        asset.processed_from = Some(ProcessedFrom {
+            original_path: old_source.into_path(),
+            action: "strip",
+        });
         Ok::<_, CargoDebError>(new_debug_asset)
     }).collect::<Result<Vec<_>, _>>()?;
 

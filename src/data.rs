@@ -20,15 +20,20 @@ pub fn generate_archive<W: Write>(dest: W, options: &Config, time: u64, rsyncabl
 }
 
 /// Generates compressed changelog file
-pub(crate) fn generate_changelog_asset(options: &Config) -> CDResult<Option<Vec<u8>>> {
+pub(crate) fn generate_changelog_asset(options: &Config) -> CDResult<Option<(PathBuf, Vec<u8>)>> {
     if let Some(ref path) = options.changelog {
-        let changelog = fs::read(options.path_in_package(path))
+        let source_path = options.path_in_package(path);
+        let changelog = fs::read(&source_path)
             .and_then(|content| {
+                // allow pre-compressed
+                if source_path.extension().is_some_and(|e| e == "gz") {
+                    return Ok(content.into());
+                }
                 // The input is plaintext, but the debian package should contain gzipped one.
                 gzipped(&content)
             })
-            .map_err(move |e| CargoDebError::IoFile("unable to read changelog file", e, path.into()))?;
-        Ok(Some(changelog))
+            .map_err(|e| CargoDebError::IoFile("unable to read changelog file", e, source_path.clone()))?;
+        Ok(Some((source_path, changelog)))
     } else {
         Ok(None)
     }
@@ -48,10 +53,12 @@ fn append_copyright_metadata(copyright: &mut Vec<u8>, options: &Config) -> Resul
 }
 
 /// Generates the copyright file from the license file and adds that to the tar archive.
-pub(crate) fn generate_copyright_asset(options: &Config) -> CDResult<Vec<u8>> {
+pub(crate) fn generate_copyright_asset(options: &Config) -> CDResult<(PathBuf, Vec<u8>)> {
     let mut copyright: Vec<u8> = Vec::new();
+    let source_path;
     if let Some(ref path) = options.license_file {
-        let license_string = fs::read_to_string(options.path_in_package(path))
+        source_path = options.path_in_package(path);
+        let license_string = fs::read_to_string(&source_path)
             .map_err(|e| CargoDebError::IoFile("unable to read license file", e, path.clone()))?;
         if !has_copyright_metadata(&license_string) {
             append_copyright_metadata(&mut copyright, options)?;
@@ -68,11 +75,11 @@ pub(crate) fn generate_copyright_asset(options: &Config) -> CDResult<Vec<u8>> {
             }
         }
     } else {
+        source_path = "Cargo.toml".into();
         append_copyright_metadata(&mut copyright, options)?;
     }
 
-    // Write a copy to the disk for the sake of obtaining a md5sum for the control archive.
-    Ok(copyright)
+    Ok((source_path, copyright))
 }
 
 fn has_copyright_metadata(file: &str) -> bool {
@@ -93,23 +100,30 @@ pub fn compress_assets(options: &mut Config, listener: &dyn Listener) -> CDResul
     fn needs_compression(path: &str) -> bool {
         !path.ends_with(".gz")
             && (path.starts_with("usr/share/man/")
-                || (path.starts_with("usr/share/doc/")
-                    && (path.ends_with("/NEWS") || path.ends_with("/changelog")))
+                || (path.starts_with("usr/share/doc/") && (path.ends_with("/NEWS") || path.ends_with("/changelog")))
                 || (path.starts_with("usr/share/info/") && path.ends_with(".info")))
     }
 
-    for (idx, asset) in options.assets.resolved.iter().enumerate() {
-        let target_path_str = asset.c.target_path.to_string_lossy();
+    for (idx, orig_asset) in options.assets.resolved.iter().enumerate() {
+        if !orig_asset.c.target_path.starts_with("usr") {
+            continue;
+        }
+        let target_path_str = orig_asset.c.target_path.to_string_lossy();
         if needs_compression(&target_path_str) {
-            listener.info(format!("Compressing '{}'", asset.source.path().unwrap_or_else(|| Path::new("-")).display()));
+            debug_assert!(!orig_asset.c.is_built());
+
+            let mut new_path = target_path_str.into_owned();
+            new_path.push_str(".gz");
+            listener.info(format!("Compressing '{new_path}'"));
             new_assets.push(Asset::new(
-                crate::manifest::AssetSource::Data(gzipped(&asset.source.data()?)?),
-                format!("{target_path_str}.gz").into(),
-                asset.c.chmod,
+                crate::manifest::AssetSource::Data(gzipped(&orig_asset.source.data()?)?),
+                new_path.into(),
+                orig_asset.c.chmod,
                 IsBuilt::No,
                 false,
+            ).processed("compressed",
+                orig_asset.source.path().unwrap_or(&orig_asset.c.target_path).to_path_buf()
             ));
-
             indices_to_remove.push(idx);
         }
     }
@@ -138,9 +152,14 @@ fn archive_files<W: Write>(archive: &mut Archive<W>, options: &Config, rsyncable
         });
         let mut archive_data_added = 0;
         let mut prev_is_built = false;
+
+        debug_assert!(options.assets.unresolved.is_empty());
         for asset in &options.assets.resolved {
-            let mut log_line = format!("{} -> {}",
-                asset.source.path().unwrap_or_else(|| Path::new("-")).display(),
+            let mut log_line = format!("{} {}-> {}",
+                asset.processed_from.as_ref().and_then(|p| p.original_path.as_deref())
+                    .or(asset.source.path())
+                    .unwrap_or_else(|| Path::new("-")).display(),
+                asset.processed_from.as_ref().map(|p| p.action).unwrap_or_default(),
                 asset.c.target_path.display()
             );
             if let Some(len) = asset.source.file_size() {
