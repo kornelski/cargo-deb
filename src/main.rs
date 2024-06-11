@@ -4,7 +4,7 @@ use cargo_deb::control::ControlArchiveBuilder;
 use cargo_deb::*;
 use std::env;
 use std::path::Path;
-use std::process;
+use std::process::ExitCode;
 
 struct CliOptions {
     no_build: bool,
@@ -30,7 +30,7 @@ struct CliOptions {
     profile: Option<String>,
 }
 
-fn main() {
+fn main() -> ExitCode {
     env_logger::init();
 
     let args: Vec<String> = env::args().collect();
@@ -64,7 +64,25 @@ fn main() {
     let matches = match cli_opts.parse(&args[1..]) {
         Ok(m) => m,
         Err(err) => {
-            err_exit(&err);
+            eprintln!("cargo-deb: Error parsing arguments. See --help for details.");
+
+            use getopts::Fail::*;
+            let error_arg = match &err {
+                ArgumentMissing(s) | UnrecognizedOption(s) | OptionMissing(s) |
+                OptionDuplicated(s) | UnexpectedArgument(s) => s,
+            };
+            let dym = cli_opts.usage_with_format(|opts| {
+                let mut out = String::new();
+                for o in opts.filter(|o| error_arg.split('-').filter(|e| !e.is_empty()).any(|e| o.contains(e))) {
+                    out.push_str(&o); out.push('\n');
+                }
+                out
+            });
+            if !dym.is_empty() {
+                eprintln!("Did you mean:\n{dym}");
+            }
+            print_error(&err);
+            return ExitCode::FAILURE;
         }
     };
     if matches.opt_present("h") {
@@ -79,12 +97,12 @@ fn main() {
             }
             out
         }));
-        return;
+        return ExitCode::SUCCESS;
     }
 
     if matches.opt_present("version") {
         println!("{}", env!("CARGO_PKG_VERSION"));
-        return;
+        return ExitCode::SUCCESS;
     }
 
     let install = matches.opt_present("install");
@@ -93,7 +111,8 @@ fn main() {
         Some("gz" | "gzip") => compress::Format::Gzip,
         Some("xz") | None => compress::Format::Xz,
         _ => {
-            err_exit(&CargoDebError::Str("unrecognized compression format. Supported: gzip, xz"));
+            print_error(&CargoDebError::Str("unrecognized compression format. Supported: gzip, xz"));
+            return ExitCode::FAILURE;
         }
     };
 
@@ -121,9 +140,10 @@ fn main() {
         cargo_build_cmd: matches.opt_str("cargo-build").unwrap_or("build".to_string()),
         cargo_build_flags: matches.free,
     }) {
-        Ok(()) => {},
+        Ok(()) => ExitCode::SUCCESS,
         Err(err) => {
-            err_exit(&err);
+            print_error(&err);
+            ExitCode::FAILURE
         }
     }
 }
@@ -138,10 +158,9 @@ fn err_cause(err: &dyn std::error::Error, max: usize) {
     }
 }
 
-fn err_exit(err: &dyn std::error::Error) -> ! {
+fn print_error(err: &dyn std::error::Error) {
     eprintln!("cargo-deb: {err}");
     err_cause(err, 3);
-    process::exit(1);
 }
 
 fn process(
