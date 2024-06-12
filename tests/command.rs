@@ -29,11 +29,16 @@ fn build_workspaces() {
 }
 
 #[test]
-fn build_with_explicit_compress_type() {
+fn build_with_explicit_compress_type_gz() {
+    let _ = env_logger::builder().is_test(true).try_init();
+
     // ws1 with gzip
     let (_, ddir) = extract_built_package_from_manifest("tests/test-workspace/test-ws1/Cargo.toml", "gz", &["--no-strip", "--compress-type", "gzip"]);
     assert!(ddir.path().join("usr/local/bin/decoy").exists());
+}
 
+#[test]
+fn build_with_explicit_compress_type_xz() {
     // ws2 with xz
     let (_, ddir) = extract_built_package_from_manifest("tests/test-workspace/test-ws2/Cargo.toml", "xz", &["--no-strip", "--compress-type", "xz"]);
     assert!(ddir.path().join("usr/bin/renamed2").exists());
@@ -159,6 +164,8 @@ fn extract_package(deb_path: &Path, ext: &str) -> (TempDir, TempDir) {
 /// The `--manifest-path` and `--output` args are automatically set.
 #[track_caller]
 fn cargo_deb(manifest_path: &str, args: &[&str]) -> (TempDir, PathBuf) {
+    let _ = env_logger::builder().is_test(true).try_init();
+
     let cargo_dir = tempfile::tempdir().unwrap();
     let deb_path = cargo_dir.path().join("test.deb");
 

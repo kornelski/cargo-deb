@@ -67,6 +67,11 @@ static-lzma = ["lzma", "xz2?/static"]
 [profile.dev]
 debug = 1
 
+[profile.dev.package]
+xz2 = { opt-level = 2 }
+zopfli = { opt-level = 2 }
+miniz_oxide = { opt-level = 2 }
+
 [profile.release]
 lto = true
 opt-level = 3
@@ -78,7 +83,7 @@ rstest = { version = "0.19", default-features = false }
 lazy_static = "1.4.0"
 
 [workspace]
-exclude = ["example"]
+exclude = ["example", "tests/*", "test-resources"]
 
 [package.metadata.docs.rs]
 targets = ["x86_64-unknown-linux-gnu"]
