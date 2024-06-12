@@ -404,9 +404,7 @@ pub struct Config {
     pub features: Vec<String>,
     pub default_features: bool,
     /// Should the binary be stripped from debug symbols?
-    pub debug_enabled: bool,
-    /// Should the debug symbols be moved to a separate file included in the package? (implies `strip:true`)
-    pub separate_debug_symbols: bool,
+    pub debug_symbols: DebugSymbols,
     /// Should symlinks be preserved in the assets
     pub preserve_symlinks: bool,
     /// Details of how to install any systemd units
@@ -414,6 +412,17 @@ pub struct Config {
 
     /// unix timestamp for generated files
     pub default_timestamp: u64,
+}
+
+#[derive(Debug, Copy, Clone, Eq, PartialEq)]
+pub enum DebugSymbols {
+    Keep,
+    Strip,
+    /// Should the debug symbols be moved to a separate file included in the package? (implies `strip:true`)
+    Separate {
+        /// Should the debug symbols be compressed
+        compress: bool,
+    },
 }
 
 impl Config {
@@ -430,7 +439,8 @@ impl Config {
         deb_revision: Option<String>,
         listener: &dyn Listener,
         selected_profile: &str,
-        separate_debug_symbols: Option<bool>
+        separate_debug_symbols: Option<bool>,
+        compress_debug_symbols: Option<bool>,
     ) -> CDResult<Config> {
         let metadata = cargo_metadata(root_manifest_path)?;
         let available_package_names = || {
@@ -483,6 +493,7 @@ impl Config {
             listener,
             selected_profile,
             separate_debug_symbols,
+            compress_debug_symbols,
             default_timestamp
         )
     }
@@ -505,6 +516,7 @@ impl Config {
         listener: &dyn Listener,
         selected_profile: &str,
         separate_debug_symbols: Option<bool>,
+        compress_debug_symbols: Option<bool>,
         default_timestamp: u64,
     ) -> CDResult<Self> {
         // Cargo cross-compiles to a dir
@@ -516,7 +528,7 @@ impl Config {
 
         // FIXME: support other named profiles
         let debug_enabled = if selected_profile == "release" {
-            debug_flag(&manifest) || root_manifest.map_or(false, debug_flag)
+            manifest_debug_flag(&manifest) || root_manifest.map_or(false, manifest_debug_flag)
         } else {
             false
         };
@@ -535,6 +547,23 @@ impl Config {
             variant.inherit_from(deb)
         } else {
             package.metadata.take().and_then(|m| m.deb).unwrap_or_default()
+        };
+
+        let separate_debug_symbols = separate_debug_symbols.unwrap_or_else(|| deb.separate_debug_symbols.unwrap_or(false));
+        let compress_debug_symbols = compress_debug_symbols.unwrap_or_else(|| deb.compress_debug_symbols.unwrap_or(false));
+
+        let debug_symbols = if separate_debug_symbols {
+            if !debug_enabled {
+                log::warn!("separate-debug-symbols implies strip")
+            }
+            DebugSymbols::Separate { compress: compress_debug_symbols }
+        } else if debug_enabled {
+            if compress_debug_symbols {
+                log::warn!("separate-debug-symbols required to compress")
+            }
+            DebugSymbols::Keep
+        } else {
+            DebugSymbols::Strip
         };
 
         let (license_file, license_file_skip_lines) = manifest_license_file(package, deb.license_file.as_ref())?;
@@ -595,8 +624,7 @@ impl Config {
             maintainer_scripts: deb.maintainer_scripts.map(PathBuf::from),
             features: deb.features.take().unwrap_or_default(),
             default_features: deb.default_features.unwrap_or(true),
-            separate_debug_symbols: separate_debug_symbols.unwrap_or_else(|| deb.separate_debug_symbols.unwrap_or(false)),
-            debug_enabled,
+            debug_symbols,
             preserve_symlinks: deb.preserve_symlinks.unwrap_or(false),
             systemd_units: match deb.systemd_units {
                 None => None,
@@ -919,7 +947,7 @@ fn debian_package_name(crate_name: &str) -> String {
     }).collect()
 }
 
-fn debug_flag(manifest: &cargo_toml::Manifest<CargoPackageMetadata>) -> bool {
+fn manifest_debug_flag(manifest: &cargo_toml::Manifest<CargoPackageMetadata>) -> bool {
     manifest.profile.release.as_ref()
         .and_then(|r| r.debug.as_ref())
         .map_or(false, |debug| *debug != DebugSetting::None)
@@ -1175,6 +1203,7 @@ struct CargoDeb {
     pub features: Option<Vec<String>>,
     pub default_features: Option<bool>,
     pub separate_debug_symbols: Option<bool>,
+    pub compress_debug_symbols: Option<bool>,
     pub preserve_symlinks: Option<bool>,
     pub systemd_units: Option<SystemUnitsSingleOrMultiple>,
     pub variants: Option<HashMap<String, CargoDeb>>,
@@ -1320,6 +1349,7 @@ impl CargoDeb {
             features: self.features.or(parent.features),
             default_features: self.default_features.or(parent.default_features),
             separate_debug_symbols: self.separate_debug_symbols.or(parent.separate_debug_symbols),
+            compress_debug_symbols: self.compress_debug_symbols.or(parent.compress_debug_symbols),
             preserve_symlinks: self.preserve_symlinks.or(parent.preserve_symlinks),
             systemd_units: self.systemd_units.or(parent.systemd_units),
             variants: self.variants.or(parent.variants),
@@ -1496,7 +1526,7 @@ mod tests {
         // supply a systemd unit file as if it were available on disk
         let _g = add_test_fs_paths(&[to_canon_static_str("cargo-deb.service")]);
 
-        let config = Config::from_manifest(Some(Path::new("Cargo.toml")), None, None, None, None, None, None, &mock_listener, "release", None).unwrap();
+        let config = Config::from_manifest(Some(Path::new("Cargo.toml")), None, None, None, None, None, None, &mock_listener, "release", None, None).unwrap();
 
         let num_unit_assets = config.assets.resolved.iter()
             .filter(|a| a.c.target_path.starts_with("lib/systemd/system/"))
@@ -1513,7 +1543,7 @@ mod tests {
         // supply a systemd unit file as if it were available on disk
         let _g = add_test_fs_paths(&[to_canon_static_str("cargo-deb.service")]);
 
-        let mut config = Config::from_manifest(Some(Path::new("Cargo.toml")), None, None, None, None, None, None, &mock_listener, "release", None).unwrap();
+        let mut config = Config::from_manifest(Some(Path::new("Cargo.toml")), None, None, None, None, None, None, &mock_listener, "release", None, None).unwrap();
 
         config.systemd_units.get_or_insert(vec![SystemdUnitsConfig::default()]);
         config.maintainer_scripts.get_or_insert(PathBuf::new());

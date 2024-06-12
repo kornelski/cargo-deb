@@ -1,6 +1,7 @@
 #![allow(clippy::redundant_closure_for_method_calls)]
 
 use cargo_deb::control::ControlArchiveBuilder;
+use cargo_deb::manifest::DebugSymbols;
 use cargo_deb::*;
 use std::env;
 use std::path::Path;
@@ -10,6 +11,7 @@ struct CliOptions {
     no_build: bool,
     strip_override: Option<bool>,
     separate_debug_symbols: Option<bool>,
+    compress_debug_symbols: Option<bool>,
     fast: bool,
     verbose: bool,
     quiet: bool,
@@ -40,6 +42,7 @@ fn main() -> ExitCode {
     cli_opts.optflag("", "strip", "Always try to strip debug symbols");
     cli_opts.optflag("", "no-separate-debug-symbols", "Do not strip debug symbols into a separate .debug file");
     cli_opts.optflag("", "separate-debug-symbols", "Strip debug symbols into a separate .debug file");
+    cli_opts.optflag("", "compress-debug-symbols", "Apply objcopy --compress-debug-sections");
     cli_opts.optopt("o", "output", "Write .deb to this file or directory", "path");
     cli_opts.optopt("p", "package", "Select which Cargo workspace package to use", "name");
     cli_opts.optflag("", "install", "Immediately install the created deb package");
@@ -91,7 +94,7 @@ fn main() -> ExitCode {
             out.push_str("Usage: cargo deb [options] [-- <cargo build flags>]\nhttps://lib.rs/cargo-deb ");
             out.push_str(env!("CARGO_PKG_VERSION"));
             out.push_str("\n\n");
-            for opt in opts.filter(|opt| !opt.contains("--system-xz")) {
+            for opt in opts.filter(|opt| !opt.contains("--system-xz") && !opt.contains("--no-separate-debug-symbols")) {
                 out.push_str(&opt);
                 out.push('\n');
             }
@@ -120,6 +123,7 @@ fn main() -> ExitCode {
         no_build: matches.opt_present("no-build"),
         strip_override: if matches.opt_present("strip") { Some(true) } else if matches.opt_present("no-strip") { Some(false) } else { None },
         separate_debug_symbols: if matches.opt_present("separate-debug-symbols") { Some(true) } else if matches.opt_present("no-separate-debug-symbols") { Some(false) } else { None },
+        compress_debug_symbols: if matches.opt_present("compress-debug-symbols") { Some(true) } else { None },
         quiet: matches.opt_present("quiet"),
         verbose: matches.opt_present("verbose") || std::env::var_os("RUST_LOG").is_some_and(|v| v == "debug"),
         install,
@@ -174,6 +178,7 @@ fn process(
         no_build,
         strip_override,
         separate_debug_symbols,
+        compress_debug_symbols,
         quiet,
         fast,
         verbose,
@@ -242,6 +247,7 @@ fn process(
         listener,
         selected_profile,
         separate_debug_symbols,
+        compress_debug_symbols,
     )?;
     reset_deb_temp_directory(&options)?;
 
@@ -255,11 +261,10 @@ fn process(
 
     crate::data::compress_assets(&mut options, listener)?;
 
-    if strip_override.unwrap_or(options.separate_debug_symbols || !options.debug_enabled) {
-        let separate_debug_symbols = options.separate_debug_symbols.clone();
-        strip_binaries(&mut options, target, listener, separate_debug_symbols)?;
+    if strip_override.unwrap_or(options.debug_symbols != DebugSymbols::Keep) {
+        strip_binaries(&mut options, target, listener)?;
     } else {
-        log::debug!("not stripping profile.release.debug={} strip-flag={:?}", options.debug_enabled, strip_override);
+        log::debug!("not stripping debug={:?} strip-flag={:?}", options.debug_symbols, strip_override);
     }
 
     options.sort_assets_by_type();

@@ -49,7 +49,7 @@ mod tararchive;
 mod wordsplit;
 
 use crate::listener::Listener;
-use crate::manifest::{Asset, AssetSource, IsBuilt, ProcessedFrom};
+use crate::manifest::{Asset, AssetSource, DebugSymbols, IsBuilt, ProcessedFrom};
 use rayon::prelude::*;
 use std::env;
 use std::fs;
@@ -195,7 +195,7 @@ fn ensure_success(status: ExitStatus) -> io::Result<()> {
 }
 
 /// Strips the binary that was created with cargo
-pub fn strip_binaries(options: &mut Config, target: Option<&str>, listener: &dyn Listener, separate_file: bool) -> CDResult<()> {
+pub fn strip_binaries(options: &mut Config, target: Option<&str>, listener: &dyn Listener) -> CDResult<()> {
     let mut cargo_config = None;
     let objcopy_tmp;
     let strip_tmp;
@@ -220,6 +220,10 @@ pub fn strip_binaries(options: &mut Config, target: Option<&str>, listener: &dyn
     }
 
     let stripped_binaries_output_dir = options.default_deb_output_dir();
+    let (separate_debug_symbols, compress_debug_symbols) = match options.debug_symbols {
+        DebugSymbols::Keep | DebugSymbols::Strip => (false, false),
+        DebugSymbols::Separate { compress } => (true, compress),
+    };
 
     let added_debug_assets = options.built_binaries_mut().into_par_iter().enumerate()
         .filter(|(_, asset)| !asset.source.archive_as_symlink_only()) // data won't be included, so nothing to strip
@@ -256,7 +260,7 @@ pub fn strip_binaries(options: &mut Config, target: Option<&str>, listener: &dyn
                     return Err(CargoDebError::StripFailed(path.to_owned(), format!("{} command failed to create output '{}'", strip_cmd.display(), stripped_temp_path.display())));
                 }
 
-                let new_debug_asset = if separate_file && asset.c.is_built() {
+                let new_debug_asset = if separate_debug_symbols && asset.c.is_built() {
                     log::debug!("extracting debug info with {} from {}", objcopy_cmd.display(), path.display());
 
                     // parse the ELF and use debug-id-based path if available
@@ -267,8 +271,12 @@ pub fn strip_binaries(options: &mut Config, target: Option<&str>, listener: &dyn
                     let debug_temp_path = stripped_temp_path.with_file_name(debug_target_path.file_name().ok_or(CargoDebError::Str("bad path"))?);
 
                     let _ = std::fs::remove_file(&debug_temp_path);
+                    let mut args: &[_] = &["--only-keep-debug", "--compress-debug-sections=zstd"];
+                    if !compress_debug_symbols {
+                        args = &args[..1];
+                    }
                     Command::new(objcopy_cmd)
-                        .arg("--only-keep-debug")
+                        .args(args)
                         .arg(path)
                         .arg(&debug_temp_path)
                         .status()
@@ -299,7 +307,7 @@ pub fn strip_binaries(options: &mut Config, target: Option<&str>, listener: &dyn
                         0o644,
                         IsBuilt::No,
                         false,
-                    ))
+                    ).processed(if compress_debug_symbols { "compress"} else {"separate"}, path.to_path_buf()))
                 } else {
                     None // no new asset
                 };
