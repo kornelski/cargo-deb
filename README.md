@@ -2,11 +2,6 @@
 
 This is a [Cargo](https://doc.rust-lang.org/cargo/) helper command which automatically creates binary [Debian packages](https://www.debian.org/doc/debian-policy/ch-binary.html) (`.deb`) from Cargo projects.
 
-
-> [!NOTE]
-> cargo-deb uses the [xz2](https://lib.rs/crates/xz2) crate that bundles an old safe version of liblzma 5.2 by the original maintainer, and a simple Cargo-based build script.
-> It is **unaffected** by the CVE-2024-3094.
-
 ## Installation
 
 ```sh
@@ -14,7 +9,7 @@ rustup update   # Debian's Rust is too outdated, use rustup.rs
 cargo install cargo-deb
 ```
 
-Requires Rust 1.63+, and optionally `dpkg`, `dpkg-dev` and `liblzma-dev`. Compatible with Ubuntu. If the LZMA dependency causes you headaches, try `cargo install cargo-deb --no-default-features`.
+Requires Rust 1.71+, and optionally `dpkg`, `dpkg-dev` and `liblzma-dev`. Compatible with Ubuntu. If the LZMA dependency causes you headaches, try `cargo install cargo-deb --no-default-features`.
 
 If you get a compilation error, run `rustup update`! If you get an error running `rustup update`, uninstall your rust/cargo package, and install [the official Rust](https://rustup.rs/) instead.
 
@@ -194,11 +189,21 @@ Note that you can't use cross-compilation to build for an older version of Debia
 
 ### Separate debug info
 
-To get debug symbols, set `[profile.release] debug = true` in `Cargo.toml`. Building using the dev profile is intentionally unsupported.
+To get debug symbols, set in `Cargo.toml`:
 
-    cargo deb --separate-debug-symbols
+```toml
+[profile.release]
+debug = true
+# or debug="line-tables-only" for smaller files
+```
 
-Removes debug symbols from executables and places them as separate files in `/usr/lib/debug`. Requires GNU `objcopy` tool.
+Note: building using the `dev` profile is intentionally unsupported.
+
+```sh
+cargo deb --separate-debug-symbols --compress-debug-symbols
+```
+
+Removes debug symbols from the executables, and places them in separate files in `/usr/lib/debug/.build-id/*`. Requires GNU `objcopy` tool.
 
 ### Custom build flags
 
@@ -235,3 +240,7 @@ cargo install cargo-deb --features=static-lzma
 ```
 
 or use the xz command-line tool by setting the `--compress-system` flag.
+
+> [!NOTE]
+> cargo-deb uses the [xz2](https://lib.rs/crates/xz2) crate that bundles an old safe version of liblzma 5.2 by the original maintainer, and a simple Cargo-based build script.
+> It is **unaffected** by the CVE-2024-3094.
