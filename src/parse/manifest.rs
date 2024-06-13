@@ -194,7 +194,7 @@ impl MergeByKey {
 
     /// Folds the parent asset into a merge-map preparing to prepare for a merge,
     /// 
-    fn prep_parent_item<'a>(&'a self, mut parent: MergeMap<'a>, asset: &'a Vec<String>) -> MergeMap {
+    fn prep_parent_item<'a>(&'a self, mut parent: MergeMap<'a>, asset: &'a Vec<String>) -> MergeMap<'_> {
         if let [src, dest, perm, ..] = &asset[..] {
             match &self {
                 MergeByKey::Src(_) => {
@@ -213,7 +213,7 @@ impl MergeByKey {
 
     /// Merges w/ a parent merge map and returns the resulting asset list,
     ///
-    fn merge_with(&self, parent: MergeMap) -> AssetList {
+    fn merge_with(&self, parent: MergeMap<'_>) -> AssetList {
         match self {
             MergeByKey::Src(assets) => {
                assets.iter().fold(parent, |mut acc, asset| {
@@ -227,7 +227,7 @@ impl MergeByKey {
                         acc
                     }
                 }).iter().map(|(src, [dest, perm])| {
-                    vec![src.to_string(), dest.to_string(), perm.to_string()]
+                    vec![(*src).to_string(), (*dest).to_string(), (*perm).to_string()]
                 }).collect()
             },
             MergeByKey::Dest(assets) => {
@@ -242,7 +242,7 @@ impl MergeByKey {
                         acc
                     }
                 }).iter().map(|(dest, [src, perm])| {
-                    vec![src.to_string(), dest.to_string(), perm.to_string()]
+                    vec![(*src).to_string(), (*dest).to_string(), (*perm).to_string()]
                 }).collect()
             },
         }
@@ -257,13 +257,13 @@ impl CargoDeb {
     pub(crate) fn inherit_from(self, parent: CargoDeb) -> CargoDeb {
         let mut assets = self.assets.or(parent.assets);
 
-        if let (Some(merge_assets), Some(_assets)) = (self.merge_assets, assets.as_mut()) {
+        if let (Some(merge_assets), Some(old_assets)) = (self.merge_assets, assets.as_mut()) {
             if let Some(mut append) = merge_assets.append {
-                _assets.append(&mut append);
+                old_assets.append(&mut append);
             }
 
             if let Some(strategy) = merge_assets.by {
-                assets = Some(strategy.merge(_assets));
+                assets = Some(strategy.merge(old_assets));
             }
         }
 

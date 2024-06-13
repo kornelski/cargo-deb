@@ -71,7 +71,7 @@ fn check_ar(deb_path: &Path) {
         name_prefix: &'static str,
         data: Option<&'static [u8]>,
     }
-    const EXPECTED: &'static [Expected] = &[
+    const EXPECTED: &[Expected] = &[
         Expected {
             name_prefix: "debian-binary   ",
             data: Some(b"2.0\n"),
@@ -119,8 +119,8 @@ fn check_ar(deb_path: &Path) {
     data.clear();
     file.read_to_end(&mut data).unwrap();
     match &*data {
-        [] => {}
-        b"\n" if allowed_trailing_nl => {}
+        [] => {},
+        b"\n" if allowed_trailing_nl => {},
         _ => panic!("unexpected trailing data"),
     }
 }
@@ -179,11 +179,12 @@ fn cargo_deb(manifest_path: &str, args: &[&str]) -> (TempDir, PathBuf) {
         .args(args)
         .output()
         .unwrap();
-    assert!(output.status.success(),
-            "Cmd failed: {}\n{}",
-            String::from_utf8_lossy(&output.stdout),
-            String::from_utf8_lossy(&output.stderr)
-        );
+    assert!(
+        output.status.success(),
+        "Cmd failed: {}\n{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
 
     // prints deb path on the last line
     let last_line = output.stdout[..output.stdout.len() - 1].split(|&c| c == b'\n').last().unwrap();
@@ -388,7 +389,8 @@ fn dir_test_run_in_subdir(subdir_path: &str) {
         .arg(format!("--output={}", deb_path.display()))
         .output()
         .unwrap();
-    assert!(output.status.success(),
+    assert!(
+        output.status.success(),
         "Cmd failed: {}\n{}",
         String::from_utf8_lossy(&output.stdout),
         String::from_utf8_lossy(&output.stderr)

@@ -117,7 +117,7 @@ fn main() -> ExitCode {
         _ => {
             print_error(&CargoDebError::Str("unrecognized compression format. Supported: gzip, xz"));
             return ExitCode::FAILURE;
-        }
+        },
     };
 
     match process(CliOptions {
@@ -126,7 +126,7 @@ fn main() -> ExitCode {
         separate_debug_symbols: if matches.opt_present("separate-debug-symbols") { Some(true) } else if matches.opt_present("no-separate-debug-symbols") { Some(false) } else { None },
         compress_debug_symbols: if matches.opt_present("compress-debug-symbols") { Some(true) } else { None },
         quiet: matches.opt_present("quiet"),
-        verbose: matches.opt_present("verbose") || std::env::var_os("RUST_LOG").is_some_and(|v| v == "debug"),
+        verbose: matches.opt_present("verbose") || env::var_os("RUST_LOG").is_some_and(|v| v == "debug"),
         install,
         // when installing locally it won't be transferred anywhere, so allow faster compression
         fast: install || matches.opt_present("fast"),
@@ -149,7 +149,7 @@ fn main() -> ExitCode {
         Err(err) => {
             print_error(&err);
             ExitCode::FAILURE
-        }
+        },
     }
 }
 
@@ -260,7 +260,7 @@ fn process(
 
     config.resolve_assets()?;
 
-    crate::deb::data::compress_assets(&mut config, listener)?;
+    deb::data::compress_assets(&mut config, listener)?;
 
     if strip_override.unwrap_or(config.debug_symbols != DebugSymbols::Keep) {
         strip_binaries(&mut config, target, listener)?;

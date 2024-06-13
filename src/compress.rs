@@ -13,7 +13,7 @@ pub struct CompressConfig {
     pub fast: bool,
     pub compress_type: Format,
     pub compress_system: bool,
-    pub rsyncable: bool
+    pub rsyncable: bool,
 }
 
 #[derive(Clone, Copy)]
@@ -50,7 +50,7 @@ enum Writer {
     #[cfg(feature = "lzma")]
     Xz(xz2::write::XzEncoder<Vec<u8>>),
     Gz(flate2::write::GzEncoder<Vec<u8>>),
-    ZopfliGz(BufWriter<zopfli::GzipEncoder<Vec<u8>>>),
+    ZopfliGz(BufWriter<GzipEncoder<Vec<u8>>>),
     StdIn {
         compress_format: Format,
         child: Child,
@@ -173,7 +173,6 @@ fn system_compressor(compress_format: Format, fast: bool) -> CDResult<Compressor
     Ok(Compressor::new(Writer::StdIn { compress_format, child, handle, stdin }))
 }
 
-
 pub fn select_compressor(fast: bool, compress_format: Format, use_system: bool) -> CDResult<Compressor> {
     if use_system {
         return system_compressor(compress_format, fast);
@@ -191,7 +190,7 @@ pub fn select_compressor(fast: bool, compress_format: Format, use_system: bool) 
 
             let writer = xz2::write::XzEncoder::new_stream(Vec::new(), encoder);
             Ok(Compressor::new(Writer::Xz(writer)))
-        }
+        },
         #[cfg(not(feature = "lzma"))]
         Format::Xz => system_compressor(compress_format, fast),
         Format::Gzip => {
@@ -205,11 +204,11 @@ pub fn select_compressor(fast: bool, compress_format: Format, use_system: bool) 
                 }, BlockType::Dynamic, Vec::new()).unwrap();
                 Writer::ZopfliGz(inner_writer)
             } else {
-               let inner_writer = GzEncoder::new(Vec::new(), Compression::new(compress_format.level(fast)));
-               Writer::Gz(inner_writer)
+                let inner_writer = GzEncoder::new(Vec::new(), Compression::new(compress_format.level(fast)));
+                Writer::Gz(inner_writer)
             };
             Ok(Compressor::new(writer))
-        }
+        },
     }
 }
 

@@ -51,10 +51,10 @@ mod error;
 pub mod tararchive;
 
 use crate::assets::{Asset, AssetSource, DebugSymbols, IsBuilt, ProcessedFrom};
-use crate::listener::Listener;
-use crate::deb::control::ControlArchiveBuilder;
-use crate::tararchive::Archive;
 use crate::compress::CompressConfig;
+use crate::deb::control::ControlArchiveBuilder;
+use crate::listener::Listener;
+use crate::tararchive::Archive;
 use rayon::prelude::*;
 use std::env;
 use std::fs;
@@ -77,7 +77,7 @@ pub fn install_deb(path: &Path) -> CDResult<()> {
     Ok(())
 }
 
-pub fn write_deb(config: &Config, &CompressConfig { fast, compress_type, compress_system, rsyncable }: &CompressConfig, listener: &dyn listener::Listener) -> Result<PathBuf, CargoDebError> {
+pub fn write_deb(config: &Config, &CompressConfig { fast, compress_type, compress_system, rsyncable }: &CompressConfig, listener: &dyn Listener) -> Result<PathBuf, CargoDebError> {
     let (control_builder, data_result) = rayon::join(
         move || {
             // The control archive is the metadata for the package manager
@@ -90,14 +90,15 @@ pub fn write_deb(config: &Config, &CompressConfig { fast, compress_type, compres
             let dest = compress::select_compressor(fast, compress_type, compress_system)?;
             let archive = Archive::new(dest, config.deb.default_timestamp);
             let (compressed, asset_hashes) = archive.archive_files(config, rsyncable, listener)?;
-            let sums = config.deb.generate_sha256sums(asset_hashes)?;
+            let sums = config.deb.generate_sha256sums(&asset_hashes)?;
             let original_data_size = compressed.uncompressed_size;
             Ok::<_, CargoDebError>((compressed.finish()?, original_data_size, sums))
         },
     );
     let mut control_builder = control_builder?;
     let (data_compressed, original_data_size, sums) = data_result?;
-    control_builder.add_sha256sums(sums)?;
+    control_builder.add_sha256sums(&sums)?;
+    drop(sums);
     let control_compressed = control_builder.finish()?.finish()?;
 
     let mut deb_contents = DebArchive::new(config.deb_output_path(), config.deb.default_timestamp)?;
@@ -110,11 +111,10 @@ pub fn write_deb(config: &Config, &CompressConfig { fast, compress_type, compres
     ));
     deb_contents.add_data(data_compressed)?;
     let generated = deb_contents.finish()?;
-    remove_deb_temp_directory(&config);
+    remove_deb_temp_directory(config);
 
     Ok(generated)
 }
-
 
 /// Creates empty (removes files if needed) target/debian/foo directory so that we can start fresh.
 pub fn reset_deb_temp_directory(config: &Config) -> io::Result<()> {
@@ -133,7 +133,7 @@ pub fn reset_deb_temp_directory(config: &Config) -> io::Result<()> {
 }
 
 /// Removes the target/debian/foo
-pub fn remove_deb_temp_directory(config: &Config) {
+pub(crate) fn remove_deb_temp_directory(config: &Config) {
     let deb_temp_dir = config.deb_temp_dir();
     let _ = fs::remove_dir(deb_temp_dir);
 }
@@ -273,98 +273,95 @@ pub fn strip_binaries(config: &mut Config, target: Option<&str>, listener: &dyn 
     let added_debug_assets = config.deb.built_binaries_mut().into_par_iter().enumerate()
         .filter(|(_, asset)| !asset.source.archive_as_symlink_only()) // data won't be included, so nothing to strip
         .map(|(i, asset)| {
-        let (new_source, new_debug_asset) = match asset.source.path() {
-            Some(path) => {
-                if !path.exists() {
-                    return Err(CargoDebError::StripFailed(path.to_owned(), "The file doesn't exist".into()));
+        let (new_source, new_debug_asset) = if let Some(path) = asset.source.path() {
+            if !path.exists() {
+                return Err(CargoDebError::StripFailed(path.to_owned(), "The file doesn't exist".into()));
+            }
+
+            let conf_path = cargo_config.as_ref().map(|c| c.path())
+                .unwrap_or_else(|| Path::new(".cargo/config"));
+            let file_name = path.file_stem().ok_or(CargoDebError::Str("bad path"))?.to_string_lossy();
+            let stripped_temp_path = stripped_binaries_output_dir.join(format!("{file_name}.tmp{i}-stripped"));
+            let _ = fs::remove_file(&stripped_temp_path);
+
+            log::debug!("stripping with {} from {} into {}", strip_cmd.display(), path.display(), stripped_temp_path.display());
+            Command::new(strip_cmd)
+               // same as dh_strip
+               .args(["--strip-unneeded", "--remove-section=.comment", "--remove-section=.note"])
+               .arg("-o").arg(&stripped_temp_path)
+               .arg(path)
+               .status()
+               .and_then(ensure_success)
+               .map_err(|err| {
+                    if let Some(target) = target {
+                        CargoDebError::StripFailed(path.to_owned(), format!("{}: {}.\nhint: Target-specific strip commands are configured in [target.{}] strip = {{ path = \"{}\" }} in {}", strip_cmd.display(), err, target, strip_cmd.display(), conf_path.display()))
+                    } else {
+                        CargoDebError::CommandFailed(err, "strip")
+                    }
+                })?;
+
+            if !stripped_temp_path.exists() {
+                return Err(CargoDebError::StripFailed(path.to_owned(), format!("{} command failed to create output '{}'", strip_cmd.display(), stripped_temp_path.display())));
+            }
+
+            let new_debug_asset = if separate_debug_symbols && asset.c.is_built() {
+                log::debug!("extracting debug info with {} from {}", objcopy_cmd.display(), path.display());
+
+                // parse the ELF and use debug-id-based path if available
+                let debug_target_path = get_target_debug_path(asset, path)?;
+
+                // --add-gnu-debuglink reads the file path given, so it can't get to-be-installed target path
+                // and the recommended fallback solution is to give it relative path in the same dir
+                let debug_temp_path = stripped_temp_path.with_file_name(debug_target_path.file_name().ok_or(CargoDebError::Str("bad path"))?);
+
+                let _ = fs::remove_file(&debug_temp_path);
+                let mut args: &[_] = &["--only-keep-debug", "--compress-debug-sections=zstd"];
+                if !compress_debug_symbols {
+                    args = &args[..1];
                 }
-
-                let conf_path = cargo_config.as_ref().map(|c| c.path())
-                    .unwrap_or_else(|| Path::new(".cargo/config"));
-                let file_name = path.file_stem().ok_or(CargoDebError::Str("bad path"))?.to_string_lossy();
-                let stripped_temp_path = stripped_binaries_output_dir.join(format!("{file_name}.tmp{i}-stripped"));
-                let _ = std::fs::remove_file(&stripped_temp_path);
-
-                log::debug!("stripping with {} from {} into {}", strip_cmd.display(), path.display(), stripped_temp_path.display());
-                Command::new(strip_cmd)
-                   // same as dh_strip
-                   .args(["--strip-unneeded", "--remove-section=.comment", "--remove-section=.note"])
-                   .arg("-o").arg(&stripped_temp_path)
-                   .arg(path)
-                   .status()
-                   .and_then(ensure_success)
-                   .map_err(|err| {
+                Command::new(objcopy_cmd)
+                    .args(args)
+                    .arg(path)
+                    .arg(&debug_temp_path)
+                    .status()
+                    .and_then(ensure_success)
+                    .map_err(|err| {
                         if let Some(target) = target {
-                            CargoDebError::StripFailed(path.to_owned(), format!("{}: {}.\nhint: Target-specific strip commands are configured in [target.{}] strip = {{ path = \"{}\" }} in {}", strip_cmd.display(), err, target, strip_cmd.display(), conf_path.display()))
+                            CargoDebError::StripFailed(path.to_owned(), format!("{}: {}.\nhint: Target-specific strip commands are configured in [target.{}] objcopy = {{ path =\"{}\" }} in {}", objcopy_cmd.display(), err, target, objcopy_cmd.display(), conf_path.display()))
                         } else {
-                            CargoDebError::CommandFailed(err, "strip")
+                            CargoDebError::CommandFailed(err, "objcopy")
                         }
                     })?;
 
-                if !stripped_temp_path.exists() {
-                    return Err(CargoDebError::StripFailed(path.to_owned(), format!("{} command failed to create output '{}'", strip_cmd.display(), stripped_temp_path.display())));
-                }
+                let relative_debug_temp_path = debug_temp_path.file_name().ok_or(CargoDebError::Str("bad path"))?;
+                log::debug!("linking debug info with {} from {} into {:?}", objcopy_cmd.display(), stripped_temp_path.display(), relative_debug_temp_path);
+                Command::new(objcopy_cmd)
+                    .current_dir(debug_temp_path.parent().ok_or(CargoDebError::Str("bad path"))?)
+                    .arg("--add-gnu-debuglink")
+                    // intentionally relative - the file name must match debug_target_path
+                    .arg(relative_debug_temp_path)
+                    .arg(&stripped_temp_path)
+                    .status()
+                    .and_then(ensure_success)
+                    .map_err(|err| CargoDebError::CommandFailed(err, "objcopy"))?;
 
-                let new_debug_asset = if separate_debug_symbols && asset.c.is_built() {
-                    log::debug!("extracting debug info with {} from {}", objcopy_cmd.display(), path.display());
+                Some(Asset::new(
+                    AssetSource::Path(debug_temp_path),
+                    debug_target_path,
+                    0o644,
+                    IsBuilt::No,
+                    false,
+                ).processed(if compress_debug_symbols { "compress"} else {"separate"}, path.to_path_buf()))
+            } else {
+                None // no new asset
+            };
+            listener.info(format!("Stripped '{}'", path.display()));
 
-                    // parse the ELF and use debug-id-based path if available
-                    let debug_target_path = get_target_debug_path(asset, path)?;
-
-                    // --add-gnu-debuglink reads the file path given, so it can't get to-be-installed target path
-                    // and the recommended fallback solution is to give it relative path in the same dir
-                    let debug_temp_path = stripped_temp_path.with_file_name(debug_target_path.file_name().ok_or(CargoDebError::Str("bad path"))?);
-
-                    let _ = std::fs::remove_file(&debug_temp_path);
-                    let mut args: &[_] = &["--only-keep-debug", "--compress-debug-sections=zstd"];
-                    if !compress_debug_symbols {
-                        args = &args[..1];
-                    }
-                    Command::new(objcopy_cmd)
-                        .args(args)
-                        .arg(path)
-                        .arg(&debug_temp_path)
-                        .status()
-                        .and_then(ensure_success)
-                        .map_err(|err| {
-                            if let Some(target) = target {
-                                CargoDebError::StripFailed(path.to_owned(), format!("{}: {}.\nhint: Target-specific strip commands are configured in [target.{}] objcopy = {{ path =\"{}\" }} in {}", objcopy_cmd.display(), err, target, objcopy_cmd.display(), conf_path.display()))
-                            } else {
-                                CargoDebError::CommandFailed(err, "objcopy")
-                            }
-                        })?;
-
-                    let relative_debug_temp_path = debug_temp_path.file_name().ok_or(CargoDebError::Str("bad path"))?;
-                    log::debug!("linking debug info with {} from {} into {:?}", objcopy_cmd.display(), stripped_temp_path.display(), relative_debug_temp_path);
-                    Command::new(objcopy_cmd)
-                        .current_dir(debug_temp_path.parent().ok_or(CargoDebError::Str("bad path"))?)
-                        .arg("--add-gnu-debuglink")
-                        // intentionally relative - the file name must match debug_target_path
-                        .arg(relative_debug_temp_path)
-                        .arg(&stripped_temp_path)
-                        .status()
-                        .and_then(ensure_success)
-                        .map_err(|err| CargoDebError::CommandFailed(err, "objcopy"))?;
-
-                    Some(Asset::new(
-                        AssetSource::Path(debug_temp_path),
-                        debug_target_path,
-                        0o644,
-                        IsBuilt::No,
-                        false,
-                    ).processed(if compress_debug_symbols { "compress"} else {"separate"}, path.to_path_buf()))
-                } else {
-                    None // no new asset
-                };
-                listener.info(format!("Stripped '{}'", path.display()));
-
-                (AssetSource::Path(stripped_temp_path), new_debug_asset)
-            },
-            None => {
-                // This is unexpected - emit a warning if we come across it
-                listener.warning(format!("Found built asset with non-path source '{asset:?}'"));
-                return Ok(None);
-            },
+            (AssetSource::Path(stripped_temp_path), new_debug_asset)
+        } else {
+            // This is unexpected - emit a warning if we come across it
+            listener.warning(format!("Found built asset with non-path source '{asset:?}'"));
+            return Ok(None);
         };
         log::debug!("Replacing asset {} with stripped asset {}", asset.source.path().unwrap().display(), new_source.path().unwrap().display());
         let old_source = std::mem::replace(&mut asset.source, new_source);
@@ -376,7 +373,7 @@ pub fn strip_binaries(config: &mut Config, target: Option<&str>, listener: &dyn 
     }).collect::<Result<Vec<_>, _>>()?;
 
     config.deb.assets.resolved
-        .extend(added_debug_assets.into_iter().filter_map(|debug_file| debug_file));
+        .extend(added_debug_assets.into_iter().flatten());
 
     Ok(())
 }
@@ -414,7 +411,7 @@ fn elf_gnu_debug_id(elf_file_path: &Path) -> Result<Option<PathBuf>, elf::ParseE
     let Some(abi_shdr) = stream.section_header_by_name(".note.gnu.build-id")?
         else { return Ok(None) };
 
-    let abi_shdr = abi_shdr.clone();
+    let abi_shdr = *abi_shdr;
     for note in stream.section_data_as_notes(&abi_shdr)? {
         if let Note::GnuBuildId(note) = note {
             if let Some((byte, rest)) = note.0.split_first() {

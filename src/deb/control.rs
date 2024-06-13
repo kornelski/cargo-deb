@@ -32,7 +32,7 @@ impl<'l, W: Write> ControlArchiveBuilder<'l, W> {
             self.add_conf_files(files)?;
         }
 
-        self.generate_scripts(&config)?;
+        self.generate_scripts(config)?;
         if let Some(ref file) = config.deb.triggers_file {
             let triggers_file = &config.package_manifest_dir.as_path().join(file);
             self.add_triggers_file(triggers_file)?;
@@ -118,9 +118,9 @@ impl<'l, W: Write> ControlArchiveBuilder<'l, W> {
         Ok(())
     }
 
-    pub fn add_sha256sums(&mut self, sha256sums: Vec<u8>) -> CDResult<()> {
+    pub fn add_sha256sums(&mut self, sha256sums: &[u8]) -> CDResult<()> {
         // Write the data to the archive
-        self.archive.file("./sha256sums", &sha256sums, 0o644)?;
+        self.archive.file("./sha256sums", sha256sums, 0o644)?;
         Ok(())
     }
 
@@ -184,7 +184,7 @@ mod tests {
             .to_string()
     }
 
-    fn decode_name<R>(entry: &tar::Entry<R>) -> String where R: Read {
+    fn decode_name<R>(entry: &tar::Entry<'_, R>) -> String where R: Read {
         std::str::from_utf8(&entry.path_bytes()).unwrap().to_string()
     }
 
@@ -292,7 +292,7 @@ mod tests {
         // supply a maintainer script as if it were available on disk
         // provide file content that we can easily verify
         let mut maintainer_script_contents = Vec::new();
-        for script in maintainer_script_paths.iter() {
+        for script in maintainer_script_paths {
             let content = format!("some contents: {script}");
             set_test_fs_path_content(script, content.clone());
             maintainer_script_contents.push(content);
@@ -316,7 +316,7 @@ mod tests {
         assert_eq!(maintainer_script_paths.len(), archived_content.len());
 
         // verify that the content we supplied was faithfully archived
-        for script in maintainer_script_paths.iter() {
+        for script in maintainer_script_paths {
             let expected_content = &format!("some contents: {script}");
             let filename = filename_from_path_str(script);
             let actual_content = archived_content.get(&filename).unwrap();
@@ -394,7 +394,7 @@ mod tests {
         // supply a maintainer script as if it were available on disk
         // provide file content that we can easily verify
         let mut maintainer_script_contents = Vec::new();
-        for &(script, content) in maintainer_scripts.iter() {
+        for &(script, content) in maintainer_scripts {
             if let Some(content) = content {
                 set_test_fs_path_content(script, content.to_string());
                 maintainer_script_contents.push(content);

@@ -59,26 +59,23 @@ impl<W: Write> Archive<W> {
                 }
                 listener.info(log_line);
 
-                match &asset.source {
-                    AssetSource::Symlink(source_path) => {
-                        let link_name = fs::read_link(source_path)
-                            .map_err(|e| CargoDebError::IoFile("symlink asset", e, source_path.clone()))?;
-                        self.symlink(&asset.c.target_path, &link_name)?;
-                    }
-                    _ => {
-                        let out_data = asset.source.data()?;
-                        if rsyncable {
-                            if archive_data_added > 1_000_000 || prev_is_built != asset.c.is_built() {
-                                self.flush()?;
-                                archive_data_added = 0;
-                            }
-                            // puts synchronization point between non-code and code assets
-                            prev_is_built = asset.c.is_built();
-                            archive_data_added += out_data.len();
+                if let AssetSource::Symlink(source_path) = &asset.source {
+                    let link_name = fs::read_link(source_path)
+                        .map_err(|e| CargoDebError::IoFile("symlink asset", e, source_path.clone()))?;
+                    self.symlink(&asset.c.target_path, &link_name)?;
+                } else {
+                    let out_data = asset.source.data()?;
+                    if rsyncable {
+                        if archive_data_added > 1_000_000 || prev_is_built != asset.c.is_built() {
+                            self.flush()?;
+                            archive_data_added = 0;
                         }
-                        self.file(&asset.c.target_path, &out_data, asset.c.chmod)?;
-                        send.send((asset.c.target_path.clone(), out_data)).unwrap();
-                    },
+                        // puts synchronization point between non-code and code assets
+                        prev_is_built = asset.c.is_built();
+                        archive_data_added += out_data.len();
+                    }
+                    self.file(&asset.c.target_path, &out_data, asset.c.chmod)?;
+                    send.send((asset.c.target_path.clone(), out_data)).unwrap();
                 }
             }
             drop(send);

@@ -441,7 +441,7 @@ mod tests {
     #[test]
     fn autoscript_check_embedded_files() {
         let mut actual_scripts: Vec<_> = AUTOSCRIPTS.iter().map(|(name, _)| *name).collect();
-        actual_scripts.sort();
+        actual_scripts.sort_unstable();
 
         let expected_scripts = vec![
             "postinst-init-tmpfiles",

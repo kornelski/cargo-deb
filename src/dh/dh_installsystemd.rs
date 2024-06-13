@@ -150,9 +150,10 @@ pub fn find_units(dir: &Path, main_package: &str, unit_name: Option<&str>) -> Pa
 
             // Determine the file name that the unit file should be installed as
             // which depends on whether or not a unit name was provided.
-            let install_filename = match unit_name {
-                Some(name) => format!("{name}{package_suffix}.{actual_suffix}"),
-                None => format!("{package}.{actual_suffix}"),
+            let install_filename = if let Some(name) = unit_name {
+                format!("{name}{package_suffix}.{actual_suffix}")
+            } else {
+                format!("{package}.{actual_suffix}")
             };
 
             // Construct the full install path for this unit file.
@@ -334,10 +335,7 @@ pub fn generate(package: &str, assets: &[Asset], options: &Options, listener: &d
     // options passed to us.
     // see: https://git.launchpad.net/ubuntu/+source/debhelper/tree/dh_installsystemd?h=applied/12.10ubuntu1#n390
     if !enable_units.is_empty() {
-        let snippet = match options.no_enable {
-            true => "postinst-systemd-dont-enable",
-            false => "postinst-systemd-enable",
-        };
+        let snippet = if options.no_enable { "postinst-systemd-dont-enable" } else { "postinst-systemd-enable" };
         for unit in &enable_units {
             autoscript(&mut scripts, package, "postinst", snippet,
                 &map!{ "UNITFILE" => unit.clone() }, true, listener)?;

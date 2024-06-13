@@ -189,7 +189,7 @@ pub(crate) mod tests {
         MOCK_FS.with(|fs| {
             let mut fs_map = fs.lock().unwrap();
             fs_map.insert(path, TestPath::new(path, contents));
-        })
+        });
     }
 
     fn with_test_fs<F, R>(callback: F) -> R
@@ -233,7 +233,7 @@ pub(crate) mod tests {
                         Some(re_match) => str_to_err(re_match.as_str()),
                     },
                 }
-            }
+            },
         })
     }
 
@@ -276,11 +276,11 @@ pub(crate) mod tests {
 
     #[test]
     fn map_macro() {
-        let mut one = std::collections::HashMap::new();
+        let mut one = HashMap::new();
         one.insert(1, 'a');
         assert_eq!(one, map! { 1 => 'a' });
 
-        let mut two = std::collections::HashMap::new();
+        let mut two = HashMap::new();
         two.insert("a", 1);
         two.insert("b", 2);
         assert_eq!(two, map! { "a" => 1, "b" => 2 });

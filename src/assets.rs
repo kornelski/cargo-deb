@@ -207,6 +207,7 @@ impl Asset {
         }
     }
 
+    #[must_use]
     pub fn processed(mut self, action: &'static str, original_path: impl Into<Option<PathBuf>>) -> Self {
         debug_assert!(self.processed_from.is_none());
         self.processed_from = Some(ProcessedFrom {
@@ -280,7 +281,7 @@ fn get_architecture_specification(depend: &str) -> CDResult<(String, Option<Arch
                 Require(caps[3].to_string())
             };
             Ok((caps[1].trim().to_string(), Some(spec)))
-        }
+        },
         None => Ok((depend.to_string(), None)),
     }
 }
@@ -458,7 +459,7 @@ impl Config {
         let package_manifest_dir = manifest_path.parent().ok_or("bad path")?;
         let manifest_bytes =
             fs::read(manifest_path).map_err(|e| CargoDebError::IoFile("unable to read manifest", e, manifest_path.to_owned()))?;
-        let manifest_mdate = std::fs::metadata(manifest_path)?.modified().unwrap_or_else(|_| SystemTime::now());
+        let manifest_mdate = fs::metadata(manifest_path)?.modified().unwrap_or_else(|_| SystemTime::now());
         let default_timestamp = if let Ok(source_date_epoch) = std::env::var("SOURCE_DATE_EPOCH") {
             source_date_epoch.parse().map_err(|e| CargoDebError::NumParse("SOURCE_DATE_EPOCH", e))?
         } else {
@@ -545,12 +546,12 @@ impl Config {
 
         let debug_symbols = if separate_debug_symbols {
             if !debug_enabled {
-                log::warn!("separate-debug-symbols implies strip")
+                log::warn!("separate-debug-symbols implies strip");
             }
             DebugSymbols::Separate { compress: compress_debug_symbols }
         } else if debug_enabled {
             if compress_debug_symbols {
-                log::warn!("separate-debug-symbols required to compress")
+                log::warn!("separate-debug-symbols required to compress");
             }
             DebugSymbols::Keep
         } else {
@@ -594,7 +595,7 @@ impl Config {
             description: package.description.take().map(|v| v.unwrap()).unwrap_or_else(||format!("[generated from Rust crate {}]", package.name)),
             extended_description,
             maintainer: deb.maintainer.take().ok_or_then(|| {
-                Ok(package.authors().get(0)
+                Ok(package.authors().first()
                     .ok_or("The package must have a maintainer or authors property")?.to_owned())
             })?,
             depends: deb.depends.take().map(DependencyList::into_depends_string).unwrap_or_else(|| "$auto".to_owned()),
@@ -836,7 +837,7 @@ impl Config {
                 .and_then(|content| {
                     // allow pre-compressed
                     if source_path.extension().is_some_and(|e| e == "gz") {
-                        return Ok(content.into());
+                        return Ok(content);
                     }
                     // The input is plaintext, but the debian package should contain gzipped one.
                     compress::gzipped(&content)
@@ -964,7 +965,7 @@ impl Package {
     }
 
     /// Creates the sha256sums file which contains a list of all contained files and the sha256sums of each.
-    pub fn generate_sha256sums(&self, asset_hashes: HashMap<PathBuf, [u8; 32]>) -> CDResult<Vec<u8>> {
+    pub fn generate_sha256sums(&self, asset_hashes: &HashMap<PathBuf, [u8; 32]>) -> CDResult<Vec<u8>> {
         let mut sha256sums: Vec<u8> = Vec::with_capacity(self.assets.resolved.len() * 80);
 
         // Collect sha256sums from each asset in the archive (excludes symlinks).
@@ -1084,11 +1085,11 @@ impl Package {
     /// user-friendly URLs or webpages instead of tool-specific URL schemes.
     pub(crate) fn repository_type(&self) -> Option<&str> {
         if let Some(ref repo) = self.repository {
-            if repo.starts_with("git+")
-                || repo.ends_with(".git")
-                || repo.contains("git@")
-                || repo.contains("github.com")
-                || repo.contains("gitlab.com")
+            if repo.starts_with("git+") ||
+                repo.ends_with(".git") ||
+                repo.contains("git@") ||
+                repo.contains("github.com") ||
+                repo.contains("gitlab.com")
             {
                 return Some("Git");
             }
