@@ -4,8 +4,10 @@ use log::{debug, warn};
 use serde::Deserialize;
 use std::borrow::Cow;
 use std::collections::{BTreeMap, HashMap};
+use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
+use std::time::SystemTime;
 
 /// Configuration settings for the systemd_units functionality.
 ///
@@ -304,7 +306,7 @@ impl CargoDeb {
 }
 
 #[derive(Deserialize)]
-pub(crate) struct CargoMetadata {
+struct CargoMetadata {
     pub packages: Vec<CargoMetadataPackage>,
     pub resolve: CargoMetadataResolve,
     #[serde(default)]
@@ -315,16 +317,16 @@ pub(crate) struct CargoMetadata {
 }
 
 #[derive(Deserialize)]
-pub(crate) struct CargoMetadataResolve {
+struct CargoMetadataResolve {
     pub root: Option<String>,
 }
 
 #[derive(Deserialize)]
-pub(crate) struct CargoMetadataPackage {
+struct CargoMetadataPackage {
     pub id: String,
     pub name: String,
     pub targets: Vec<CargoMetadataTarget>,
-    pub manifest_path: String,
+    pub manifest_path: PathBuf,
 }
 
 #[derive(Deserialize)]
@@ -335,8 +337,63 @@ pub(crate) struct CargoMetadataTarget {
     pub src_path: PathBuf,
 }
 
+pub(crate) struct ManifestFound {
+    pub targets: Vec<CargoMetadataTarget>,
+    pub manifest_path: PathBuf,
+    pub root_manifest: Option<cargo_toml::Manifest<CargoPackageMetadata>>,
+    pub target_dir: PathBuf,
+    pub default_timestamp: u64,
+    pub manifest: cargo_toml::Manifest<CargoPackageMetadata>
+}
+
+pub fn cargo_metadata(root_manifest_path: Option<&Path>, selected_package_name: Option<&str>) -> Result<ManifestFound, CargoDebError> {
+    let mut metadata = run_cargo_metadata(root_manifest_path)?;
+    let available_package_names = || {
+        metadata.packages.iter()
+            .filter(|p| metadata.workspace_members.iter().any(|w| w == &p.id))
+            .map(|p| p.name.as_str())
+            .collect::<Vec<_>>().join(", ")
+    };
+    let target_package_pos = if let Some(name) = selected_package_name {
+        metadata.packages.iter().position(|p| p.name == name)
+            .ok_or_else(|| CargoDebError::PackageNotFoundInWorkspace(name.into(), available_package_names()))
+    } else {
+        metadata.resolve.root.as_ref().and_then(|root_id| {
+            metadata.packages.iter()
+                .position(move |p| &p.id == root_id)
+        })
+        .ok_or_else(|| CargoDebError::NoRootFoundInWorkspace(available_package_names()))
+    }?;
+    let target_package = metadata.packages.swap_remove(target_package_pos);
+    let workspace_root_manifest_path = Path::new(&metadata.workspace_root).join("Cargo.toml");
+    let root_manifest = cargo_toml::Manifest::<CargoPackageMetadata>::from_path_with_metadata(workspace_root_manifest_path).ok();
+    let target_dir = metadata.target_directory.into();
+    let manifest_path = Path::new(&target_package.manifest_path);
+    let manifest_bytes =
+        fs::read(manifest_path).map_err(|e| CargoDebError::IoFile("unable to read manifest", e, manifest_path.to_owned()))?;
+    let default_timestamp = if let Ok(source_date_epoch) = std::env::var("SOURCE_DATE_EPOCH") {
+        source_date_epoch.parse().map_err(|e| CargoDebError::NumParse("SOURCE_DATE_EPOCH", e))?
+    } else {
+        let manifest_mdate = fs::metadata(manifest_path)?.modified().unwrap_or_else(|_| SystemTime::now());
+        manifest_mdate.duration_since(SystemTime::UNIX_EPOCH).map_err(CargoDebError::SystemTime)?.as_secs()
+    };
+    let mut manifest = cargo_toml::Manifest::<CargoPackageMetadata>::from_slice_with_metadata(&manifest_bytes)
+        .map_err(|e| CargoDebError::TomlParsing(e, manifest_path.into()))?;
+    let ws_root = root_manifest.as_ref().map(|ws| (ws, Path::new(&metadata.workspace_root)));
+    manifest.complete_from_path_and_workspace(manifest_path, ws_root)
+        .map_err(move |e| CargoDebError::TomlParsing(e, manifest_path.to_path_buf()))?;
+
+    Ok(ManifestFound {
+        manifest_path: target_package.manifest_path,
+        targets: target_package.targets,
+        root_manifest,
+        target_dir,
+        default_timestamp, manifest
+    })
+}
+
 /// Returns the path of the `Cargo.toml` that we want to build.
-pub(crate) fn cargo_metadata(manifest_path: Option<&Path>) -> CDResult<CargoMetadata> {
+fn run_cargo_metadata(manifest_path: Option<&Path>) -> CDResult<CargoMetadata> {
     let mut cmd = Command::new("cargo");
     cmd.arg("metadata");
     cmd.arg("--format-version=1");

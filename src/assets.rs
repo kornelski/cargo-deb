@@ -9,7 +9,7 @@ use crate::parse::manifest::{
     cargo_metadata, manifest_debug_flag, manifest_license_file, manifest_version_string,
 };
 use crate::parse::manifest::{
-    CargoDeb, CargoMetadataPackage, CargoMetadataTarget, CargoPackageMetadata,
+    CargoDeb, CargoMetadataTarget, CargoPackageMetadata, ManifestFound,
 };
 use crate::parse::manifest::{DependencyList, SystemUnitsSingleOrMultiple, SystemdUnitsConfig};
 use crate::util::ok_or::OkOrThen;
@@ -25,7 +25,6 @@ use std::fs;
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::Command;
-use std::time::SystemTime;
 
 fn is_glob_pattern(s: &Path) -> bool {
     s.to_bytes().iter().any(|&c| c == b'*' || c == b'[' || c == b']' || c == b'!')
@@ -424,83 +423,7 @@ impl Config {
     pub fn from_manifest(
         root_manifest_path: Option<&Path>,
         selected_package_name: Option<&str>,
-        output_path: Option<String>,
-        target: Option<&str>,
-        variant: Option<&str>,
-        deb_version: Option<String>,
-        deb_revision: Option<String>,
-        listener: &dyn Listener,
-        selected_profile: &str,
-        separate_debug_symbols: Option<bool>,
-        compress_debug_symbols: Option<bool>,
-    ) -> CDResult<Self> {
-        let metadata = cargo_metadata(root_manifest_path)?;
-        let available_package_names = || {
-            metadata.packages.iter()
-                .filter(|p| metadata.workspace_members.iter().any(|w| w == &p.id))
-                .map(|p| p.name.as_str())
-                .collect::<Vec<_>>().join(", ")
-        };
-        let target_package = if let Some(name) = selected_package_name {
-            metadata.packages.iter().find(|p| p.name == name)
-                .ok_or_else(|| CargoDebError::PackageNotFoundInWorkspace(name.into(), available_package_names()))
-        } else {
-            metadata.resolve.root.as_ref().and_then(|root_id| {
-                metadata.packages.iter()
-                    .find(move |p| &p.id == root_id)
-            })
-            .ok_or_else(|| CargoDebError::NoRootFoundInWorkspace(available_package_names()))
-        }?;
-        let workspace_root_manifest_path = Path::new(&metadata.workspace_root).join("Cargo.toml");
-        let workspace_root_manifest = cargo_toml::Manifest::<CargoPackageMetadata>::from_path_with_metadata(workspace_root_manifest_path).ok();
-
-        let target_dir = Path::new(&metadata.target_directory);
-        let manifest_path = Path::new(&target_package.manifest_path);
-        let package_manifest_dir = manifest_path.parent().ok_or("bad path")?;
-        let manifest_bytes =
-            fs::read(manifest_path).map_err(|e| CargoDebError::IoFile("unable to read manifest", e, manifest_path.to_owned()))?;
-        let manifest_mdate = fs::metadata(manifest_path)?.modified().unwrap_or_else(|_| SystemTime::now());
-        let default_timestamp = if let Ok(source_date_epoch) = std::env::var("SOURCE_DATE_EPOCH") {
-            source_date_epoch.parse().map_err(|e| CargoDebError::NumParse("SOURCE_DATE_EPOCH", e))?
-        } else {
-            manifest_mdate.duration_since(SystemTime::UNIX_EPOCH).map_err(CargoDebError::SystemTime)?.as_secs()
-        };
-
-        let mut manifest = cargo_toml::Manifest::<CargoPackageMetadata>::from_slice_with_metadata(&manifest_bytes)
-            .map_err(|e| CargoDebError::TomlParsing(e, manifest_path.into()))?;
-        let ws_root = workspace_root_manifest.as_ref().map(|ws| (ws, Path::new(&metadata.workspace_root)));
-        manifest.complete_from_path_and_workspace(manifest_path, ws_root)
-            .map_err(move |e| CargoDebError::TomlParsing(e, manifest_path.to_path_buf()))?;
-        Self::from_manifest_inner(
-            manifest,
-            workspace_root_manifest.as_ref(),
-            target_package,
-            package_manifest_dir,
-            output_path,
-            target_dir,
-            target,
-            variant,
-            deb_version,
-            deb_revision,
-            listener,
-            selected_profile,
-            separate_debug_symbols,
-            compress_debug_symbols,
-            default_timestamp,
-        )
-    }
-
-    /// Convert Cargo.toml/metadata information into internal config structure
-    ///
-    /// **IMPORTANT**: This function must not create or expect to see any files on disk!
-    /// It's run before destination directory is cleaned up, and before the build start!
-    fn from_manifest_inner(
-        mut manifest: cargo_toml::Manifest<CargoPackageMetadata>,
-        root_manifest: Option<&cargo_toml::Manifest<CargoPackageMetadata>>,
-        cargo_metadata: &CargoMetadataPackage,
-        package_manifest_dir: &Path,
         deb_output_path: Option<String>,
-        target_dir: &Path,
         target: Option<&str>,
         variant: Option<&str>,
         deb_version: Option<String>,
@@ -509,22 +432,34 @@ impl Config {
         selected_profile: &str,
         separate_debug_symbols: Option<bool>,
         compress_debug_symbols: Option<bool>,
-        default_timestamp: u64,
     ) -> CDResult<Self> {
+        // **IMPORTANT**: This function must not create or expect to see any files on disk!
+        // It's run before destination directory is cleaned up, and before the build start!
+
+        let ManifestFound {
+            targets,
+            root_manifest,
+            mut manifest_path,
+            mut target_dir,
+            mut manifest,
+            default_timestamp,
+        } = cargo_metadata(root_manifest_path, selected_package_name)?;
+        manifest_path.pop();
+        let package_manifest_dir = manifest_path;
+
         // Cargo cross-compiles to a dir
-        let target_dir = if let Some(target) = target {
-            target_dir.join(target)
-        } else {
-            target_dir.to_owned()
+        if let Some(target) = target {
+            target_dir.push(target);
         };
 
         // FIXME: support other named profiles
         let debug_enabled = if selected_profile == "release" {
-            manifest_debug_flag(&manifest) || root_manifest.map_or(false, manifest_debug_flag)
+            manifest_debug_flag(&manifest) || root_manifest.as_ref().map_or(false, manifest_debug_flag)
         } else {
             false
         };
-        let package = manifest.package.as_mut().unwrap();
+        drop(root_manifest);
+        let package = manifest.package.as_mut().ok_or("bad package")?;
 
         // If we build against a variant use that config and change the package name
         let mut deb = if let Some(variant) = variant {
@@ -560,7 +495,7 @@ impl Config {
 
         let (license_file, license_file_skip_lines) = manifest_license_file(package, deb.license_file.as_ref())?;
 
-        manifest_check_config(package, package_manifest_dir, &deb, listener);
+        manifest_check_config(package, &package_manifest_dir, &deb, listener);
 
         let extended_description_file = deb.extended_description_file.is_none()
             .then(|| package.readme().as_path()).flatten()
@@ -571,7 +506,7 @@ impl Config {
         )?;
 
         let mut config = Self {
-            package_manifest_dir: package_manifest_dir.to_owned(),
+            package_manifest_dir,
             deb_output_path,
             target: target.map(|t| t.to_string()),
             target_dir,
@@ -626,7 +561,7 @@ impl Config {
             default_features: deb.default_features.unwrap_or(true),
             debug_symbols,
         };
-        config.take_assets(package, deb.assets.take(), &cargo_metadata.targets, selected_profile, listener)?;
+        config.take_assets(package, deb.assets.take(), &targets, selected_profile, listener)?;
         config.add_copyright_asset()?;
         config.add_changelog_asset()?;
         config.add_systemd_assets()?;
