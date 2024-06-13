@@ -1,8 +1,8 @@
-#![allow(renamed_and_removed_lints)]
 use std::io;
 use std::num;
 use std::path::PathBuf;
 use std::time;
+use quick_error::quick_error;
 
 quick_error! {
     #[derive(Debug)]

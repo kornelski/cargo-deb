@@ -24,8 +24,6 @@ cargo deb # run this in your Cargo project directory
 The library interface is experimental. See `main.rs` for usage.
 */
 
-#[macro_use] extern crate quick_error;
-
 pub mod compress;
 pub mod control;
 pub mod data;
