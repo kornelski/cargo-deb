@@ -1,7 +1,7 @@
 #![allow(clippy::redundant_closure_for_method_calls)]
 
 use cargo_deb::control::ControlArchiveBuilder;
-use cargo_deb::manifest::DebugSymbols;
+use cargo_deb::assets::DebugSymbols;
 use cargo_deb::*;
 use std::env;
 use std::path::Path;

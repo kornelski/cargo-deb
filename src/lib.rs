@@ -28,26 +28,29 @@ pub mod compress;
 pub mod control;
 pub mod data;
 pub mod listener;
-pub mod manifest;
+pub(crate) mod parse {
+    pub(crate) mod manifest;
+    pub(crate) mod config;
+}
 pub use crate::debarchive::DebArchive;
 pub use crate::error::*;
-pub use crate::manifest::Config;
+pub use crate::assets::Config;
 
 #[macro_use]
 mod util;
-mod config;
 mod debarchive;
 mod dependencies;
 mod dh_installsystemd;
 mod dh_lib;
 mod error;
+pub mod assets;
 mod ok_or;
 mod pathbytes;
 mod tararchive;
 mod wordsplit;
 
 use crate::listener::Listener;
-use crate::manifest::{Asset, AssetSource, DebugSymbols, IsBuilt, ProcessedFrom};
+use crate::assets::{Asset, AssetSource, DebugSymbols, IsBuilt, ProcessedFrom};
 use rayon::prelude::*;
 use std::env;
 use std::fs;

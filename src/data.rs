@@ -1,6 +1,6 @@
 use crate::error::{CDResult, CargoDebError};
 use crate::listener::Listener;
-use crate::manifest::{Asset, AssetSource, Config, IsBuilt};
+use crate::assets::{Asset, AssetSource, Config, IsBuilt};
 use crate::tararchive::Archive;
 use sha2::{Digest, Sha256};
 use std::collections::HashMap;
@@ -116,7 +116,7 @@ pub fn compress_assets(options: &mut Config, listener: &dyn Listener) -> CDResul
             new_path.push_str(".gz");
             listener.info(format!("Compressing '{new_path}'"));
             new_assets.push(Asset::new(
-                crate::manifest::AssetSource::Data(gzipped(&orig_asset.source.data()?)?),
+                crate::assets::AssetSource::Data(gzipped(&orig_asset.source.data()?)?),
                 new_path.into(),
                 orig_asset.c.chmod,
                 IsBuilt::No,

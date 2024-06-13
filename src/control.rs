@@ -2,7 +2,7 @@ use crate::dh_installsystemd;
 use crate::dh_lib;
 use crate::error::{CDResult, CargoDebError};
 use crate::listener::Listener;
-use crate::manifest::Config;
+use crate::assets::Config;
 use crate::pathbytes::AsUnixPathBytes;
 use crate::tararchive::Archive;
 use crate::util::{is_path_file, read_file_to_bytes};
@@ -279,7 +279,8 @@ mod tests {
 
     use super::*;
     use crate::listener::MockListener;
-    use crate::manifest::{Asset, AssetSource, IsBuilt, SystemdUnitsConfig};
+    use crate::parse::manifest::SystemdUnitsConfig;
+    use crate::assets::{Asset, AssetSource, IsBuilt};
     use crate::util::tests::{add_test_fs_paths, set_test_fs_path_content};
     use std::io::prelude::Read;
 

@@ -20,7 +20,7 @@ use std::str;
 
 use crate::dh_lib::{ScriptFragments, autoscript, pkgfile};
 use crate::listener::Listener;
-use crate::manifest::Asset;
+use crate::assets::Asset;
 use crate::util::{MyJoin, fname_from_path};
 use crate::CDResult;
 
@@ -385,7 +385,7 @@ pub fn generate(package: &str, assets: &[Asset], options: &Options, listener: &d
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::manifest::{Asset, AssetSource};
+    use crate::assets::{Asset, AssetSource};
     use crate::util::tests::add_test_fs_paths;
     use crate::util::tests::get_read_count;
     use crate::util::tests::set_test_fs_path_content;
@@ -560,7 +560,7 @@ mod tests {
             AssetSource::Path(PathBuf::new()),
             PathBuf::new(),
             0o0,
-            crate::manifest::IsBuilt::No,
+            crate::assets::IsBuilt::No,
             false,
         )];
 
@@ -578,7 +578,7 @@ mod tests {
             AssetSource::Path(PathBuf::new()), // path source with empty source path makes no sense
             Path::new("usr/lib/tmpfiles.d/blah").to_path_buf(),
             0o0,
-            crate::manifest::IsBuilt::No,
+            crate::assets::IsBuilt::No,
             false,
         )];
 
@@ -596,7 +596,7 @@ mod tests {
             AssetSource::Data(vec![]), // only assets of type Path are currently supported
             Path::new("usr/lib/tmpfiles.d/blah").to_path_buf(),
             0o0,
-            crate::manifest::IsBuilt::No,
+            crate::assets::IsBuilt::No,
             false,
         )];
 
@@ -618,7 +618,7 @@ mod tests {
             AssetSource::Path(tmp_file_path),
             Path::new("usr/lib/tmpfiles.d/blah").to_path_buf(),
             0o0,
-            crate::manifest::IsBuilt::No,
+            crate::assets::IsBuilt::No,
             false,
         )];
 
@@ -669,7 +669,7 @@ mod tests {
             AssetSource::Path(PathBuf::from("debian/my_unit@.service")),
             Path::new("lib/systemd/system/").to_path_buf(),
             0o0,
-            crate::manifest::IsBuilt::No,
+            crate::assets::IsBuilt::No,
             false,
         )];
 
@@ -686,7 +686,7 @@ mod tests {
             AssetSource::Path(PathBuf::from("debian/10-extra-hardening.conf")),
             Path::new("lib/systemd/system/foobar.service.d/").to_path_buf(),
             0o0,
-            crate::manifest::IsBuilt::No,
+            crate::assets::IsBuilt::No,
             false,
         )];
 
@@ -704,7 +704,7 @@ mod tests {
             AssetSource::Path(PathBuf::from("debian/my_unit.service")),
             Path::new("some/other/path/").to_path_buf(),
             0o0,
-            crate::manifest::IsBuilt::No,
+            crate::assets::IsBuilt::No,
             false,
         )];
 
@@ -770,7 +770,7 @@ mod tests {
             AssetSource::Path(PathBuf::from(unit_file_path)),
             format!("{install_base_path}/mypkg.service").into(),
             0o0,
-            crate::manifest::IsBuilt::No,
+            crate::assets::IsBuilt::No,
             false,
         )];
 
