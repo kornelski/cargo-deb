@@ -1,7 +1,8 @@
 #![allow(clippy::redundant_closure_for_method_calls)]
 
-use cargo_deb::control::ControlArchiveBuilder;
 use cargo_deb::assets::DebugSymbols;
+use cargo_deb::deb::control::ControlArchiveBuilder;
+use cargo_deb::deb::data;
 use cargo_deb::*;
 use std::env;
 use std::path::Path;
@@ -259,7 +260,7 @@ fn process(
 
     options.resolve_assets()?;
 
-    crate::data::compress_assets(&mut options, listener)?;
+    crate::deb::data::compress_assets(&mut options, listener)?;
 
     if strip_override.unwrap_or(options.debug_symbols != DebugSymbols::Keep) {
         strip_binaries(&mut options, target, listener)?;

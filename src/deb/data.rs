@@ -1,12 +1,12 @@
+use crate::assets::{Asset, AssetSource, Config, IsBuilt};
 use crate::error::{CDResult, CargoDebError};
 use crate::listener::Listener;
-use crate::assets::{Asset, AssetSource, Config, IsBuilt};
 use crate::tararchive::Archive;
 use sha2::{Digest, Sha256};
 use std::collections::HashMap;
 use std::fs;
-use std::io::Write;
 use std::io;
+use std::io::Write;
 use std::num::NonZeroU64;
 use std::path::{Path, PathBuf};
 use std::sync::mpsc;

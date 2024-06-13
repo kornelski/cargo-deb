@@ -1,5 +1,5 @@
-use crate::error::CDResult;
 use crate::assets::Config;
+use crate::error::CDResult;
 use ar::{Builder, Header};
 use std::fs;
 use std::fs::File;

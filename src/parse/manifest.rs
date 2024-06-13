@@ -1,9 +1,9 @@
-use cargo_toml::DebugSetting;
 use crate::error::{CDResult, CargoDebError};
+use cargo_toml::DebugSetting;
 use log::{debug, warn};
 use serde::Deserialize;
 use std::borrow::Cow;
-use std::collections::{HashMap, BTreeMap};
+use std::collections::{BTreeMap, HashMap};
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
@@ -73,7 +73,7 @@ pub(crate) fn manifest_version_string<'a>(package: &'a cargo_toml::Package<Cargo
     match revision {
         None => format!("{version}-1").into(),
         Some("") => version,
-        Some(revision) => format!("{version}-{revision}").into()
+        Some(revision) => format!("{version}-{revision}").into(),
     }
 }
 
@@ -89,12 +89,11 @@ pub(crate) enum LicenseFile {
     Vec(Vec<String>),
 }
 
-#[derive(Deserialize)]
-#[derive(Clone, Debug)]
+#[derive(Deserialize, Clone, Debug)]
 #[serde(untagged)]
 pub(crate) enum SystemUnitsSingleOrMultiple {
     Single(SystemdUnitsConfig),
-    Multi(Vec<SystemdUnitsConfig>)
+    Multi(Vec<SystemdUnitsConfig>),
 }
 
 #[derive(Clone, Debug, Deserialize)]
@@ -114,11 +113,11 @@ impl DependencyList {
 }
 
 /// Type-alias for list of assets
-/// 
+///
 pub(crate) type AssetList = Vec<Vec<String>>;
 
 /// Type-alias for a merge map,
-/// 
+///
 pub(crate) type MergeMap<'a> = BTreeMap<&'a str, [&'a str; 2]>;
 
 #[derive(Clone, Debug, Deserialize, Default)]
@@ -158,20 +157,20 @@ pub(crate) struct CargoDeb {
 }
 
 /// Struct containing merge configuration
-/// 
+///
 #[derive(Clone, Debug, Deserialize, Default)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct MergeAssets {
     /// Merge assets by appending this list,
-    /// 
+    ///
     pub append: Option<AssetList>,
     /// Merge assets using the src as the key,
-    /// 
+    ///
     pub by: Option<MergeByKey>,
 }
 
 /// Enumeration of merge by key strategies
-/// 
+///
 #[derive(Clone, Debug, Deserialize)]
 pub(crate) enum MergeByKey {
     #[serde(rename = "src")]
@@ -182,9 +181,9 @@ pub(crate) enum MergeByKey {
 
 impl MergeByKey {
     /// Merges w/ a parent asset list
-    /// 
+    ///
     fn merge(self, parent: &AssetList) -> AssetList {
-        let merge_map = { 
+        let merge_map = {
             parent.iter().fold(BTreeMap::new(), |parent, asset| {
                 self.prep_parent_item(parent, asset)
             })
@@ -192,7 +191,6 @@ impl MergeByKey {
 
         self.merge_with(merge_map)
     }
-
 
     /// Folds the parent asset into a merge-map preparing to prepare for a merge,
     /// 
@@ -214,7 +212,7 @@ impl MergeByKey {
     }
 
     /// Merges w/ a parent merge map and returns the resulting asset list,
-    /// 
+    ///
     fn merge_with(&self, parent: MergeMap) -> AssetList {
         match self {
             MergeByKey::Src(assets) => {
@@ -253,9 +251,9 @@ impl MergeByKey {
 
 impl CargoDeb {
     /// Inherit unset fields from parent,
-    /// 
+    ///
     /// **Note**: For backwards compat, if merge_assets is set, this will apply **after** the variant has overridden the assets.
-    /// 
+    ///
     pub(crate) fn inherit_from(self, parent: CargoDeb) -> CargoDeb {
         let mut assets = self.assets.or(parent.assets);
 
@@ -263,7 +261,7 @@ impl CargoDeb {
             if let Some(mut append) = merge_assets.append {
                 _assets.append(&mut append);
             }
-            
+
             if let Some(strategy) = merge_assets.by {
                 assets = Some(strategy.merge(_assets));
             }

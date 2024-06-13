@@ -5,8 +5,8 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
+use std::io::{BufRead, BufReader, Read, Seek};
 use tempfile::TempDir;
-use std::io::{BufReader, BufRead, Read, Seek};
 
 /// file extension of the compression format cargo-deb uses unless explicitly specified.
 const DEFAULT_COMPRESSION_EXT: &str = "xz";

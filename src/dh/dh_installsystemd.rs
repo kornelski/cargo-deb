@@ -18,10 +18,10 @@ use std::io::prelude::*;
 use std::path::{Path, PathBuf};
 use std::str;
 
-use crate::dh_lib::{ScriptFragments, autoscript, pkgfile};
-use crate::listener::Listener;
 use crate::assets::Asset;
-use crate::util::{MyJoin, fname_from_path};
+use crate::dh::dh_lib::{autoscript, pkgfile, ScriptFragments};
+use crate::listener::Listener;
+use crate::util::{fname_from_path, MyJoin};
 use crate::CDResult;
 
 /// From man 1 dh_installsystemd on Ubuntu 20.04 LTS. See:
@@ -606,7 +606,7 @@ mod tests {
 
     #[test]
     fn generate_with_empty_tmp_file_asset() {
-        use crate::dh_lib::get_embedded_autoscript;
+        use crate::dh::dh_lib::get_embedded_autoscript;
 
         const TMP_FILE_NAME: &str = "my_tmp_file";
         let tmp_file_path = PathBuf::from(format!("debian/{TMP_FILE_NAME}"));

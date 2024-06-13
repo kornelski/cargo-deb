@@ -1,9 +1,9 @@
 use crate::error::{CDResult, CargoDebError};
 use std::io;
 use std::io::{BufWriter, Read};
+use std::num::NonZeroU64;
 #[cfg(feature = "lzma")]
 use std::num::NonZeroUsize;
-use std::num::NonZeroU64;
 use std::ops;
 use std::process::{Child, ChildStdin};
 use std::process::{Command, Stdio};
@@ -187,9 +187,9 @@ pub fn select_compressor(fast: bool, compress_format: Format, use_system: bool) 
         #[cfg(not(feature = "lzma"))]
         Format::Xz => system_compressor(compress_format, fast),
         Format::Gzip => {
-            use zopfli::{GzipEncoder, Options, BlockType};
             use flate2::write::GzEncoder;
             use flate2::Compression;
+            use zopfli::{BlockType, GzipEncoder, Options};
 
             let writer = if !fast {
                 let inner_writer = GzipEncoder::new_buffered(Options {

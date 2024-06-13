@@ -28,16 +28,16 @@ use crate::{listener::Listener, CDResult};
 ///   <https://www.debian.org/doc/debian-policy/ap-flowcharts.htm>
 
 static AUTOSCRIPTS: [(&str, &[u8]); 10] = [
-    ("postinst-init-tmpfiles", include_bytes!("../autoscripts/postinst-init-tmpfiles")),
-    ("postinst-systemd-dont-enable", include_bytes!("../autoscripts/postinst-systemd-dont-enable")),
-    ("postinst-systemd-enable", include_bytes!("../autoscripts/postinst-systemd-enable")),
-    ("postinst-systemd-restart", include_bytes!("../autoscripts/postinst-systemd-restart")),
-    ("postinst-systemd-restartnostart", include_bytes!("../autoscripts/postinst-systemd-restartnostart")),
-    ("postinst-systemd-start", include_bytes!("../autoscripts/postinst-systemd-start")),
-    ("postrm-systemd", include_bytes!("../autoscripts/postrm-systemd")),
-    ("postrm-systemd-reload-only", include_bytes!("../autoscripts/postrm-systemd-reload-only")),
-    ("prerm-systemd", include_bytes!("../autoscripts/prerm-systemd")),
-    ("prerm-systemd-restart", include_bytes!("../autoscripts/prerm-systemd-restart")),
+    ("postinst-init-tmpfiles", include_bytes!("../../autoscripts/postinst-init-tmpfiles")),
+    ("postinst-systemd-dont-enable", include_bytes!("../../autoscripts/postinst-systemd-dont-enable")),
+    ("postinst-systemd-enable", include_bytes!("../../autoscripts/postinst-systemd-enable")),
+    ("postinst-systemd-restart", include_bytes!("../../autoscripts/postinst-systemd-restart")),
+    ("postinst-systemd-restartnostart", include_bytes!("../../autoscripts/postinst-systemd-restartnostart")),
+    ("postinst-systemd-start", include_bytes!("../../autoscripts/postinst-systemd-start")),
+    ("postrm-systemd", include_bytes!("../../autoscripts/postrm-systemd")),
+    ("postrm-systemd-reload-only", include_bytes!("../../autoscripts/postrm-systemd-reload-only")),
+    ("prerm-systemd", include_bytes!("../../autoscripts/prerm-systemd")),
+    ("prerm-systemd-restart", include_bytes!("../../autoscripts/prerm-systemd-restart")),
 ];
 pub(crate) type ScriptFragments = HashMap<String, Vec<u8>>;
 
@@ -717,7 +717,8 @@ mod tests {
         }
     }
 
-    #[rstest(error,
+    #[rstest(
+        error,
         case::invalid_input("InvalidInput"),
         case::interrupted("Interrupted"),
         case::permission_denied("PermissionDenied"),

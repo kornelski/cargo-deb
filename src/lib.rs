@@ -25,32 +25,33 @@ The library interface is experimental. See `main.rs` for usage.
 */
 
 pub mod compress;
-pub mod control;
-pub mod data;
-pub mod listener;
-pub(crate) mod parse {
-    pub(crate) mod manifest;
-    pub(crate) mod config;
+pub mod deb {
+    pub mod archive;
+    pub mod control;
+    pub mod data;
 }
-pub use crate::debarchive::DebArchive;
-pub use crate::error::*;
-pub use crate::assets::Config;
-
 #[macro_use]
 mod util;
-mod debarchive;
-mod dependencies;
-mod dh_installsystemd;
-mod dh_lib;
-mod error;
-pub mod assets;
-mod ok_or;
-mod pathbytes;
-mod tararchive;
-mod wordsplit;
+mod dh {
+    pub(crate) mod dh_installsystemd;
+    pub(crate) mod dh_lib;
+}
+pub mod listener;
+pub(crate) mod parse {
+    pub(crate) mod config;
+    pub(crate) mod manifest;
+}
+pub use crate::assets::Config;
+pub use crate::deb::archive::DebArchive;
+pub use crate::error::*;
 
-use crate::listener::Listener;
+pub mod assets;
+mod dependencies;
+mod error;
+mod tararchive;
+
 use crate::assets::{Asset, AssetSource, DebugSymbols, IsBuilt, ProcessedFrom};
+use crate::listener::Listener;
 use rayon::prelude::*;
 use std::env;
 use std::fs;

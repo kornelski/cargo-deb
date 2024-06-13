@@ -1,12 +1,12 @@
-use crate::dh_installsystemd;
-use crate::dh_lib;
+use crate::assets::Config;
+use crate::dh::dh_installsystemd;
+use crate::dh::dh_lib;
 use crate::error::{CDResult, CargoDebError};
 use crate::listener::Listener;
-use crate::assets::Config;
-use crate::pathbytes::AsUnixPathBytes;
 use crate::tararchive::Archive;
+use crate::util::pathbytes::AsUnixPathBytes;
+use crate::util::wordsplit::WordSplit;
 use crate::util::{is_path_file, read_file_to_bytes};
-use crate::wordsplit::WordSplit;
 use dh_lib::ScriptFragments;
 use std::collections::HashMap;
 use std::fs;
@@ -87,7 +87,8 @@ impl<'l, W: Write> ControlArchiveBuilder<'l, W> {
                         &mut scripts,
                         &option.name,
                         unit_name,
-                        self.listener)?;
+                        self.listener,
+                    )?;
                 }
             }
 
@@ -167,7 +168,7 @@ impl<'l, W: Write> ControlArchiveBuilder<'l, W> {
 
         let installed_size = options.assets.resolved
             .iter()
-            .map(|m| (m.source.file_size().unwrap_or(0)+2047)/1024) // assume 1KB of fs overhead per file
+            .map(|m| (m.source.file_size().unwrap_or(0) + 2047) / 1024) // assume 1KB of fs overhead per file
             .sum::<u64>();
 
         writeln!(&mut control, "Installed-Size: {installed_size}")?;
@@ -245,9 +246,8 @@ impl<'l, W: Write> ControlArchiveBuilder<'l, W> {
     }
 
     fn add_triggers_file(&mut self, path: &Path) -> CDResult<()> {
-        let content = fs::read(path).map_err(|e| {
-            CargoDebError::IoFile("triggers file", e, path.to_path_buf())
-        })?;
+        let content = fs::read(path)
+            .map_err(|e| CargoDebError::IoFile("triggers file", e, path.to_path_buf()))?;
         self.archive.file("./triggers", &content, 0o644)
     }
 }
@@ -278,9 +278,9 @@ mod tests {
     //         Cargo.toml
 
     use super::*;
+    use crate::assets::{Asset, AssetSource, IsBuilt};
     use crate::listener::MockListener;
     use crate::parse::manifest::SystemdUnitsConfig;
-    use crate::assets::{Asset, AssetSource, IsBuilt};
     use crate::util::tests::{add_test_fs_paths, set_test_fs_path_content};
     use std::io::prelude::Read;
 
