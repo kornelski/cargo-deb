@@ -7,6 +7,14 @@ use std::num::NonZeroUsize;
 use std::ops;
 use std::process::{Child, ChildStdin};
 use std::process::{Command, Stdio};
+use zopfli::{BlockType, GzipEncoder, Options};
+
+pub struct CompressConfig {
+    pub fast: bool,
+    pub compress_type: Format,
+    pub compress_system: bool,
+    pub rsyncable: bool
+}
 
 #[derive(Clone, Copy)]
 pub enum Format {
@@ -189,7 +197,6 @@ pub fn select_compressor(fast: bool, compress_format: Format, use_system: bool) 
         Format::Gzip => {
             use flate2::write::GzEncoder;
             use flate2::Compression;
-            use zopfli::{BlockType, GzipEncoder, Options};
 
             let writer = if !fast {
                 let inner_writer = GzipEncoder::new_buffered(Options {
@@ -204,4 +211,19 @@ pub fn select_compressor(fast: bool, compress_format: Format, use_system: bool) 
             Ok(Compressor::new(writer))
         }
     }
+}
+
+pub(crate) fn gzipped(mut content: &[u8]) -> io::Result<Vec<u8>> {
+    let mut compressed = Vec::with_capacity(content.len() * 2 / 3);
+    let mut encoder = GzipEncoder::new(
+        Options {
+            iteration_count: NonZeroU64::new(7).unwrap(),
+            ..Options::default()
+        },
+        BlockType::Dynamic,
+        &mut compressed,
+    )?;
+    io::copy(&mut content, &mut encoder)?;
+    encoder.finish()?;
+    Ok(compressed)
 }

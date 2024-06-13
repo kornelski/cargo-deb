@@ -1,4 +1,4 @@
-use crate::deb::data;
+use crate::compress;
 use crate::debian_architecture_from_rust_triple;
 use crate::dependencies::resolve;
 use crate::dh::dh_installsystemd;
@@ -839,7 +839,7 @@ impl Config {
                         return Ok(content.into());
                     }
                     // The input is plaintext, but the debian package should contain gzipped one.
-                    data::gzipped(&content)
+                    compress::gzipped(&content)
                 })
                 .map_err(|e| CargoDebError::IoFile("unable to read changelog file", e, source_path.clone()))?;
             Ok(Some((source_path, changelog)))
@@ -902,7 +902,9 @@ impl Config {
     }
 
     /// Save final .deb here
-    pub(crate) fn deb_output_path(&self, filename: &str) -> PathBuf {
+    pub(crate) fn deb_output_path(&self) -> PathBuf {
+        let filename = format!("{}_{}_{}.deb", self.deb.deb_name, self.deb.deb_version, self.deb.architecture);
+
         if let Some(ref path_str) = self.deb_output_path {
             let path = Path::new(path_str);
             if path_str.ends_with('/') || path.is_dir() {

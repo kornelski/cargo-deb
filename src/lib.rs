@@ -42,16 +42,19 @@ pub(crate) mod parse {
     pub(crate) mod manifest;
 }
 pub use crate::assets::{Config, Package};
-pub use crate::deb::archive::Archive;
+pub use crate::deb::archive::DebArchive;
 pub use crate::error::*;
 
 pub mod assets;
 mod dependencies;
 mod error;
-mod tararchive;
+pub mod tararchive;
 
 use crate::assets::{Asset, AssetSource, DebugSymbols, IsBuilt, ProcessedFrom};
 use crate::listener::Listener;
+use crate::deb::control::ControlArchiveBuilder;
+use crate::tararchive::Archive;
+use crate::compress::CompressConfig;
 use rayon::prelude::*;
 use std::env;
 use std::fs;
@@ -73,6 +76,45 @@ pub fn install_deb(path: &Path) -> CDResult<()> {
     }
     Ok(())
 }
+
+pub fn write_deb(config: &Config, &CompressConfig { fast, compress_type, compress_system, rsyncable }: &CompressConfig, listener: &dyn listener::Listener) -> Result<PathBuf, CargoDebError> {
+    let (control_builder, data_result) = rayon::join(
+        move || {
+            // The control archive is the metadata for the package manager
+            let mut control_builder = ControlArchiveBuilder::new(compress::select_compressor(fast, compress_type, compress_system)?, config.deb.default_timestamp, listener);
+            control_builder.generate_archive(config)?;
+            Ok::<_, CargoDebError>(control_builder)
+        },
+        move || {
+            // Initialize the contents of the data archive (files that go into the filesystem).
+            let dest = compress::select_compressor(fast, compress_type, compress_system)?;
+            let archive = Archive::new(dest, config.deb.default_timestamp);
+            let (compressed, asset_hashes) = archive.archive_files(config, rsyncable, listener)?;
+            let sums = config.deb.generate_sha256sums(asset_hashes)?;
+            let original_data_size = compressed.uncompressed_size;
+            Ok::<_, CargoDebError>((compressed.finish()?, original_data_size, sums))
+        },
+    );
+    let mut control_builder = control_builder?;
+    let (data_compressed, original_data_size, sums) = data_result?;
+    control_builder.add_sha256sums(sums)?;
+    let control_compressed = control_builder.finish()?.finish()?;
+
+    let mut deb_contents = DebArchive::new(config.deb_output_path(), config.deb.default_timestamp)?;
+
+    deb_contents.add_control(control_compressed)?;
+    let compressed_data_size = data_compressed.len();
+    listener.info(format!(
+        "compressed/original ratio {compressed_data_size}/{original_data_size} ({}%)",
+        compressed_data_size * 100 / original_data_size
+    ));
+    deb_contents.add_data(data_compressed)?;
+    let generated = deb_contents.finish()?;
+    remove_deb_temp_directory(&config);
+
+    Ok(generated)
+}
+
 
 /// Creates empty (removes files if needed) target/debian/foo directory so that we can start fresh.
 pub fn reset_deb_temp_directory(config: &Config) -> io::Result<()> {
@@ -188,6 +230,7 @@ pub(crate) fn debian_architecture_from_rust_triple(target: &str) -> &str {
         (other_arch, _) => other_arch,
     }
 }
+
 fn ensure_success(status: ExitStatus) -> io::Result<()> {
     if status.success() {
         Ok(())

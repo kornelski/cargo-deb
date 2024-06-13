@@ -2,8 +2,7 @@
 
 use cargo_deb::assets::Config;
 use cargo_deb::assets::DebugSymbols;
-use cargo_deb::deb::control::ControlArchiveBuilder;
-use cargo_deb::deb::data;
+use cargo_deb::compress::CompressConfig;
 use cargo_deb::*;
 use std::env;
 use std::path::Path;
@@ -238,7 +237,7 @@ fn process(
     cargo_build_flags.push(format!("--profile={selected_profile}"));
 
     let root_manifest_path = manifest_path.as_deref().map(Path::new);
-    let mut options = Config::from_manifest(
+    let mut config = Config::from_manifest(
         root_manifest_path,
         selected_package_name.as_deref(),
         output_path,
@@ -251,70 +250,30 @@ fn process(
         separate_debug_symbols,
         compress_debug_symbols,
     )?;
-    reset_deb_temp_directory(&options)?;
+    reset_deb_temp_directory(&config)?;
 
-    options.extend_cargo_build_flags(&mut cargo_build_flags);
+    config.extend_cargo_build_flags(&mut cargo_build_flags);
 
     if !no_build {
-        cargo_build(&options, target, &cargo_build_cmd, &cargo_build_flags, verbose)?;
+        cargo_build(&config, target, &cargo_build_cmd, &cargo_build_flags, verbose)?;
     }
 
-    options.resolve_assets()?;
+    config.resolve_assets()?;
 
-    crate::deb::data::compress_assets(&mut options, listener)?;
+    crate::deb::data::compress_assets(&mut config, listener)?;
 
-    if strip_override.unwrap_or(options.debug_symbols != DebugSymbols::Keep) {
-        strip_binaries(&mut options, target, listener)?;
+    if strip_override.unwrap_or(config.debug_symbols != DebugSymbols::Keep) {
+        strip_binaries(&mut config, target, listener)?;
     } else {
-        log::debug!("not stripping debug={:?} strip-flag={:?}", options.debug_symbols, strip_override);
+        log::debug!("not stripping debug={:?} strip-flag={:?}", config.debug_symbols, strip_override);
     }
 
-    options.deb.sort_assets_by_type();
+    config.deb.sort_assets_by_type();
 
-    // Obtain the current time which will be used to stamp the generated files in the archives.
-    let default_timestamp = options.deb.default_timestamp;
-
-    let options = &options;
-    let (control_builder, data_result) = rayon::join(
-        move || {
-            // The control archive is the metadata for the package manager
-            let mut control_builder = ControlArchiveBuilder::new(compress::select_compressor(fast, compress_type, compress_system)?, default_timestamp, listener);
-            control_builder.generate_archive(options)?;
-            Ok::<_, CargoDebError>(control_builder)
-        },
-        move || {
-            // Initialize the contents of the data archive (files that go into the filesystem).
-            let (compressed, asset_hashes) = data::generate_archive(compress::select_compressor(fast, compress_type, compress_system)?, options, default_timestamp, rsyncable, listener)?;
-            let sums = options.deb.generate_sha256sums(asset_hashes)?;
-            let original_data_size = compressed.uncompressed_size;
-            Ok::<_, CargoDebError>((compressed.finish()?, original_data_size, sums))
-        },
-    );
-    let mut control_builder = control_builder?;
-    let (data_compressed, original_data_size, sums) = data_result?;
-    control_builder.add_sha256sums(sums)?;
-    let control_compressed = control_builder.finish()?.finish()?;
-
-    let mut deb_contents = Archive::new(options)?;
-    deb_contents.add_data("debian-binary".into(), default_timestamp, b"2.0\n")?;
-
-    // Order is important for Debian
-    deb_contents.add_data(format!("control.tar.{}", control_compressed.extension()), default_timestamp, &control_compressed)?;
-    drop(control_compressed);
-    let compressed_data_size = data_compressed.len();
-    listener.info(format!(
-        "compressed/original ratio {compressed_data_size}/{original_data_size} ({}%)",
-        compressed_data_size * 100 / original_data_size
-    ));
-    deb_contents.add_data(format!("data.tar.{}", data_compressed.extension()), default_timestamp, &data_compressed)?;
-    drop(data_compressed);
-
-    let generated = deb_contents.finish()?;
+    let generated = write_deb(&config, &CompressConfig { fast, compress_type, compress_system, rsyncable}, listener)?;
     if !quiet {
         println!("{}", generated.display());
     }
-
-    remove_deb_temp_directory(options);
 
     if install {
         install_deb(&generated)?;

@@ -24,16 +24,17 @@ impl<'l, W: Write> ControlArchiveBuilder<'l, W> {
     }
 
     /// Generates an uncompressed tar archive with `control`, `sha256sums`, and others
-    pub fn generate_archive(&mut self, options: &Config) -> CDResult<()> {
-        let deps = options.get_dependencies(self.listener)?;
+    pub fn generate_archive(&mut self, config: &Config) -> CDResult<()> {
+        let deps = config.get_dependencies(self.listener)?;
 
-        self.add_control(&options.deb.generate_control(&deps)?)?;
-        if let Some(ref files) = options.deb.conf_files {
+        self.add_control(&config.deb.generate_control(&deps)?)?;
+        if let Some(ref files) = config.deb.conf_files {
             self.add_conf_files(files)?;
         }
-        self.generate_scripts(&options)?;
-        if let Some(ref file) = options.deb.triggers_file {
-            let triggers_file = &options.package_manifest_dir.as_path().join(file);
+
+        self.generate_scripts(&config)?;
+        if let Some(ref file) = config.deb.triggers_file {
+            let triggers_file = &config.package_manifest_dir.as_path().join(file);
             self.add_triggers_file(triggers_file)?;
         }
         Ok(())
@@ -60,18 +61,18 @@ impl<'l, W: Write> ControlArchiveBuilder<'l, W> {
     /// When `systemd_units` is configured, user supplied `maintainer_scripts` must
     /// contain a `#DEBHELPER#` token at the point where shell script fragments
     /// should be inserted.
-    fn generate_scripts(&mut self, option: &Config) -> CDResult<()> {
-        if let Some(ref maintainer_scripts_dir) = option.deb.maintainer_scripts {
-            let maintainer_scripts_dir = option.package_manifest_dir.as_path().join(maintainer_scripts_dir);
+    fn generate_scripts(&mut self, config: &Config) -> CDResult<()> {
+        if let Some(ref maintainer_scripts_dir) = config.deb.maintainer_scripts {
+            let maintainer_scripts_dir = config.package_manifest_dir.as_path().join(maintainer_scripts_dir);
             let mut scripts = ScriptFragments::with_capacity(0);
 
-            if let Some(systemd_units_config_vec) = &option.deb.systemd_units {
+            if let Some(systemd_units_config_vec) = &config.deb.systemd_units {
                 for systemd_units_config in systemd_units_config_vec {
                     // Select and populate autoscript templates relevant to the unit
                     // file(s) in this package and the configuration settings chosen.
                     scripts = dh_installsystemd::generate(
-                        &option.deb.name,
-                        &option.deb.assets.resolved,
+                        &config.deb.name,
+                        &config.deb.assets.resolved,
                         &dh_installsystemd::Options::from(systemd_units_config),
                         self.listener,
                     )?;
@@ -84,7 +85,7 @@ impl<'l, W: Write> ControlArchiveBuilder<'l, W> {
                     dh_lib::apply(
                         &maintainer_scripts_dir,
                         &mut scripts,
-                        &option.deb.name,
+                        &config.deb.name,
                         unit_name,
                         self.listener,
                     )?;

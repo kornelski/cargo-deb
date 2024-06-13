@@ -1,12 +1,18 @@
-use crate::error::CDResult;
+use crate::assets::{AssetSource, Config};
+use crate::error::{CDResult, CargoDebError};
+use crate::listener::Listener;
+use sha2::{Digest, Sha256};
+use std::collections::HashMap;
 use std::collections::HashSet;
+use std::fs;
 use std::io;
 use std::io::Write;
 use std::path::{Component, Path, PathBuf};
+use std::sync::mpsc;
 use tar::EntryType;
 use tar::Header as TarHeader;
 
-pub struct Archive<W: Write> {
+pub(crate) struct Archive<W: Write> {
     added_directories: HashSet<PathBuf>,
     time: u64,
     tar: tar::Builder<W>,
@@ -19,6 +25,68 @@ impl<W: Write> Archive<W> {
             time,
             tar: tar::Builder::new(dest),
         }
+    }
+
+    /// Copies all the files to be packaged into the tar archive.
+    /// Returns MD5 hashes of files copied
+    pub fn archive_files(mut self, options: &Config, rsyncable: bool, listener: &dyn Listener) -> CDResult<(W, HashMap<PathBuf, [u8; 32]>)> {
+        let hashes = std::thread::scope(|s| -> CDResult<_> {
+            let (send, recv) = mpsc::sync_channel(2);
+            let num_items = options.deb.assets.resolved.len();
+            let hash_thread = s.spawn(move || {
+                let mut hashes = HashMap::with_capacity(num_items);
+                hashes.extend(recv.into_iter().map(|(path, data)| {
+                    (path, Sha256::digest(data).into())
+                }));
+                hashes
+            });
+            let mut archive_data_added = 0;
+            let mut prev_is_built = false;
+
+            debug_assert!(options.deb.assets.unresolved.is_empty());
+            for asset in &options.deb.assets.resolved {
+                let mut log_line = format!("{} {}-> {}",
+                    asset.processed_from.as_ref().and_then(|p| p.original_path.as_deref())
+                        .or(asset.source.path())
+                        .unwrap_or_else(|| Path::new("-")).display(),
+                    asset.processed_from.as_ref().map(|p| p.action).unwrap_or_default(),
+                    asset.c.target_path.display()
+                );
+                if let Some(len) = asset.source.file_size() {
+                    let (size, unit) = human_size(len);
+                    use std::fmt::Write;
+                    let _ = write!(&mut log_line, " ({size}{unit})");
+                }
+                listener.info(log_line);
+
+                match &asset.source {
+                    AssetSource::Symlink(source_path) => {
+                        let link_name = fs::read_link(source_path)
+                            .map_err(|e| CargoDebError::IoFile("symlink asset", e, source_path.clone()))?;
+                        self.symlink(&asset.c.target_path, &link_name)?;
+                    }
+                    _ => {
+                        let out_data = asset.source.data()?;
+                        if rsyncable {
+                            if archive_data_added > 1_000_000 || prev_is_built != asset.c.is_built() {
+                                self.flush()?;
+                                archive_data_added = 0;
+                            }
+                            // puts synchronization point between non-code and code assets
+                            prev_is_built = asset.c.is_built();
+                            archive_data_added += out_data.len();
+                        }
+                        self.file(&asset.c.target_path, &out_data, asset.c.chmod)?;
+                        send.send((asset.c.target_path.clone(), out_data)).unwrap();
+                    },
+                }
+            }
+            drop(send);
+            Ok(hash_thread.join().unwrap())
+        })?;
+
+        let tar = self.tar.into_inner()?;
+        Ok((tar, hashes))
     }
 
     fn directory(&mut self, path: &Path) -> io::Result<()> {
@@ -55,7 +123,7 @@ impl<W: Write> Archive<W> {
         Ok(())
     }
 
-    pub fn file<P: AsRef<Path>>(&mut self, path: P, out_data: &[u8], chmod: u32) -> CDResult<()> {
+    pub(crate) fn file<P: AsRef<Path>>(&mut self, path: P, out_data: &[u8], chmod: u32) -> CDResult<()> {
         self.file_(path.as_ref(), out_data, chmod)
     }
 
@@ -71,7 +139,7 @@ impl<W: Write> Archive<W> {
         Ok(())
     }
 
-    pub fn symlink(&mut self, path: &Path, link_name: &Path) -> CDResult<()> {
+    pub(crate) fn symlink(&mut self, path: &Path, link_name: &Path) -> CDResult<()> {
         self.add_parent_directories(path.as_ref())?;
 
         let mut header = TarHeader::new_gnu();
@@ -84,11 +152,21 @@ impl<W: Write> Archive<W> {
         Ok(())
     }
 
-    pub fn flush(&mut self) -> io::Result<()> {
+    fn flush(&mut self) -> io::Result<()> {
         self.tar.get_mut().flush()
     }
 
     pub fn into_inner(self) -> io::Result<W> {
         self.tar.into_inner()
     }
+}
+
+fn human_size(len: u64) -> (u64, &'static str) {
+    if len < 1000 {
+        return (len, "B");
+    }
+    if len < 1_000_000 {
+        return ((len + 999) / 1000, "KB");
+    }
+    ((len + 999_999) / 1_000_000, "MB")
 }
