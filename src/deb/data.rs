@@ -2,7 +2,6 @@ use crate::assets::{Asset, AssetSource, Config, IsBuilt};
 use crate::error::{CDResult, CargoDebError};
 use crate::listener::Listener;
 use crate::tararchive::Archive;
-use crate::Package;
 use sha2::{Digest, Sha256};
 use std::collections::HashMap;
 use std::fs;
@@ -18,74 +17,6 @@ pub fn generate_archive<W: Write>(dest: W, options: &Config, time: u64, rsyncabl
     let mut archive = Archive::new(dest, time);
     let copy_hashes = archive_files(&mut archive, options, rsyncable, listener)?;
     Ok((archive.into_inner()?, copy_hashes))
-}
-
-/// Generates compressed changelog file
-pub(crate) fn generate_changelog_asset(options: &Config) -> CDResult<Option<(PathBuf, Vec<u8>)>> {
-    if let Some(ref path) = options.deb.changelog {
-        let source_path = options.path_in_package(path);
-        let changelog = fs::read(&source_path)
-            .and_then(|content| {
-                // allow pre-compressed
-                if source_path.extension().is_some_and(|e| e == "gz") {
-                    return Ok(content.into());
-                }
-                // The input is plaintext, but the debian package should contain gzipped one.
-                gzipped(&content)
-            })
-            .map_err(|e| CargoDebError::IoFile("unable to read changelog file", e, source_path.clone()))?;
-        Ok(Some((source_path, changelog)))
-    } else {
-        Ok(None)
-    }
-}
-
-fn append_copyright_metadata(copyright: &mut Vec<u8>, options: &Package) -> Result<(), CargoDebError> {
-    writeln!(copyright, "Format: https://www.debian.org/doc/packaging-manuals/copyright-format/1.0/")?;
-    writeln!(copyright, "Upstream-Name: {}", options.name)?;
-    if let Some(source) = options.repository.as_ref().or(options.homepage.as_ref()) {
-        writeln!(copyright, "Source: {source}")?;
-    }
-    writeln!(copyright, "Copyright: {}", options.copyright)?;
-    if let Some(ref license) = options.license {
-        writeln!(copyright, "License: {license}")?;
-    }
-    Ok(())
-}
-
-/// Generates the copyright file from the license file and adds that to the tar archive.
-pub(crate) fn generate_copyright_asset(options: &Config) -> CDResult<(PathBuf, Vec<u8>)> {
-    let mut copyright: Vec<u8> = Vec::new();
-    let source_path;
-    if let Some(ref path) = options.deb.license_file {
-        source_path = options.path_in_package(path);
-        let license_string = fs::read_to_string(&source_path)
-            .map_err(|e| CargoDebError::IoFile("unable to read license file", e, path.clone()))?;
-        if !has_copyright_metadata(&license_string) {
-            append_copyright_metadata(&mut copyright, &options.deb)?;
-        }
-
-        // Skip the first `A` number of lines and then iterate each line after that.
-        for line in license_string.lines().skip(options.deb.license_file_skip_lines) {
-            // If the line is a space, add a dot, else write the line.
-            if line == " " {
-                copyright.write_all(b" .\n")?;
-            } else {
-                copyright.write_all(line.as_bytes())?;
-                copyright.write_all(b"\n")?;
-            }
-        }
-    } else {
-        source_path = "Cargo.toml".into();
-        append_copyright_metadata(&mut copyright, &options.deb)?;
-    }
-
-    Ok((source_path, copyright))
-}
-
-fn has_copyright_metadata(file: &str) -> bool {
-    file.lines().take(10)
-        .any(|l| l.starts_with("License: ") || l.starts_with("Source: ") || l.starts_with("Upstream-Name: ") || l.starts_with("Format: "))
 }
 
 /// Compress man pages and other assets per Debian Policy.
@@ -207,7 +138,7 @@ fn human_size(len: u64) -> (u64, &'static str) {
     ((len + 999_999) / 1_000_000, "MB")
 }
 
-fn gzipped(mut content: &[u8]) -> io::Result<Vec<u8>> {
+pub(crate) fn gzipped(mut content: &[u8]) -> io::Result<Vec<u8>> {
     let mut compressed = Vec::with_capacity(content.len() * 2 / 3);
     let mut encoder = GzipEncoder::new(Options {
         iteration_count: NonZeroU64::new(7).unwrap(),

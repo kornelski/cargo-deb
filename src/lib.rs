@@ -75,13 +75,13 @@ pub fn install_deb(path: &Path) -> CDResult<()> {
 }
 
 /// Creates empty (removes files if needed) target/debian/foo directory so that we can start fresh.
-pub fn reset_deb_temp_directory(options: &Config) -> io::Result<()> {
-    let deb_dir = options.default_deb_output_dir();
-    let deb_temp_dir = options.deb_temp_dir();
-    remove_deb_temp_directory(options);
+pub fn reset_deb_temp_directory(config: &Config) -> io::Result<()> {
+    let deb_dir = config.default_deb_output_dir();
+    let deb_temp_dir = config.deb_temp_dir();
+    remove_deb_temp_directory(config);
     // For backwards compatibility with previous cargo-deb behavior, also delete .deb from target/debian,
     // but this time only debs from other versions of the same package
-    let g = deb_dir.join(Archive::filename_glob(&options.deb));
+    let g = deb_dir.join(config.deb.filename_glob());
     if let Ok(old_files) = glob::glob(g.to_str().expect("utf8 path")) {
         for old_file in old_files.flatten() {
             let _ = fs::remove_file(old_file);
@@ -91,15 +91,15 @@ pub fn reset_deb_temp_directory(options: &Config) -> io::Result<()> {
 }
 
 /// Removes the target/debian/foo
-pub fn remove_deb_temp_directory(options: &Config) {
-    let deb_temp_dir = options.deb_temp_dir();
+pub fn remove_deb_temp_directory(config: &Config) {
+    let deb_temp_dir = config.deb_temp_dir();
     let _ = fs::remove_dir(deb_temp_dir);
 }
 
 /// Builds a binary with `cargo build`
-pub fn cargo_build(options: &Config, target: Option<&str>, build_command: &str, build_flags: &[String], verbose: bool) -> CDResult<()> {
+pub fn cargo_build(config: &Config, target: Option<&str>, build_command: &str, build_flags: &[String], verbose: bool) -> CDResult<()> {
     let mut cmd = Command::new("cargo");
-    cmd.current_dir(&options.package_manifest_dir);
+    cmd.current_dir(&config.package_manifest_dir);
     cmd.arg(build_command);
 
     cmd.args(build_flags);
@@ -118,10 +118,10 @@ pub fn cargo_build(options: &Config, target: Option<&str>, build_command: &str, 
             }
         }
     }
-    if !options.default_features {
+    if !config.default_features {
         cmd.arg("--no-default-features");
     }
-    let features = &options.features;
+    let features = &config.features;
     if !features.is_empty() {
         cmd.args(["--features", &features.join(",")]);
     }
@@ -197,7 +197,7 @@ fn ensure_success(status: ExitStatus) -> io::Result<()> {
 }
 
 /// Strips the binary that was created with cargo
-pub fn strip_binaries(options: &mut Config, target: Option<&str>, listener: &dyn Listener) -> CDResult<()> {
+pub fn strip_binaries(config: &mut Config, target: Option<&str>, listener: &dyn Listener) -> CDResult<()> {
     let mut cargo_config = None;
     let objcopy_tmp;
     let strip_tmp;
@@ -205,7 +205,7 @@ pub fn strip_binaries(options: &mut Config, target: Option<&str>, listener: &dyn
     let mut strip_cmd = Path::new("strip");
 
     if let Some(target) = target {
-        cargo_config = options.cargo_config()?;
+        cargo_config = config.cargo_config()?;
         if let Some(ref conf) = cargo_config {
             if let Some(cmd) = conf.objcopy_command(target) {
                 listener.info(format!("Using '{}' for '{target}'", cmd.display()));
@@ -221,13 +221,13 @@ pub fn strip_binaries(options: &mut Config, target: Option<&str>, listener: &dyn
         }
     }
 
-    let stripped_binaries_output_dir = options.default_deb_output_dir();
-    let (separate_debug_symbols, compress_debug_symbols) = match options.debug_symbols {
+    let stripped_binaries_output_dir = config.default_deb_output_dir();
+    let (separate_debug_symbols, compress_debug_symbols) = match config.debug_symbols {
         DebugSymbols::Keep | DebugSymbols::Strip => (false, false),
         DebugSymbols::Separate { compress } => (true, compress),
     };
 
-    let added_debug_assets = options.deb.built_binaries_mut().into_par_iter().enumerate()
+    let added_debug_assets = config.deb.built_binaries_mut().into_par_iter().enumerate()
         .filter(|(_, asset)| !asset.source.archive_as_symlink_only()) // data won't be included, so nothing to strip
         .map(|(i, asset)| {
         let (new_source, new_debug_asset) = match asset.source.path() {
@@ -332,7 +332,7 @@ pub fn strip_binaries(options: &mut Config, target: Option<&str>, listener: &dyn
         Ok::<_, CargoDebError>(new_debug_asset)
     }).collect::<Result<Vec<_>, _>>()?;
 
-    options.deb.assets.resolved
+    config.deb.assets.resolved
         .extend(added_debug_assets.into_iter().filter_map(|debug_file| debug_file));
 
     Ok(())
