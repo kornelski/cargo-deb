@@ -3,7 +3,7 @@ use crate::dh::dh_installsystemd;
 use crate::dh::dh_lib;
 use crate::error::{CDResult, CargoDebError};
 use crate::listener::Listener;
-use crate::tararchive::Archive;
+use crate::deb::tar::Tarball;
 use crate::util::{is_path_file, read_file_to_bytes};
 use dh_lib::ScriptFragments;
 use std::fs;
@@ -11,14 +11,14 @@ use std::io::Write;
 use std::path::Path;
 
 pub struct ControlArchiveBuilder<'l, W: Write> {
-    archive: Archive<W>,
+    archive: Tarball<W>,
     listener: &'l dyn Listener,
 }
 
 impl<'l, W: Write> ControlArchiveBuilder<'l, W> {
     pub fn new(dest: W, time: u64, listener: &'l dyn Listener) -> Self {
         Self {
-            archive: Archive::new(dest, time),
+            archive: Tarball::new(dest, time),
             listener,
         }
     }

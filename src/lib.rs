@@ -26,9 +26,9 @@ The library interface is experimental. See `main.rs` for usage.
 
 pub mod compress;
 pub mod deb {
-    pub mod archive;
+    pub mod ar;
+    pub mod tar;
     pub mod control;
-    pub mod data;
 }
 #[macro_use]
 mod util;
@@ -42,19 +42,18 @@ pub(crate) mod parse {
     pub(crate) mod manifest;
 }
 pub use crate::assets::{Config, Package};
-pub use crate::deb::archive::DebArchive;
+pub use crate::deb::ar::DebArchive;
 pub use crate::error::*;
 
 pub mod assets;
 mod dependencies;
 mod error;
-pub mod tararchive;
 
 use crate::assets::{Asset, AssetSource, DebugSymbols, IsBuilt, ProcessedFrom};
 use crate::compress::CompressConfig;
 use crate::deb::control::ControlArchiveBuilder;
 use crate::listener::Listener;
-use crate::tararchive::Archive;
+use crate::deb::tar::Tarball;
 use rayon::prelude::*;
 use std::env;
 use std::fs;
@@ -88,7 +87,7 @@ pub fn write_deb(config: &Config, &CompressConfig { fast, compress_type, compres
         move || {
             // Initialize the contents of the data archive (files that go into the filesystem).
             let dest = compress::select_compressor(fast, compress_type, compress_system)?;
-            let archive = Archive::new(dest, config.deb.default_timestamp);
+            let archive = Tarball::new(dest, config.deb.default_timestamp);
             let (compressed, asset_hashes) = archive.archive_files(config, rsyncable, listener)?;
             let sums = config.deb.generate_sha256sums(&asset_hashes)?;
             let original_data_size = compressed.uncompressed_size;
@@ -111,16 +110,18 @@ pub fn write_deb(config: &Config, &CompressConfig { fast, compress_type, compres
     ));
     deb_contents.add_data(data_compressed)?;
     let generated = deb_contents.finish()?;
-    remove_deb_temp_directory(config);
+
+    let deb_temp_dir = config.deb_temp_dir();
+    let _ = fs::remove_dir(deb_temp_dir);
 
     Ok(generated)
 }
 
 /// Creates empty (removes files if needed) target/debian/foo directory so that we can start fresh.
-pub fn reset_deb_temp_directory(config: &Config) -> io::Result<()> {
+fn reset_deb_temp_directory(config: &Config) -> io::Result<()> {
     let deb_dir = config.default_deb_output_dir();
     let deb_temp_dir = config.deb_temp_dir();
-    remove_deb_temp_directory(config);
+    let _ = fs::remove_dir(&deb_temp_dir);
     // For backwards compatibility with previous cargo-deb behavior, also delete .deb from target/debian,
     // but this time only debs from other versions of the same package
     let g = deb_dir.join(config.deb.filename_glob());
@@ -130,12 +131,6 @@ pub fn reset_deb_temp_directory(config: &Config) -> io::Result<()> {
         }
     }
     fs::create_dir_all(deb_temp_dir)
-}
-
-/// Removes the target/debian/foo
-pub(crate) fn remove_deb_temp_directory(config: &Config) {
-    let deb_temp_dir = config.deb_temp_dir();
-    let _ = fs::remove_dir(deb_temp_dir);
 }
 
 /// Builds a binary with `cargo build`

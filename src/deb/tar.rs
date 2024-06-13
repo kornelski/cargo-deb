@@ -12,13 +12,14 @@ use std::sync::mpsc;
 use tar::EntryType;
 use tar::Header as TarHeader;
 
-pub(crate) struct Archive<W: Write> {
+/// Tarball for control and data files
+pub(crate) struct Tarball<W: Write> {
     added_directories: HashSet<PathBuf>,
     time: u64,
     tar: tar::Builder<W>,
 }
 
-impl<W: Write> Archive<W> {
+impl<W: Write> Tarball<W> {
     pub fn new(dest: W, time: u64) -> Self {
         Self {
             added_directories: HashSet::new(),

@@ -1,9 +1,8 @@
 #![allow(clippy::redundant_closure_for_method_calls)]
 
-use cargo_deb::assets::Config;
-use cargo_deb::assets::DebugSymbols;
-use cargo_deb::compress::CompressConfig;
-use cargo_deb::*;
+use cargo_deb::assets::{compress_assets, Config, DebugSymbols};
+use cargo_deb::compress::{self, CompressConfig};
+use cargo_deb::{CDResult, CargoDebError, cargo_build, install_deb, listener, strip_binaries, write_deb};
 use std::env;
 use std::path::Path;
 use std::process::ExitCode;
@@ -250,7 +249,6 @@ fn process(
         separate_debug_symbols,
         compress_debug_symbols,
     )?;
-    reset_deb_temp_directory(&config)?;
 
     config.extend_cargo_build_flags(&mut cargo_build_flags);
 
@@ -260,7 +258,7 @@ fn process(
 
     config.resolve_assets()?;
 
-    deb::data::compress_assets(&mut config, listener)?;
+    compress_assets(&mut config, listener)?;
 
     if strip_override.unwrap_or(config.debug_symbols != DebugSymbols::Keep) {
         strip_binaries(&mut config, target, listener)?;
