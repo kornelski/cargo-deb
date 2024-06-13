@@ -47,12 +47,8 @@ pub(crate) fn manifest_license_file(package: &cargo_toml::Package<CargoPackageMe
             } else {0};
             (file.map(|s|s.into()), lines)
         },
-        Some(LicenseFile::String(s)) => {
-            (Some(s.into()), 0)
-        }
-        None => {
-            (package.license_file().as_ref().map(|s| s.into()), 0)
-        }
+        Some(LicenseFile::String(s)) => (Some(s.into()), 0),
+        None => (package.license_file().as_ref().map(|s| s.into()), 0),
     })
 }
 
@@ -343,7 +339,7 @@ pub(crate) struct ManifestFound {
     pub root_manifest: Option<cargo_toml::Manifest<CargoPackageMetadata>>,
     pub target_dir: PathBuf,
     pub default_timestamp: u64,
-    pub manifest: cargo_toml::Manifest<CargoPackageMetadata>
+    pub manifest: cargo_toml::Manifest<CargoPackageMetadata>,
 }
 
 pub fn cargo_metadata(root_manifest_path: Option<&Path>, selected_package_name: Option<&str>) -> Result<ManifestFound, CargoDebError> {
@@ -388,7 +384,8 @@ pub fn cargo_metadata(root_manifest_path: Option<&Path>, selected_package_name: 
         targets: target_package.targets,
         root_manifest,
         target_dir,
-        default_timestamp, manifest
+        default_timestamp,
+        manifest,
     })
 }
 
@@ -434,7 +431,7 @@ mod tests {
         let merge_asset = create_test_asset(
             "lib/test_variant/empty.txt",
             "/opt/test/empty.txt",
-            "655"
+            "655",
         );
 
         let parent = CargoDeb { assets: Some(vec![ original_asset ]), .. Default::default() };
@@ -457,7 +454,7 @@ mod tests {
         let merge_asset = create_test_asset(
             "lib/test/empty.txt",
             "/opt/test_variant/empty.txt",
-            "655"
+            "655",
         );
 
         let parent = CargoDeb { assets: Some(vec![ original_asset ]), .. Default::default() };
@@ -480,7 +477,7 @@ mod tests {
         let merge_asset = create_test_asset(
             "lib/test/empty.txt",
             "/opt/test_variant/empty.txt",
-            "655"
+            "655",
         );
         
         let parent = CargoDeb { assets: Some(vec![ original_asset ]), .. Default::default() };
@@ -488,7 +485,7 @@ mod tests {
         
         let merged = variant.inherit_from(parent);
         let mut merged = merged.assets.expect("should have assets");
-        
+
         let merged_asset = merged.pop().expect("should have an asset");
         assert_eq!("lib/test/empty.txt", merged_asset[0].as_str(), "should have merged the source location");
         assert_eq!("/opt/test_variant/empty.txt", merged_asset[1].as_str(), "should preserve dest location");

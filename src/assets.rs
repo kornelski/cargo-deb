@@ -1105,79 +1105,79 @@ fn manifest_extended_description(desc: Option<String>, desc_file: Option<&Path>)
 }
 
 impl Config {
-fn take_assets(&mut self, package: &cargo_toml::Package<CargoPackageMetadata>, assets: Option<Vec<Vec<String>>>, build_targets: &[CargoMetadataTarget], profile: &str, listener: &dyn Listener) -> CDResult<()> {
-    let assets = if let Some(assets) = assets {
-        let profile_target_dir = format!("target/{profile}");
-        // Treat all explicit assets as unresolved until after the build step
-        let mut unresolved_assets = Vec::with_capacity(assets.len());
-        for mut asset_line in assets {
-            let mut asset_parts = asset_line.drain(..);
-            let source_path = PathBuf::from(asset_parts.next()
-                .ok_or("missing path (first array entry) for asset in Cargo.toml")?);
-            if source_path.starts_with("target/debug/") {
-                listener.warning(format!("Packaging of development-only binaries is intentionally unsupported in cargo-deb.
-Please only use `target/release/` directory for built products, not `{}`.
-To add debug information or additional assertions use `[profile.release]` in `Cargo.toml` instead.
-This will be hard error in a future release of cargo-deb.", source_path.display()));
-            }
-            // target/release is treated as a magic prefix that resolves to any profile
-            let (is_built, source_path, is_example) = if let Ok(rel_path) = source_path.strip_prefix("target/release").or_else(|_| source_path.strip_prefix(&profile_target_dir)) {
-                let is_example = rel_path.starts_with("examples");
-
-                (self.find_is_built_file_in_package(rel_path, build_targets, if is_example { "example" } else { "bin" }), self.path_in_build(rel_path, profile), is_example)
-            } else {
-                (IsBuilt::No, self.path_in_package(&source_path), false)
-            };
-            let target_path = PathBuf::from(asset_parts.next().ok_or("missing target (second array entry) for asset in Cargo.toml. Use something like \"usr/local/bin/\".")?);
-            let chmod = u32::from_str_radix(&asset_parts.next().ok_or("missing chmod (third array entry) for asset in Cargo.toml. Use an octal string like \"777\".")?, 8)
-                .map_err(|e| CargoDebError::NumParse("unable to parse chmod argument", e))?;
-
-            unresolved_assets.push(UnresolvedAsset {
-                source_path,
-                c: AssetCommon { target_path, chmod, is_built, is_example },
-            });
-        }
-        Assets::with_unresolved_assets(unresolved_assets)
-    } else {
-        let mut implied_assets: Vec<_> = build_targets.iter()
-            .filter_map(|t| {
-                if t.crate_types.iter().any(|ty| ty == "bin") && t.kind.iter().any(|k| k == "bin") {
-                    Some(Asset::new(
-                        AssetSource::Path(self.path_in_build(&t.name, profile)),
-                        Path::new("usr/bin").join(&t.name),
-                        0o755,
-                        self.is_built_file_in_package(t),
-                        false,
-                    ))
-                } else if t.crate_types.iter().any(|ty| ty == "cdylib") && t.kind.iter().any(|k| k == "cdylib") {
-                    // FIXME: std has constants for the host arch, but not for cross-compilation
-                    let lib_name = format!("{DLL_PREFIX}{}{DLL_SUFFIX}", t.name);
-                    Some(Asset::new(
-                        AssetSource::Path(self.path_in_build(&lib_name, profile)),
-                        Path::new("usr/lib").join(lib_name),
-                        0o644,
-                        self.is_built_file_in_package(t),
-                        false,
-                    ))
-                } else {
-                    None
+    fn take_assets(&mut self, package: &cargo_toml::Package<CargoPackageMetadata>, assets: Option<Vec<Vec<String>>>, build_targets: &[CargoMetadataTarget], profile: &str, listener: &dyn Listener) -> CDResult<()> {
+        let assets = if let Some(assets) = assets {
+            let profile_target_dir = format!("target/{profile}");
+            // Treat all explicit assets as unresolved until after the build step
+            let mut unresolved_assets = Vec::with_capacity(assets.len());
+            for mut asset_line in assets {
+                let mut asset_parts = asset_line.drain(..);
+                let source_path = PathBuf::from(asset_parts.next()
+                    .ok_or("missing path (first array entry) for asset in Cargo.toml")?);
+                if source_path.starts_with("target/debug/") {
+                    listener.warning(format!("Packaging of development-only binaries is intentionally unsupported in cargo-deb.
+    Please only use `target/release/` directory for built products, not `{}`.
+    To add debug information or additional assertions use `[profile.release]` in `Cargo.toml` instead.
+    This will be hard error in a future release of cargo-deb.", source_path.display()));
                 }
-            })
-            .collect();
-        if let Some(readme_rel_path) = package.readme().as_path() {
-            let path = self.path_in_package(readme_rel_path);
-            let target_path = Path::new("usr/share/doc")
-                .join(&package.name)
-                .join(path.file_name().ok_or("bad README path")?);
-            implied_assets.push(Asset::new(AssetSource::Path(path), target_path, 0o644, IsBuilt::No, false));
+                // target/release is treated as a magic prefix that resolves to any profile
+                let (is_built, source_path, is_example) = if let Ok(rel_path) = source_path.strip_prefix("target/release").or_else(|_| source_path.strip_prefix(&profile_target_dir)) {
+                    let is_example = rel_path.starts_with("examples");
+
+                    (self.find_is_built_file_in_package(rel_path, build_targets, if is_example { "example" } else { "bin" }), self.path_in_build(rel_path, profile), is_example)
+                } else {
+                    (IsBuilt::No, self.path_in_package(&source_path), false)
+                };
+                let target_path = PathBuf::from(asset_parts.next().ok_or("missing target (second array entry) for asset in Cargo.toml. Use something like \"usr/local/bin/\".")?);
+                let chmod = u32::from_str_radix(&asset_parts.next().ok_or("missing chmod (third array entry) for asset in Cargo.toml. Use an octal string like \"777\".")?, 8)
+                    .map_err(|e| CargoDebError::NumParse("unable to parse chmod argument", e))?;
+
+                unresolved_assets.push(UnresolvedAsset {
+                    source_path,
+                    c: AssetCommon { target_path, chmod, is_built, is_example },
+                });
+            }
+            Assets::with_unresolved_assets(unresolved_assets)
+        } else {
+            let mut implied_assets: Vec<_> = build_targets.iter()
+                .filter_map(|t| {
+                    if t.crate_types.iter().any(|ty| ty == "bin") && t.kind.iter().any(|k| k == "bin") {
+                        Some(Asset::new(
+                            AssetSource::Path(self.path_in_build(&t.name, profile)),
+                            Path::new("usr/bin").join(&t.name),
+                            0o755,
+                            self.is_built_file_in_package(t),
+                            false,
+                        ))
+                    } else if t.crate_types.iter().any(|ty| ty == "cdylib") && t.kind.iter().any(|k| k == "cdylib") {
+                        // FIXME: std has constants for the host arch, but not for cross-compilation
+                        let lib_name = format!("{DLL_PREFIX}{}{DLL_SUFFIX}", t.name);
+                        Some(Asset::new(
+                            AssetSource::Path(self.path_in_build(&lib_name, profile)),
+                            Path::new("usr/lib").join(lib_name),
+                            0o644,
+                            self.is_built_file_in_package(t),
+                            false,
+                        ))
+                    } else {
+                        None
+                    }
+                })
+                .collect();
+            if let Some(readme_rel_path) = package.readme().as_path() {
+                let path = self.path_in_package(readme_rel_path);
+                let target_path = Path::new("usr/share/doc")
+                    .join(&package.name)
+                    .join(path.file_name().ok_or("bad README path")?);
+                implied_assets.push(Asset::new(AssetSource::Path(path), target_path, 0o644, IsBuilt::No, false));
+            }
+            Assets::with_resolved_assets(implied_assets)
+        };
+        if assets.is_empty() {
+            return Err("No binaries or cdylibs found. The package is empty. Please specify some assets to package in Cargo.toml".into());
         }
-        Assets::with_resolved_assets(implied_assets)
-    };
-    if assets.is_empty() {
-        return Err("No binaries or cdylibs found. The package is empty. Please specify some assets to package in Cargo.toml".into());
-    }
-    self.deb.assets = assets;
-    Ok(())
+        self.deb.assets = assets;
+        Ok(())
     }
 
     fn find_is_built_file_in_package(&self, rel_path: &Path, build_targets: &[CargoMetadataTarget], expected_kind: &str) -> IsBuilt {
