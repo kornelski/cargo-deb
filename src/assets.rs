@@ -1,21 +1,28 @@
 use crate::deb::data;
 use crate::debian_architecture_from_rust_triple;
 use crate::dependencies::resolve;
+use crate::dh::dh_installsystemd;
 use crate::error::{CDResult, CargoDebError};
 use crate::listener::Listener;
-use crate::util::ok_or::OkOrThen;
 use crate::parse::config::CargoConfig;
-use crate::parse::manifest::{cargo_metadata, manifest_debug_flag, manifest_license_file, manifest_version_string};
-use crate::parse::manifest::{CargoDeb, CargoMetadataPackage, CargoMetadataTarget, CargoPackageMetadata};
+use crate::parse::manifest::{
+    cargo_metadata, manifest_debug_flag, manifest_license_file, manifest_version_string,
+};
+use crate::parse::manifest::{
+    CargoDeb, CargoMetadataPackage, CargoMetadataTarget, CargoPackageMetadata,
+};
 use crate::parse::manifest::{DependencyList, SystemUnitsSingleOrMultiple, SystemdUnitsConfig};
+use crate::util::ok_or::OkOrThen;
 use crate::util::pathbytes::AsUnixPathBytes;
 use crate::util::read_file_to_bytes;
-use crate::dh::dh_installsystemd;
+use crate::util::wordsplit::WordSplit;
 use rayon::prelude::*;
 use std::borrow::Cow;
+use std::collections::HashMap;
 use std::collections::HashSet;
 use std::env::consts::{DLL_PREFIX, DLL_SUFFIX, EXE_SUFFIX};
 use std::fs;
+use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::time::SystemTime;
@@ -308,6 +315,17 @@ pub struct Config {
     pub target: Option<String>,
     /// `CARGO_TARGET_DIR`
     pub target_dir: PathBuf,
+    /// List of Cargo features to use during build
+    pub features: Vec<String>,
+    pub default_features: bool,
+    /// Should the binary be stripped from debug symbols?
+    pub debug_symbols: DebugSymbols,
+    pub deb: Package,
+}
+
+#[derive(Debug)]
+#[non_exhaustive]
+pub struct Package {
     /// The name of the project to build
     pub name: String,
     /// The name to give the Debian package; usually the same as the Cargo project name
@@ -379,16 +397,10 @@ pub struct Config {
     pub triggers_file: Option<PathBuf>,
     /// The path where possible maintainer scripts live
     pub maintainer_scripts: Option<PathBuf>,
-    /// List of Cargo features to use during build
-    pub features: Vec<String>,
-    pub default_features: bool,
-    /// Should the binary be stripped from debug symbols?
-    pub debug_symbols: DebugSymbols,
     /// Should symlinks be preserved in the assets
     pub preserve_symlinks: bool,
     /// Details of how to install any systemd units
     pub(crate) systemd_units: Option<Vec<SystemdUnitsConfig>>,
-
     /// unix timestamp for generated files
     pub default_timestamp: u64,
 }
@@ -420,7 +432,7 @@ impl Config {
         selected_profile: &str,
         separate_debug_symbols: Option<bool>,
         compress_debug_symbols: Option<bool>,
-    ) -> CDResult<Config> {
+    ) -> CDResult<Self> {
         let metadata = cargo_metadata(root_manifest_path)?;
         let available_package_names = || {
             metadata.packages.iter()
@@ -557,12 +569,13 @@ impl Config {
             deb.extended_description_file.as_ref().map(Path::new).or(extended_description_file.as_deref()),
         )?;
 
-        let mut config = Config {
-            default_timestamp,
+        let mut config = Self {
             package_manifest_dir: package_manifest_dir.to_owned(),
             deb_output_path,
             target: target.map(|t| t.to_string()),
             target_dir,
+            deb: Package {
+            default_timestamp,
             name: package.name.clone(),
             deb_name: deb.name.take().unwrap_or_else(|| debian_package_name(&package.name)),
             deb_version: deb_version.unwrap_or_else(|| manifest_version_string(package, deb_revision.or(deb.revision).as_deref()).into_owned()),
@@ -601,15 +614,16 @@ impl Config {
             triggers_file: deb.triggers_file.map(PathBuf::from),
             changelog: deb.changelog.take(),
             maintainer_scripts: deb.maintainer_scripts.map(PathBuf::from),
-            features: deb.features.take().unwrap_or_default(),
-            default_features: deb.default_features.unwrap_or(true),
-            debug_symbols,
             preserve_symlinks: deb.preserve_symlinks.unwrap_or(false),
             systemd_units: match deb.systemd_units {
                 None => None,
                 Some(SystemUnitsSingleOrMultiple::Single(s)) => Some(vec![s]),
                 Some(SystemUnitsSingleOrMultiple::Multi(v)) => Some(v),
             },
+            },
+            features: deb.features.take().unwrap_or_default(),
+            default_features: deb.default_features.unwrap_or(true),
+            debug_symbols,
         };
         config.take_assets(package, deb.assets.take(), &cargo_metadata.targets, selected_profile, listener)?;
         config.add_copyright_asset()?;
@@ -621,10 +635,10 @@ impl Config {
 
     pub(crate) fn get_dependencies(&self, listener: &dyn Listener) -> CDResult<String> {
         let mut deps = HashSet::new();
-        for word in self.depends.split(',') {
+        for word in self.deb.depends.split(',') {
             let word = word.trim();
             if word == "$auto" {
-                let bin = self.all_binaries();
+                let bin = self.deb.all_binaries();
                 let resolved = bin.par_iter()
                     .filter(|bin| !bin.archive_as_symlink_only())
                     .filter_map(|p| p.path())
@@ -642,7 +656,7 @@ impl Config {
             } else {
                 let (dep, arch_spec) = get_architecture_specification(word)?;
                 if let Some(spec) = arch_spec {
-                    if match_architecture(spec, &self.architecture)? {
+                    if match_architecture(spec, &self.deb.architecture)? {
                         deps.insert(dep);
                     }
                 } else {
@@ -658,7 +672,7 @@ impl Config {
             return;
         }
 
-        for a in self.assets.unresolved.iter().filter(|a| a.c.is_built != IsBuilt::No) {
+        for a in self.deb.assets.unresolved.iter().filter(|a| a.c.is_built != IsBuilt::No) {
             if is_glob_pattern(&a.source_path) {
                 log::debug!("building entire workspace because of glob {}", a.source_path.display());
                 flags.push("--workspace".into());
@@ -670,8 +684,8 @@ impl Config {
         let mut build_examples = vec![];
         let mut build_libs = false;
         let mut same_package = true;
-        let resolved = self.assets.resolved.iter().map(|a| (&a.c, a.source.path()));
-        let unresolved = self.assets.unresolved.iter().map(|a| (&a.c, Some(a.source_path.as_ref())));
+        let resolved = self.deb.assets.resolved.iter().map(|a| (&a.c, a.source.path()));
+        let unresolved = self.deb.assets.unresolved.iter().map(|a| (&a.c, Some(a.source_path.as_ref())));
         for (asset_target, source_path) in resolved.chain(unresolved).filter(|(c,_)| c.is_built != IsBuilt::No) {
             if asset_target.is_built != IsBuilt::SamePackage {
                 log::debug!("building workspace because {} is from another package", source_path.unwrap_or(&asset_target.target_path).display());
@@ -710,7 +724,7 @@ impl Config {
     }
 
     pub fn resolve_assets(&mut self) -> CDResult<()> {
-        for UnresolvedAsset { source_path, c: AssetCommon { target_path, chmod, is_built, is_example } } in self.assets.unresolved.drain(..) {
+        for UnresolvedAsset { source_path, c: AssetCommon { target_path, chmod, is_built, is_example } } in self.deb.assets.unresolved.drain(..) {
             let source_prefix: PathBuf = source_path.iter()
                 .take_while(|part| !is_glob_pattern(part.as_ref()))
                 .collect();
@@ -742,8 +756,8 @@ impl Config {
                     target_path.clone()
                 };
                 log::debug!("asset {} -> {} {} {:o}", source_file.display(), target_file.display(), if is_built == IsBuilt::No {"copy"} else {"build"}, chmod);
-                self.assets.resolved.push(Asset::new(
-                    AssetSource::from_path(source_file, self.preserve_symlinks),
+                self.deb.assets.resolved.push(Asset::new(
+                    AssetSource::from_path(source_file, self.deb.preserve_symlinks),
                     target_file,
                     chmod,
                     is_built,
@@ -757,9 +771,9 @@ impl Config {
     pub(crate) fn add_copyright_asset(&mut self) -> CDResult<()> {
         let (source_path, copyright_file) = data::generate_copyright_asset(self)?;
         log::debug!("added copyright via {}", source_path.display());
-        self.assets.resolved.push(Asset::new(
+        self.deb.assets.resolved.push(Asset::new(
             AssetSource::Data(copyright_file),
-            Path::new("usr/share/doc").join(&self.deb_name).join("copyright"),
+            Path::new("usr/share/doc").join(&self.deb.deb_name).join("copyright"),
             0o644,
             IsBuilt::No,
             false,
@@ -769,12 +783,12 @@ impl Config {
 
     fn add_changelog_asset(&mut self) -> CDResult<()> {
         // The file is autogenerated later
-        if self.changelog.is_some() {
+        if self.deb.changelog.is_some() {
             if let Some((source_path, changelog_file)) = data::generate_changelog_asset(self)? {
                 log::debug!("added changelog via {}", source_path.display());
-                self.assets.resolved.push(Asset::new(
+                self.deb.assets.resolved.push(Asset::new(
                     AssetSource::Data(changelog_file),
-                    Path::new("usr/share/doc").join(&self.deb_name).join("changelog.Debian.gz"),
+                    Path::new("usr/share/doc").join(&self.deb.deb_name).join("changelog.Debian.gz"),
                     0o644,
                     IsBuilt::No,
                     false,
@@ -785,20 +799,20 @@ impl Config {
     }
 
     fn add_systemd_assets(&mut self) -> CDResult<()> {
-        if let Some(ref config_vec) = self.systemd_units {
+        if let Some(ref config_vec) = self.deb.systemd_units {
             for config in config_vec {
                 let units_dir_option = config.unit_scripts.as_ref()
-                    .or(self.maintainer_scripts.as_ref());
+                    .or(self.deb.maintainer_scripts.as_ref());
                 if let Some(unit_dir) = units_dir_option {
                     let search_path = self.path_in_package(unit_dir);
-                    let package = &self.name;
+                    let package = &self.deb.name;
                     let unit_name = config.unit_name.as_deref();
 
                     let units = dh_installsystemd::find_units(&search_path, package, unit_name);
 
                     for (source, target) in units {
-                        self.assets.resolved.push(Asset::new(
-                            AssetSource::from_path(source, self.preserve_symlinks), // should this even support symlinks at all?
+                        self.deb.assets.resolved.push(Asset::new(
+                            AssetSource::from_path(source, self.deb.preserve_symlinks), // should this even support symlinks at all?
                             target.path,
                             target.mode,
                             IsBuilt::No,
@@ -813,6 +827,54 @@ impl Config {
         Ok(())
     }
 
+    pub(crate) fn path_in_build<P: AsRef<Path>>(&self, rel_path: P, profile: &str) -> PathBuf {
+        self.path_in_build_(rel_path.as_ref(), profile)
+    }
+
+    pub(crate) fn path_in_build_(&self, rel_path: &Path, profile: &str) -> PathBuf {
+        let profile = match profile {
+            "dev" => "debug",
+            p => p,
+        };
+
+        let mut path = self.target_dir.join(profile);
+        path.push(rel_path);
+        path
+    }
+
+    pub(crate) fn path_in_package<P: AsRef<Path>>(&self, rel_path: P) -> PathBuf {
+        self.package_manifest_dir.join(rel_path)
+    }
+
+    /// Store intermediate files here
+    pub(crate) fn deb_temp_dir(&self) -> PathBuf {
+        self.target_dir.join("debian").join(&self.deb.name)
+    }
+
+    /// Save final .deb here
+    pub(crate) fn deb_output_path(&self, filename: &str) -> PathBuf {
+        if let Some(ref path_str) = self.deb_output_path {
+            let path = Path::new(path_str);
+            if path_str.ends_with('/') || path.is_dir() {
+                path.join(filename)
+            } else {
+                path.to_owned()
+            }
+        } else {
+            self.default_deb_output_dir().join(filename)
+        }
+    }
+
+    pub(crate) fn default_deb_output_dir(&self) -> PathBuf {
+        self.target_dir.join("debian")
+    }
+
+    pub(crate) fn cargo_config(&self) -> CDResult<Option<CargoConfig>> {
+        CargoConfig::new(&self.package_manifest_dir)
+    }
+}
+
+impl Package {
     /// Executables AND dynamic libraries. May include symlinks.
     fn all_binaries(&self) -> Vec<&AssetSource> {
         self.assets.resolved.iter()
@@ -824,6 +886,7 @@ impl Config {
             .collect()
     }
 
+
     /// Executables AND dynamic libraries, but only in `target/release`
     pub(crate) fn built_binaries_mut(&mut self) -> Vec<&mut Asset> {
         self.assets.resolved.iter_mut()
@@ -832,6 +895,133 @@ impl Config {
                 asset.c.is_built != IsBuilt::No && (asset.c.is_dynamic_library() || asset.c.is_executable())
             })
             .collect()
+    }
+
+
+    /// similar files next to each other improve tarball compression
+    pub fn sort_assets_by_type(&mut self) {
+        self.assets.resolved.sort_by(|a,b| {
+            a.c.is_executable().cmp(&b.c.is_executable())
+            .then(a.c.is_dynamic_library().cmp(&b.c.is_dynamic_library()))
+            .then(a.c.target_path.extension().cmp(&b.c.target_path.extension()))
+            .then(a.c.target_path.cmp(&b.c.target_path))
+        });
+    }
+
+    /// Creates the sha256sums file which contains a list of all contained files and the sha256sums of each.
+    pub fn generate_sha256sums(&self, asset_hashes: HashMap<PathBuf, [u8; 32]>) -> CDResult<Vec<u8>> {
+        let mut sha256sums: Vec<u8> = Vec::with_capacity(self.assets.resolved.len() * 80);
+
+        // Collect sha256sums from each asset in the archive (excludes symlinks).
+        for asset in &self.assets.resolved {
+            if let Some(value) = asset_hashes.get(&asset.c.target_path) {
+                for &b in value {
+                    write!(sha256sums, "{b:02x}")?;
+                }
+                sha256sums.write_all(b"  ")?;
+
+                sha256sums.write_all(&asset.c.target_path.as_path().as_unix_path())?;
+                sha256sums.write_all(b"\n")?;
+            }
+        }
+        Ok(sha256sums)
+    }
+
+    /// Generates the control file that obtains all the important information about the package.
+    pub fn generate_control(&self, deps: &str) -> CDResult<Vec<u8>> {
+        // Create and return the handle to the control file with write access.
+        let mut control: Vec<u8> = Vec::with_capacity(1024);
+
+        // Write all of the lines required by the control file.
+        writeln!(&mut control, "Package: {}", self.deb_name)?;
+        writeln!(&mut control, "Version: {}", self.deb_version)?;
+        writeln!(&mut control, "Architecture: {}", self.architecture)?;
+        if let Some(ref repo) = self.repository {
+            if repo.starts_with("http") {
+                writeln!(&mut control, "Vcs-Browser: {repo}")?;
+            }
+            if let Some(kind) = self.repository_type() {
+                writeln!(&mut control, "Vcs-{kind}: {repo}")?;
+            }
+        }
+        if let Some(homepage) = self.homepage.as_ref().or(self.documentation.as_ref()) {
+            writeln!(&mut control, "Homepage: {homepage}")?;
+        }
+        if let Some(ref section) = self.section {
+            writeln!(&mut control, "Section: {section}")?;
+        }
+        writeln!(&mut control, "Priority: {}", self.priority)?;
+        writeln!(&mut control, "Maintainer: {}", self.maintainer)?;
+
+        let installed_size = self.assets.resolved
+            .iter()
+            .map(|m| (m.source.file_size().unwrap_or(0) + 2047) / 1024) // assume 1KB of fs overhead per file
+            .sum::<u64>();
+
+        writeln!(&mut control, "Installed-Size: {installed_size}")?;
+
+        if !deps.is_empty() {
+            writeln!(&mut control, "Depends: {deps}")?;
+        }
+
+        if let Some(ref pre_depends) = self.pre_depends {
+            let pre_depends_normalized = pre_depends.trim();
+
+            if !pre_depends_normalized.is_empty() {
+                writeln!(&mut control, "Pre-Depends: {pre_depends_normalized}")?;
+            }
+        }
+
+        if let Some(ref recommends) = self.recommends {
+            let recommends_normalized = recommends.trim();
+
+            if !recommends_normalized.is_empty() {
+                writeln!(&mut control, "Recommends: {recommends_normalized}")?;
+            }
+        }
+
+        if let Some(ref suggests) = self.suggests {
+            let suggests_normalized = suggests.trim();
+
+            if !suggests_normalized.is_empty() {
+                writeln!(&mut control, "Suggests: {suggests_normalized}")?;
+            }
+        }
+
+        if let Some(ref enhances) = self.enhances {
+            let enhances_normalized = enhances.trim();
+
+            if !enhances_normalized.is_empty() {
+                writeln!(&mut control, "Enhances: {enhances_normalized}")?;
+            }
+        }
+
+        if let Some(ref conflicts) = self.conflicts {
+            writeln!(&mut control, "Conflicts: {conflicts}")?;
+        }
+        if let Some(ref breaks) = self.breaks {
+            writeln!(&mut control, "Breaks: {breaks}")?;
+        }
+        if let Some(ref replaces) = self.replaces {
+            writeln!(&mut control, "Replaces: {replaces}")?;
+        }
+        if let Some(ref provides) = self.provides {
+            writeln!(&mut control, "Provides: {provides}")?;
+        }
+
+        write!(&mut control, "Description:")?;
+        for line in self.description.split_by_chars(79) {
+            writeln!(&mut control, " {line}")?;
+        }
+
+        if let Some(ref desc) = self.extended_description {
+            for line in desc.split_by_chars(79) {
+                writeln!(&mut control, " {line}")?;
+            }
+        }
+        control.push(10);
+
+        Ok(control)
     }
 
     /// Tries to guess type of source control used for the repo URL.
@@ -859,62 +1049,6 @@ impl Config {
             return None;
         }
         None
-    }
-
-    pub(crate) fn path_in_build<P: AsRef<Path>>(&self, rel_path: P, profile: &str) -> PathBuf {
-        self.path_in_build_(rel_path.as_ref(), profile)
-    }
-
-    pub(crate) fn path_in_build_(&self, rel_path: &Path, profile: &str) -> PathBuf {
-        let profile = match profile {
-            "dev" => "debug",
-            p => p,
-        };
-
-        let mut path = self.target_dir.join(profile);
-        path.push(rel_path);
-        path
-    }
-
-    pub(crate) fn path_in_package<P: AsRef<Path>>(&self, rel_path: P) -> PathBuf {
-        self.package_manifest_dir.join(rel_path)
-    }
-
-    /// Store intermediate files here
-    pub(crate) fn deb_temp_dir(&self) -> PathBuf {
-        self.target_dir.join("debian").join(&self.name)
-    }
-
-    /// Save final .deb here
-    pub(crate) fn deb_output_path(&self, filename: &str) -> PathBuf {
-        if let Some(ref path_str) = self.deb_output_path {
-            let path = Path::new(path_str);
-            if path_str.ends_with('/') || path.is_dir() {
-                path.join(filename)
-            } else {
-                path.to_owned()
-            }
-        } else {
-            self.default_deb_output_dir().join(filename)
-        }
-    }
-
-    pub(crate) fn default_deb_output_dir(&self) -> PathBuf {
-        self.target_dir.join("debian")
-    }
-
-    pub(crate) fn cargo_config(&self) -> CDResult<Option<CargoConfig>> {
-        CargoConfig::new(&self.package_manifest_dir)
-    }
-
-    /// similar files next to each other improve tarball compression
-    pub fn sort_assets_by_type(&mut self) {
-        self.assets.resolved.sort_by(|a,b| {
-            a.c.is_executable().cmp(&b.c.is_executable())
-            .then(a.c.is_dynamic_library().cmp(&b.c.is_dynamic_library()))
-            .then(a.c.target_path.extension().cmp(&b.c.target_path.extension()))
-            .then(a.c.target_path.cmp(&b.c.target_path))
-        });
     }
 }
 
@@ -1033,9 +1167,10 @@ This will be hard error in a future release of cargo-deb.", source_path.display(
     if assets.is_empty() {
         return Err("No binaries or cdylibs found. The package is empty. Please specify some assets to package in Cargo.toml".into());
     }
-    self.assets = assets;
+    self.deb.assets = assets;
     Ok(())
-}
+    }
+
     fn find_is_built_file_in_package(&self, rel_path: &Path, build_targets: &[CargoMetadataTarget], expected_kind: &str) -> IsBuilt {
         let source_name = rel_path.file_name().expect("asset filename").to_str().expect("utf-8 names");
         let source_name = source_name.strip_suffix(EXE_SUFFIX).unwrap_or(source_name);
@@ -1178,7 +1313,7 @@ mod tests {
 
         let config = Config::from_manifest(Some(Path::new("Cargo.toml")), None, None, None, None, None, None, &mock_listener, "release", None, None).unwrap();
 
-        let num_unit_assets = config.assets.resolved.iter()
+        let num_unit_assets = config.deb.assets.resolved.iter()
             .filter(|a| a.c.target_path.starts_with("lib/systemd/system/"))
             .count();
 
@@ -1195,12 +1330,12 @@ mod tests {
 
         let mut config = Config::from_manifest(Some(Path::new("Cargo.toml")), None, None, None, None, None, None, &mock_listener, "release", None, None).unwrap();
 
-        config.systemd_units.get_or_insert(vec![SystemdUnitsConfig::default()]);
-        config.maintainer_scripts.get_or_insert(PathBuf::new());
+        config.deb.systemd_units.get_or_insert(vec![SystemdUnitsConfig::default()]);
+        config.deb.maintainer_scripts.get_or_insert(PathBuf::new());
 
         config.add_systemd_assets().unwrap();
 
-        let num_unit_assets = config.assets.resolved
+        let num_unit_assets = config.deb.assets.resolved
             .iter()
             .filter(|a| a.c.target_path.starts_with("lib/systemd/system/"))
             .count();

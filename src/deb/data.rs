@@ -2,6 +2,7 @@ use crate::assets::{Asset, AssetSource, Config, IsBuilt};
 use crate::error::{CDResult, CargoDebError};
 use crate::listener::Listener;
 use crate::tararchive::Archive;
+use crate::Package;
 use sha2::{Digest, Sha256};
 use std::collections::HashMap;
 use std::fs;
@@ -21,7 +22,7 @@ pub fn generate_archive<W: Write>(dest: W, options: &Config, time: u64, rsyncabl
 
 /// Generates compressed changelog file
 pub(crate) fn generate_changelog_asset(options: &Config) -> CDResult<Option<(PathBuf, Vec<u8>)>> {
-    if let Some(ref path) = options.changelog {
+    if let Some(ref path) = options.deb.changelog {
         let source_path = options.path_in_package(path);
         let changelog = fs::read(&source_path)
             .and_then(|content| {
@@ -39,7 +40,7 @@ pub(crate) fn generate_changelog_asset(options: &Config) -> CDResult<Option<(Pat
     }
 }
 
-fn append_copyright_metadata(copyright: &mut Vec<u8>, options: &Config) -> Result<(), CargoDebError> {
+fn append_copyright_metadata(copyright: &mut Vec<u8>, options: &Package) -> Result<(), CargoDebError> {
     writeln!(copyright, "Format: https://www.debian.org/doc/packaging-manuals/copyright-format/1.0/")?;
     writeln!(copyright, "Upstream-Name: {}", options.name)?;
     if let Some(source) = options.repository.as_ref().or(options.homepage.as_ref()) {
@@ -56,16 +57,16 @@ fn append_copyright_metadata(copyright: &mut Vec<u8>, options: &Config) -> Resul
 pub(crate) fn generate_copyright_asset(options: &Config) -> CDResult<(PathBuf, Vec<u8>)> {
     let mut copyright: Vec<u8> = Vec::new();
     let source_path;
-    if let Some(ref path) = options.license_file {
+    if let Some(ref path) = options.deb.license_file {
         source_path = options.path_in_package(path);
         let license_string = fs::read_to_string(&source_path)
             .map_err(|e| CargoDebError::IoFile("unable to read license file", e, path.clone()))?;
         if !has_copyright_metadata(&license_string) {
-            append_copyright_metadata(&mut copyright, options)?;
+            append_copyright_metadata(&mut copyright, &options.deb)?;
         }
 
         // Skip the first `A` number of lines and then iterate each line after that.
-        for line in license_string.lines().skip(options.license_file_skip_lines) {
+        for line in license_string.lines().skip(options.deb.license_file_skip_lines) {
             // If the line is a space, add a dot, else write the line.
             if line == " " {
                 copyright.write_all(b" .\n")?;
@@ -76,7 +77,7 @@ pub(crate) fn generate_copyright_asset(options: &Config) -> CDResult<(PathBuf, V
         }
     } else {
         source_path = "Cargo.toml".into();
-        append_copyright_metadata(&mut copyright, options)?;
+        append_copyright_metadata(&mut copyright, &options.deb)?;
     }
 
     Ok((source_path, copyright))
@@ -104,7 +105,7 @@ pub fn compress_assets(options: &mut Config, listener: &dyn Listener) -> CDResul
                 || (path.starts_with("usr/share/info/") && path.ends_with(".info")))
     }
 
-    for (idx, orig_asset) in options.assets.resolved.iter().enumerate() {
+    for (idx, orig_asset) in options.deb.assets.resolved.iter().enumerate() {
         if !orig_asset.c.target_path.starts_with("usr") {
             continue;
         }
@@ -129,10 +130,10 @@ pub fn compress_assets(options: &mut Config, listener: &dyn Listener) -> CDResul
     }
 
     for idx in indices_to_remove.iter().rev() {
-        options.assets.resolved.swap_remove(*idx);
+        options.deb.assets.resolved.swap_remove(*idx);
     }
 
-    options.assets.resolved.append(&mut new_assets);
+    options.deb.assets.resolved.append(&mut new_assets);
 
     Ok(())
 }
@@ -142,7 +143,7 @@ pub fn compress_assets(options: &mut Config, listener: &dyn Listener) -> CDResul
 fn archive_files<W: Write>(archive: &mut Archive<W>, options: &Config, rsyncable: bool, listener: &dyn Listener) -> CDResult<HashMap<PathBuf, [u8; 32]>> {
     let (send, recv) = mpsc::sync_channel(2);
     std::thread::scope(move |s| {
-        let num_items = options.assets.resolved.len();
+        let num_items = options.deb.assets.resolved.len();
         let hash_thread = s.spawn(move || {
             let mut hashes = HashMap::with_capacity(num_items);
             hashes.extend(recv.into_iter().map(|(path, data)| {
@@ -153,8 +154,8 @@ fn archive_files<W: Write>(archive: &mut Archive<W>, options: &Config, rsyncable
         let mut archive_data_added = 0;
         let mut prev_is_built = false;
 
-        debug_assert!(options.assets.unresolved.is_empty());
-        for asset in &options.assets.resolved {
+        debug_assert!(options.deb.assets.unresolved.is_empty());
+        for asset in &options.deb.assets.resolved {
             let mut log_line = format!("{} {}-> {}",
                 asset.processed_from.as_ref().and_then(|p| p.original_path.as_deref())
                     .or(asset.source.path())

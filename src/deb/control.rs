@@ -4,14 +4,11 @@ use crate::dh::dh_lib;
 use crate::error::{CDResult, CargoDebError};
 use crate::listener::Listener;
 use crate::tararchive::Archive;
-use crate::util::pathbytes::AsUnixPathBytes;
-use crate::util::wordsplit::WordSplit;
 use crate::util::{is_path_file, read_file_to_bytes};
 use dh_lib::ScriptFragments;
-use std::collections::HashMap;
 use std::fs;
 use std::io::Write;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 pub struct ControlArchiveBuilder<'l, W: Write> {
     archive: Archive<W>,
@@ -28,12 +25,14 @@ impl<'l, W: Write> ControlArchiveBuilder<'l, W> {
 
     /// Generates an uncompressed tar archive with `control`, `sha256sums`, and others
     pub fn generate_archive(&mut self, options: &Config) -> CDResult<()> {
-        self.generate_control(options)?;
-        if let Some(ref files) = options.conf_files {
+        let deps = options.get_dependencies(self.listener)?;
+
+        self.add_control(&options.deb.generate_control(&deps)?)?;
+        if let Some(ref files) = options.deb.conf_files {
             self.add_conf_files(files)?;
         }
-        self.generate_scripts(options)?;
-        if let Some(ref file) = options.triggers_file {
+        self.generate_scripts(&options)?;
+        if let Some(ref file) = options.deb.triggers_file {
             let triggers_file = &options.package_manifest_dir.as_path().join(file);
             self.add_triggers_file(triggers_file)?;
         }
@@ -62,17 +61,17 @@ impl<'l, W: Write> ControlArchiveBuilder<'l, W> {
     /// contain a `#DEBHELPER#` token at the point where shell script fragments
     /// should be inserted.
     fn generate_scripts(&mut self, option: &Config) -> CDResult<()> {
-        if let Some(ref maintainer_scripts_dir) = option.maintainer_scripts {
+        if let Some(ref maintainer_scripts_dir) = option.deb.maintainer_scripts {
             let maintainer_scripts_dir = option.package_manifest_dir.as_path().join(maintainer_scripts_dir);
             let mut scripts = ScriptFragments::with_capacity(0);
 
-            if let Some(systemd_units_config_vec) = &option.systemd_units {
+            if let Some(systemd_units_config_vec) = &option.deb.systemd_units {
                 for systemd_units_config in systemd_units_config_vec {
                     // Select and populate autoscript templates relevant to the unit
                     // file(s) in this package and the configuration settings chosen.
                     scripts = dh_installsystemd::generate(
-                        &option.name,
-                        &option.assets.resolved,
+                        &option.deb.name,
+                        &option.deb.assets.resolved,
                         &dh_installsystemd::Options::from(systemd_units_config),
                         self.listener,
                     )?;
@@ -85,7 +84,7 @@ impl<'l, W: Write> ControlArchiveBuilder<'l, W> {
                     dh_lib::apply(
                         &maintainer_scripts_dir,
                         &mut scripts,
-                        &option.name,
+                        &option.deb.name,
                         unit_name,
                         self.listener,
                     )?;
@@ -118,125 +117,15 @@ impl<'l, W: Write> ControlArchiveBuilder<'l, W> {
         Ok(())
     }
 
-    /// Creates the sha256sums file which contains a list of all contained files and the sha256sums of each.
-    pub fn generate_sha256sums(&mut self, options: &Config, asset_hashes: HashMap<PathBuf, [u8; 32]>) -> CDResult<()> {
-        let mut sha256sums: Vec<u8> = Vec::with_capacity(options.assets.resolved.len() * 80);
-
-        // Collect sha256sums from each asset in the archive (excludes symlinks).
-        for asset in &options.assets.resolved {
-            if let Some(value) = asset_hashes.get(&asset.c.target_path) {
-                for &b in value {
-                    write!(sha256sums, "{b:02x}")?;
-                }
-                sha256sums.write_all(b"  ")?;
-
-                sha256sums.write_all(&asset.c.target_path.as_path().as_unix_path())?;
-                sha256sums.write_all(b"\n")?;
-            }
-        }
-
+    pub fn add_sha256sums(&mut self, sha256sums: Vec<u8>) -> CDResult<()> {
         // Write the data to the archive
         self.archive.file("./sha256sums", &sha256sums, 0o644)?;
         Ok(())
     }
 
-    /// Generates the control file that obtains all the important information about the package.
-    fn generate_control(&mut self, options: &Config) -> CDResult<()> {
-        // Create and return the handle to the control file with write access.
-        let mut control: Vec<u8> = Vec::with_capacity(1024);
-
-        // Write all of the lines required by the control file.
-        writeln!(&mut control, "Package: {}", options.deb_name)?;
-        writeln!(&mut control, "Version: {}", options.deb_version)?;
-        writeln!(&mut control, "Architecture: {}", options.architecture)?;
-        if let Some(ref repo) = options.repository {
-            if repo.starts_with("http") {
-                writeln!(&mut control, "Vcs-Browser: {repo}")?;
-            }
-            if let Some(kind) = options.repository_type() {
-                writeln!(&mut control, "Vcs-{kind}: {repo}")?;
-            }
-        }
-        if let Some(homepage) = options.homepage.as_ref().or(options.documentation.as_ref()) {
-            writeln!(&mut control, "Homepage: {homepage}")?;
-        }
-        if let Some(ref section) = options.section {
-            writeln!(&mut control, "Section: {section}")?;
-        }
-        writeln!(&mut control, "Priority: {}", options.priority)?;
-        writeln!(&mut control, "Maintainer: {}", options.maintainer)?;
-
-        let installed_size = options.assets.resolved
-            .iter()
-            .map(|m| (m.source.file_size().unwrap_or(0) + 2047) / 1024) // assume 1KB of fs overhead per file
-            .sum::<u64>();
-
-        writeln!(&mut control, "Installed-Size: {installed_size}")?;
-
-        let deps = options.get_dependencies(self.listener)?;
-        if !deps.is_empty() {
-            writeln!(&mut control, "Depends: {deps}")?;
-        }
-
-        if let Some(ref pre_depends) = options.pre_depends {
-            let pre_depends_normalized = pre_depends.trim();
-
-            if !pre_depends_normalized.is_empty() {
-                writeln!(&mut control, "Pre-Depends: {pre_depends_normalized}")?;
-            }
-        }
-
-        if let Some(ref recommends) = options.recommends {
-            let recommends_normalized = recommends.trim();
-
-            if !recommends_normalized.is_empty() {
-                writeln!(&mut control, "Recommends: {recommends_normalized}")?;
-            }
-        }
-
-        if let Some(ref suggests) = options.suggests {
-            let suggests_normalized = suggests.trim();
-
-            if !suggests_normalized.is_empty() {
-                writeln!(&mut control, "Suggests: {suggests_normalized}")?;
-            }
-        }
-
-        if let Some(ref enhances) = options.enhances {
-            let enhances_normalized = enhances.trim();
-
-            if !enhances_normalized.is_empty() {
-                writeln!(&mut control, "Enhances: {enhances_normalized}")?;
-            }
-        }
-
-        if let Some(ref conflicts) = options.conflicts {
-            writeln!(&mut control, "Conflicts: {conflicts}")?;
-        }
-        if let Some(ref breaks) = options.breaks {
-            writeln!(&mut control, "Breaks: {breaks}")?;
-        }
-        if let Some(ref replaces) = options.replaces {
-            writeln!(&mut control, "Replaces: {replaces}")?;
-        }
-        if let Some(ref provides) = options.provides {
-            writeln!(&mut control, "Provides: {provides}")?;
-        }
-
-        write!(&mut control, "Description:")?;
-        for line in options.description.split_by_chars(79) {
-            writeln!(&mut control, " {line}")?;
-        }
-
-        if let Some(ref desc) = options.extended_description {
-            for line in desc.split_by_chars(79) {
-                writeln!(&mut control, " {line}")?;
-            }
-        }
-        control.push(10);
-
-        // Add the control file to the tar archive.
-        self.archive.file("./control", &control, 0o644)?;
+    // Add the control file to the tar archive.
+    fn add_control(&mut self, control: &[u8]) -> CDResult<()> {
+        self.archive.file("./control", control, 0o644)?;
         Ok(())
     }
 
@@ -283,6 +172,8 @@ mod tests {
     use crate::parse::manifest::SystemdUnitsConfig;
     use crate::util::tests::{add_test_fs_paths, set_test_fs_path_content};
     use std::io::prelude::Read;
+    use std::collections::HashMap;
+    use std::path::PathBuf;
 
     fn filename_from_path_str(path: &str) -> String {
         Path::new(path)
@@ -407,7 +298,7 @@ mod tests {
         }
 
         // specify a path relative to the (root or workspace child) package
-        config.maintainer_scripts.get_or_insert(PathBuf::from("debian"));
+        config.deb.maintainer_scripts.get_or_insert(PathBuf::from("debian"));
 
         // generate scripts and store them in the given archive
         in_ar.generate_scripts(&config).unwrap();
@@ -514,14 +405,14 @@ mod tests {
         // make the unit file available for systemd unit processing
         let source = AssetSource::Path(PathBuf::from(service_file));
         let target_path = PathBuf::from(format!("lib/systemd/system/{}", filename_from_path_str(service_file)));
-        config.assets.resolved.push(Asset::new(source, target_path, 0o000, IsBuilt::No, false));
+        config.deb.assets.resolved.push(Asset::new(source, target_path, 0o000, IsBuilt::No, false));
 
         // look in the current dir for maintainer scripts (none, but the systemd
         // unit processing will be skipped if we don't set this)
-        config.maintainer_scripts.get_or_insert(PathBuf::from("debian"));
+        config.deb.maintainer_scripts.get_or_insert(PathBuf::from("debian"));
 
         // enable systemd unit processing
-        config.systemd_units.get_or_insert(vec![SystemdUnitsConfig::default()]);
+        config.deb.systemd_units.get_or_insert(vec![SystemdUnitsConfig::default()]);
 
         // generate scripts and store them in the given archive
         in_ar.generate_scripts(&config).unwrap();

@@ -41,8 +41,8 @@ pub(crate) mod parse {
     pub(crate) mod config;
     pub(crate) mod manifest;
 }
-pub use crate::assets::Config;
-pub use crate::deb::archive::DebArchive;
+pub use crate::assets::{Config, Package};
+pub use crate::deb::archive::Archive;
 pub use crate::error::*;
 
 pub mod assets;
@@ -81,7 +81,7 @@ pub fn reset_deb_temp_directory(options: &Config) -> io::Result<()> {
     remove_deb_temp_directory(options);
     // For backwards compatibility with previous cargo-deb behavior, also delete .deb from target/debian,
     // but this time only debs from other versions of the same package
-    let g = deb_dir.join(DebArchive::filename_glob(options));
+    let g = deb_dir.join(Archive::filename_glob(&options.deb));
     if let Ok(old_files) = glob::glob(g.to_str().expect("utf8 path")) {
         for old_file in old_files.flatten() {
             let _ = fs::remove_file(old_file);
@@ -227,7 +227,7 @@ pub fn strip_binaries(options: &mut Config, target: Option<&str>, listener: &dyn
         DebugSymbols::Separate { compress } => (true, compress),
     };
 
-    let added_debug_assets = options.built_binaries_mut().into_par_iter().enumerate()
+    let added_debug_assets = options.deb.built_binaries_mut().into_par_iter().enumerate()
         .filter(|(_, asset)| !asset.source.archive_as_symlink_only()) // data won't be included, so nothing to strip
         .map(|(i, asset)| {
         let (new_source, new_debug_asset) = match asset.source.path() {
@@ -332,7 +332,7 @@ pub fn strip_binaries(options: &mut Config, target: Option<&str>, listener: &dyn
         Ok::<_, CargoDebError>(new_debug_asset)
     }).collect::<Result<Vec<_>, _>>()?;
 
-    options.assets.resolved
+    options.deb.assets.resolved
         .extend(added_debug_assets.into_iter().filter_map(|debug_file| debug_file));
 
     Ok(())

@@ -1,5 +1,6 @@
 #![allow(clippy::redundant_closure_for_method_calls)]
 
+use cargo_deb::assets::Config;
 use cargo_deb::assets::DebugSymbols;
 use cargo_deb::deb::control::ControlArchiveBuilder;
 use cargo_deb::deb::data;
@@ -268,10 +269,10 @@ fn process(
         log::debug!("not stripping debug={:?} strip-flag={:?}", options.debug_symbols, strip_override);
     }
 
-    options.sort_assets_by_type();
+    options.deb.sort_assets_by_type();
 
     // Obtain the current time which will be used to stamp the generated files in the archives.
-    let default_timestamp = options.default_timestamp;
+    let default_timestamp = options.deb.default_timestamp;
 
     let options = &options;
     let (control_builder, data_result) = rayon::join(
@@ -284,16 +285,17 @@ fn process(
         move || {
             // Initialize the contents of the data archive (files that go into the filesystem).
             let (compressed, asset_hashes) = data::generate_archive(compress::select_compressor(fast, compress_type, compress_system)?, options, default_timestamp, rsyncable, listener)?;
+            let sums = options.deb.generate_sha256sums(asset_hashes)?;
             let original_data_size = compressed.uncompressed_size;
-            Ok::<_, CargoDebError>((compressed.finish()?, original_data_size, asset_hashes))
+            Ok::<_, CargoDebError>((compressed.finish()?, original_data_size, sums))
         },
     );
     let mut control_builder = control_builder?;
-    let (data_compressed, original_data_size, asset_hashes) = data_result?;
-    control_builder.generate_sha256sums(options, asset_hashes)?;
+    let (data_compressed, original_data_size, sums) = data_result?;
+    control_builder.add_sha256sums(sums)?;
     let control_compressed = control_builder.finish()?.finish()?;
 
-    let mut deb_contents = DebArchive::new(options)?;
+    let mut deb_contents = Archive::new(options)?;
     deb_contents.add_data("debian-binary".into(), default_timestamp, b"2.0\n")?;
 
     // Order is important for Debian

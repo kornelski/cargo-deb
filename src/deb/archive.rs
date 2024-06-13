@@ -1,18 +1,19 @@
 use crate::assets::Config;
-use crate::error::CDResult;
+use crate::CDResult;
+use crate::Package;
 use ar::{Builder, Header};
 use std::fs;
 use std::fs::File;
 use std::path::PathBuf;
 
-pub struct DebArchive {
+pub struct Archive {
     out_abspath: PathBuf,
     ar_builder: Builder<File>,
 }
 
-impl DebArchive {
+impl Archive {
     pub fn new(config: &Config) -> CDResult<Self> {
-        let out_filename = format!("{}_{}_{}.deb", config.deb_name, config.deb_version, config.architecture);
+        let out_filename = format!("{}_{}_{}.deb", config.deb.deb_name, config.deb.deb_version, config.deb.architecture);
         let out_abspath = config.deb_output_path(&out_filename);
         {
             let deb_dir = out_abspath.parent().ok_or("invalid dir")?;
@@ -20,14 +21,14 @@ impl DebArchive {
         }
         let ar_builder = Builder::new(File::create(&out_abspath)?);
 
-        Ok(DebArchive {
+        Ok(Archive {
             out_abspath,
             ar_builder,
         })
     }
 
-    pub(crate) fn filename_glob(config: &Config) -> String {
-        format!("{}_*_{}.deb", config.deb_name, config.architecture)
+    pub(crate) fn filename_glob(deb: &Package) -> String {
+        format!("{}_*_{}.deb", deb.deb_name, deb.architecture)
     }
 
     pub fn add_data(&mut self, dest_path: String, mtime_timestamp: u64, data: &[u8]) -> CDResult<()> {
