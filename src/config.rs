@@ -292,51 +292,51 @@ impl Config {
             target: target.map(|t| t.to_string()),
             target_dir,
             deb: Package {
-            default_timestamp,
-            name: package.name.clone(),
-            deb_name: deb.name.take().unwrap_or_else(|| debian_package_name(&package.name)),
-            deb_version: deb_version.unwrap_or_else(|| manifest_version_string(package, deb_revision.or(deb.revision).as_deref()).into_owned()),
-            license: package.license.take().map(|v| v.unwrap()),
-            license_file,
-            license_file_skip_lines,
-            copyright: deb.copyright.take().ok_or_then(|| {
-                if package.authors().is_empty() {
-                    return Err("The package must have a copyright or authors property".into());
-                }
-                Ok(package.authors().join(", "))
-            })?,
-            homepage: package.homepage().map(From::from),
-            documentation: package.documentation().map(From::from),
-            repository: package.repository.take().map(|v| v.unwrap()),
-            description: package.description.take().map(|v| v.unwrap()).unwrap_or_else(||format!("[generated from Rust crate {}]", package.name)),
-            extended_description,
-            maintainer: deb.maintainer.take().ok_or_then(|| {
-                Ok(package.authors().first()
-                    .ok_or("The package must have a maintainer or authors property")?.to_owned())
-            })?,
-            depends: deb.depends.take().map(DependencyList::into_depends_string).unwrap_or_else(|| "$auto".to_owned()),
-            pre_depends: deb.pre_depends.take().map(DependencyList::into_depends_string),
-            recommends: deb.recommends.take().map(DependencyList::into_depends_string),
-            suggests: deb.suggests.take().map(DependencyList::into_depends_string),
-            enhances: deb.enhances.take(),
-            conflicts: deb.conflicts.take(),
-            breaks: deb.breaks.take(),
-            replaces: deb.replaces.take(),
-            provides: deb.provides.take(),
-            section: deb.section.take(),
-            priority: deb.priority.take().unwrap_or_else(|| "optional".to_owned()),
-            architecture: debian_architecture_from_rust_triple(target.unwrap_or(crate::DEFAULT_TARGET)).to_owned(),
-            conf_files: deb.conf_files.map(|x| format_conffiles(&x)),
-            assets: Assets::new(),
-            triggers_file: deb.triggers_file.map(PathBuf::from),
-            changelog: deb.changelog.take(),
-            maintainer_scripts: deb.maintainer_scripts.map(PathBuf::from),
-            preserve_symlinks: deb.preserve_symlinks.unwrap_or(false),
-            systemd_units: match deb.systemd_units {
-                None => None,
-                Some(SystemUnitsSingleOrMultiple::Single(s)) => Some(vec![s]),
-                Some(SystemUnitsSingleOrMultiple::Multi(v)) => Some(v),
-            },
+                default_timestamp,
+                name: package.name.clone(),
+                deb_name: deb.name.take().unwrap_or_else(|| debian_package_name(&package.name)),
+                deb_version: deb_version.unwrap_or_else(|| manifest_version_string(package, deb_revision.or(deb.revision).as_deref()).into_owned()),
+                license: package.license.take().map(|v| v.unwrap()),
+                license_file,
+                license_file_skip_lines,
+                copyright: deb.copyright.take().ok_or_then(|| {
+                    if package.authors().is_empty() {
+                        return Err("The package must have a copyright or authors property".into());
+                    }
+                    Ok(package.authors().join(", "))
+                })?,
+                homepage: package.homepage().map(From::from),
+                documentation: package.documentation().map(From::from),
+                repository: package.repository.take().map(|v| v.unwrap()),
+                description: package.description.take().map(|v| v.unwrap()).unwrap_or_else(||format!("[generated from Rust crate {}]", package.name)),
+                extended_description,
+                maintainer: deb.maintainer.take().ok_or_then(|| {
+                    Ok(package.authors().first()
+                        .ok_or("The package must have a maintainer or authors property")?.to_owned())
+                })?,
+                depends: deb.depends.take().map(DependencyList::into_depends_string).unwrap_or_else(|| "$auto".to_owned()),
+                pre_depends: deb.pre_depends.take().map(DependencyList::into_depends_string),
+                recommends: deb.recommends.take().map(DependencyList::into_depends_string),
+                suggests: deb.suggests.take().map(DependencyList::into_depends_string),
+                enhances: deb.enhances.take(),
+                conflicts: deb.conflicts.take(),
+                breaks: deb.breaks.take(),
+                replaces: deb.replaces.take(),
+                provides: deb.provides.take(),
+                section: deb.section.take(),
+                priority: deb.priority.take().unwrap_or_else(|| "optional".to_owned()),
+                architecture: debian_architecture_from_rust_triple(target.unwrap_or(crate::DEFAULT_TARGET)).to_owned(),
+                conf_files: deb.conf_files.map(|x| format_conffiles(&x)),
+                assets: Assets::new(),
+                triggers_file: deb.triggers_file.map(PathBuf::from),
+                changelog: deb.changelog.take(),
+                maintainer_scripts: deb.maintainer_scripts.map(PathBuf::from),
+                preserve_symlinks: deb.preserve_symlinks.unwrap_or(false),
+                systemd_units: match deb.systemd_units {
+                    None => None,
+                    Some(SystemUnitsSingleOrMultiple::Single(s)) => Some(vec![s]),
+                    Some(SystemUnitsSingleOrMultiple::Multi(v)) => Some(v),
+                },
             },
             features: deb.features.take().unwrap_or_default(),
             default_features: deb.default_features.unwrap_or(true),
