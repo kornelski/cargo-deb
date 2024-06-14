@@ -85,6 +85,13 @@ pub(crate) struct Assets {
     pub resolved: Vec<Asset>,
 }
 
+#[derive(Debug)]
+pub(crate) struct RawAsset {
+    pub source_path: PathBuf,
+    pub target_path: PathBuf,
+    pub chmod: u32,
+}
+
 impl Assets {
     pub(crate) fn new() -> Assets {
         Assets {
@@ -433,7 +440,7 @@ mod tests {
         let (mut config, mut package_deb) = Config::from_manifest(Some(Path::new("Cargo.toml")), None, None, None, None, None, None, &mock_listener, "release", None, None).unwrap();
 
         package_deb.systemd_units.get_or_insert(vec![SystemdUnitsConfig::default()]);
-        package_deb.maintainer_scripts.get_or_insert(PathBuf::new());
+        package_deb.maintainer_scripts_rel_path.get_or_insert(PathBuf::new());
 
         config.add_systemd_assets(&mut package_deb).unwrap();
 

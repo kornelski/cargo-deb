@@ -1,5 +1,5 @@
 use crate::assets::is_dynamic_library_filename;
-use crate::assets::{Asset, AssetSource, Assets, IsBuilt, UnresolvedAsset};
+use crate::assets::{Asset, AssetSource, Assets, IsBuilt, UnresolvedAsset, RawAsset};
 use crate::util::compress::gzipped;
 use crate::debian_architecture_from_rust_triple;
 use crate::dependencies::resolve;
@@ -7,7 +7,7 @@ use crate::dh::dh_installsystemd;
 use crate::error::{CDResult, CargoDebError};
 use crate::listener::Listener;
 use crate::parse::cargo::CargoConfig;
-use crate::parse::manifest::{cargo_metadata, manifest_debug_flag, manifest_license_file, manifest_version_string};
+use crate::parse::manifest::{cargo_metadata, manifest_debug_flag, manifest_version_string, LicenseFile};
 use crate::parse::manifest::{CargoDeb, CargoMetadataTarget, CargoPackageMetadata, ManifestFound};
 use crate::parse::manifest::{DependencyList, SystemUnitsSingleOrMultiple, SystemdUnitsConfig};
 use crate::reset_deb_temp_directory;
@@ -15,6 +15,7 @@ use crate::util::ok_or::OkOrThen;
 use crate::util::pathbytes::AsUnixPathBytes;
 use crate::util::wordsplit::WordSplit;
 use rayon::prelude::*;
+use std::borrow::Cow;
 use std::collections::HashMap;
 use std::collections::HashSet;
 use std::env::consts::{DLL_PREFIX, DLL_SUFFIX, EXE_SUFFIX};
@@ -104,6 +105,14 @@ pub struct Config {
 }
 
 #[derive(Debug)]
+pub enum ExtendedDescription {
+    None,
+    File(PathBuf),
+    String(String),
+    ReadmeFallback(PathBuf),
+}
+
+#[derive(Debug)]
 #[non_exhaustive]
 pub struct PackageConfig {
     /// The name of the project to build
@@ -115,7 +124,7 @@ pub struct PackageConfig {
     /// The software license of the project (SPDX format).
     pub license: Option<String>,
     /// The location of the license file
-    pub license_file: Option<PathBuf>,
+    pub license_file_rel_path: Option<PathBuf>,
     /// number of lines to skip when reading `license_file`
     pub license_file_skip_lines: usize,
     /// The copyright of the project
@@ -131,7 +140,7 @@ pub struct PackageConfig {
     /// A short description of the project.
     pub description: String,
     /// An extended description of the project.
-    pub extended_description: Option<String>,
+    pub extended_description: ExtendedDescription,
     /// The maintainer of the Debian package.
     /// In Debian `control` file `Maintainer` field format.
     pub maintainer: String,
@@ -176,10 +185,12 @@ pub struct PackageConfig {
     pub conf_files: Vec<String>,
     /// All of the files that are to be packaged.
     pub(crate) assets: Assets,
+    pub(crate) raw_assets: Option<Vec<RawAsset>>,
+
     /// The location of the triggers file
-    pub triggers_file: Option<PathBuf>,
+    pub triggers_file_rel_path: Option<PathBuf>,
     /// The path where possible maintainer scripts live
-    pub maintainer_scripts: Option<PathBuf>,
+    pub maintainer_scripts_rel_path: Option<PathBuf>,
     /// Should symlinks be preserved in the assets
     pub preserve_symlinks: bool,
     /// Details of how to install any systemd units
@@ -271,18 +282,6 @@ impl Config {
             DebugSymbols::Strip
         };
 
-        let (license_file, license_file_skip_lines) = manifest_license_file(cargo_package, deb.license_file.as_ref())?;
-
-        manifest_check_config(cargo_package, &manifest_dir, &deb, listener);
-
-        let extended_description_file = deb.extended_description_file.is_none()
-            .then(|| cargo_package.readme().as_path()).flatten()
-            .map(|readme_rel_path| manifest_dir.join(readme_rel_path));
-        let extended_description = manifest_extended_description(
-            deb.extended_description.take(),
-            deb.extended_description_file.as_ref().map(Path::new).or(extended_description_file.as_deref()),
-        )?;
-
         let mut config = Self {
             package_manifest_dir: manifest_dir,
             deb_output_path,
@@ -292,55 +291,10 @@ impl Config {
             default_features: deb.default_features.unwrap_or(true),
             debug_symbols,
         };
-        let mut package_deb = PackageConfig {
-                default_timestamp,
-                name: cargo_package.name.clone(),
-                deb_name: deb.name.take().unwrap_or_else(|| debian_package_name(&cargo_package.name)),
-                deb_version: deb_version.unwrap_or_else(|| manifest_version_string(cargo_package, deb_revision.or(deb.revision).as_deref()).into_owned()),
-                license: cargo_package.license.take().map(|v| v.unwrap()),
-                license_file,
-                license_file_skip_lines,
-                copyright: deb.copyright.take().ok_or_then(|| {
-                    if cargo_package.authors().is_empty() {
-                        return Err("The package must have a copyright or authors property".into());
-                    }
-                    Ok(cargo_package.authors().join(", "))
-                })?,
-                homepage: cargo_package.homepage().map(From::from),
-                documentation: cargo_package.documentation().map(From::from),
-                repository: cargo_package.repository.take().map(|v| v.unwrap()),
-                description: cargo_package.description.take().map_or_else(||format!("[generated from Rust crate {}]", cargo_package.name), |v| v.unwrap()),
-                extended_description,
-                maintainer: deb.maintainer.take().ok_or_then(|| {
-                    Ok(cargo_package.authors().first()
-                        .ok_or("The package must have a maintainer or authors property")?.to_owned())
-                })?,
-                wildcard_depends: deb.depends.take().map_or_else(|| "$auto".to_owned(), DependencyList::into_depends_string),
-                resolved_depends: None,
-                pre_depends: deb.pre_depends.take().map(DependencyList::into_depends_string),
-                recommends: deb.recommends.take().map(DependencyList::into_depends_string),
-                suggests: deb.suggests.take().map(DependencyList::into_depends_string),
-                enhances: deb.enhances.take(),
-                conflicts: deb.conflicts.take(),
-                breaks: deb.breaks.take(),
-                replaces: deb.replaces.take(),
-                provides: deb.provides.take(),
-                section: deb.section.take(),
-                priority: deb.priority.take().unwrap_or_else(|| "optional".to_owned()),
-                architecture: debian_architecture_from_rust_triple(target.unwrap_or(crate::DEFAULT_TARGET)).to_owned(),
-                conf_files: deb.conf_files.unwrap_or_default(),
-                assets: Assets::new(),
-                triggers_file: deb.triggers_file.map(PathBuf::from),
-                changelog: deb.changelog.take(),
-                maintainer_scripts: deb.maintainer_scripts.map(PathBuf::from),
-                preserve_symlinks: deb.preserve_symlinks.unwrap_or(false),
-                systemd_units: match deb.systemd_units {
-                    None => None,
-                    Some(SystemUnitsSingleOrMultiple::Single(s)) => Some(vec![s]),
-                    Some(SystemUnitsSingleOrMultiple::Multi(v)) => Some(v),
-                },
-            };
-        config.take_assets(&mut package_deb, cargo_package, deb.assets.take(), &targets, selected_profile, listener)?;
+
+        let mut package_deb = PackageConfig::new(deb, cargo_package, listener, default_timestamp, deb_version, deb_revision, target)?;
+
+        config.take_assets(&mut package_deb, cargo_package, &targets, selected_profile)?;
         config.add_copyright_asset(&mut package_deb)?;
         config.add_changelog_asset(&mut package_deb)?;
         config.add_systemd_assets(&mut package_deb)?;
@@ -422,7 +376,7 @@ impl Config {
     fn generate_copyright_asset(&self, package_deb: &PackageConfig) -> CDResult<(PathBuf, Vec<u8>)> {
         let mut copyright: Vec<u8> = Vec::new();
         let source_path;
-        if let Some(ref path) = package_deb.license_file {
+        if let Some(path) = &package_deb.license_file_rel_path {
             source_path = self.path_in_package(path);
             let license_string = fs::read_to_string(&source_path)
                 .map_err(|e| CargoDebError::IoFile("unable to read license file", e, path.clone()))?;
@@ -489,7 +443,7 @@ impl Config {
         if let Some(ref config_vec) = package_deb.systemd_units {
             for config in config_vec {
                 let units_dir_option = config.unit_scripts.as_ref()
-                    .or(package_deb.maintainer_scripts.as_ref());
+                    .or(package_deb.maintainer_scripts_rel_path.as_ref());
                 if let Some(unit_dir) = units_dir_option {
                     let search_path = self.path_in_package(unit_dir);
                     let package = &package_deb.name;
@@ -564,6 +518,100 @@ impl Config {
 }
 
 impl PackageConfig {
+    pub(crate) fn new(mut deb: CargoDeb, cargo_package: &mut cargo_toml::Package<CargoPackageMetadata>, listener: &dyn Listener, default_timestamp: u64, deb_version: Option<String>, deb_revision: Option<String>, target: Option<&str>) -> Result<PackageConfig, CargoDebError> {
+        let (license_file_rel_path, license_file_skip_lines) = parse_license_file(cargo_package, deb.license_file.as_ref())?;
+        if cargo_package.license().is_none() && license_file_rel_path.is_none() {
+            listener.warning("license field is missing in Cargo.toml".to_owned());
+        }
+        Ok(Self {
+            default_timestamp,
+            raw_assets: deb.assets.take().map(|assets| Self::parse_assets(assets, listener)).transpose()?,
+            name: cargo_package.name.clone(),
+            deb_name: deb.name.take().unwrap_or_else(|| debian_package_name(&cargo_package.name)),
+            deb_version: deb_version.unwrap_or_else(|| manifest_version_string(cargo_package, deb_revision.or(deb.revision.take()).as_deref()).into_owned()),
+            license: cargo_package.license.take().map(|v| v.unwrap()),
+            license_file_rel_path,
+            license_file_skip_lines,
+            copyright: deb.copyright.take().ok_or_then(|| {
+                if cargo_package.authors().is_empty() {
+                    return Err("The package must have a copyright or authors property".into());
+                }
+                Ok(cargo_package.authors().join(", "))
+            })?,
+            homepage: cargo_package.homepage().map(From::from),
+            documentation: cargo_package.documentation().map(From::from),
+            repository: cargo_package.repository.take().map(|v| v.unwrap()),
+            description: cargo_package.description.take().map_or_else(|| {
+                listener.warning("description field is missing in Cargo.toml".to_owned());
+                format!("[generated from Rust crate {}]", cargo_package.name)
+            }, |v| v.unwrap()),
+            extended_description: if let Some(path) = deb.extended_description_file.take() {
+                if deb.extended_description.is_some() {
+                    listener.warning("extended-description and extended-description-file are both set".into());
+                }
+                ExtendedDescription::File(path.into())
+            } else if let Some(desc) = deb.extended_description.take() {
+                ExtendedDescription::String(desc)
+            } else if let Some(readme_rel_path) = cargo_package.readme().as_path() {
+                if readme_rel_path.extension().is_some_and(|ext| ext == "md" || ext == "markdown") {
+                    listener.info(format!("extended-description field missing. Using {}, but markdown may not render well.", readme_rel_path.display()));
+                }
+                ExtendedDescription::ReadmeFallback(readme_rel_path.into())
+            } else {
+                ExtendedDescription::None
+            },
+            maintainer: deb.maintainer.take().ok_or_then(|| {
+                Ok(cargo_package.authors().first()
+                    .ok_or("The package must have a maintainer or authors property")?.to_owned())
+            })?,
+            wildcard_depends: deb.depends.take().map_or_else(|| "$auto".to_owned(), DependencyList::into_depends_string),
+            resolved_depends: None,
+            pre_depends: deb.pre_depends.take().map(DependencyList::into_depends_string),
+            recommends: deb.recommends.take().map(DependencyList::into_depends_string),
+            suggests: deb.suggests.take().map(DependencyList::into_depends_string),
+            enhances: deb.enhances.take(),
+            conflicts: deb.conflicts.take(),
+            breaks: deb.breaks.take(),
+            replaces: deb.replaces.take(),
+            provides: deb.provides.take(),
+            section: deb.section.take(),
+            priority: deb.priority.take().unwrap_or_else(|| "optional".to_owned()),
+            architecture: debian_architecture_from_rust_triple(target.unwrap_or(crate::DEFAULT_TARGET)).to_owned(),
+            conf_files: deb.conf_files.take().unwrap_or_default(),
+            assets: Assets::new(),
+            triggers_file_rel_path: deb.triggers_file.take().map(PathBuf::from),
+            changelog: deb.changelog.take(),
+            maintainer_scripts_rel_path: deb.maintainer_scripts.take().map(PathBuf::from),
+            preserve_symlinks: deb.preserve_symlinks.unwrap_or(false),
+            systemd_units: match deb.systemd_units.take() {
+                None => None,
+                Some(SystemUnitsSingleOrMultiple::Single(s)) => Some(vec![s]),
+                Some(SystemUnitsSingleOrMultiple::Multi(v)) => Some(v),
+            },
+        })
+    }
+
+    fn parse_assets(assets: Vec<Vec<String>>, listener: &dyn Listener) -> CDResult<Vec<RawAsset>> {
+        // Treat all explicit assets as unresolved until after the build step
+        assets.into_iter().map(|mut asset_line| {
+            let mut asset_parts = asset_line.drain(..);
+            let source_path = PathBuf::from(asset_parts.next()
+                .ok_or("missing path (first array entry) for asset in Cargo.toml")?);
+            if source_path.starts_with("target/debug") {
+                listener.warning(format!("Packaging of development-only binaries is intentionally unsupported in cargo-deb.
+Please only use `target/release/` directory for built products, not `{}`.
+To add debug information or additional assertions use `[profile.release]` in `Cargo.toml` instead.
+This will be hard error in a future release of cargo-deb.", source_path.display()));
+            }
+            Ok(RawAsset {
+                source_path,
+                target_path: PathBuf::from(asset_parts.next().ok_or("missing target (second array entry) for asset in Cargo.toml. Use something like \"usr/local/bin/\".")?),
+                chmod: u32::from_str_radix(&asset_parts.next().ok_or("missing chmod (third array entry) for asset in Cargo.toml. Use an octal string like \"777\".")?, 8)
+                    .map_err(|e| CargoDebError::NumParse("unable to parse chmod argument", e))?,
+            })
+        }).collect()
+    }
+
     pub fn resolve_assets(&mut self) -> CDResult<()> {
         for u in self.assets.unresolved.drain(..) {
             let matched = u.resolve(self.preserve_symlinks)?;
@@ -684,8 +732,20 @@ impl PackageConfig {
         Ok(sha256sums)
     }
 
+    fn extended_description(&self, config: &Config) -> CDResult<Option<Cow<'_, str>>> {
+        let path = match &self.extended_description {
+            ExtendedDescription::None => return Ok(None),
+            ExtendedDescription::String(s) => return Ok(Some(s.as_str().into())),
+            ExtendedDescription::File(p) => Cow::Borrowed(p.as_path()),
+            ExtendedDescription::ReadmeFallback(p) => Cow::Owned(config.path_in_package(p)),
+        };
+        let desc = fs::read_to_string(&path)
+            .map_err(|err| CargoDebError::IoFile("unable to read extended description from file", err, path.into_owned()))?;
+        Ok(Some(desc.into()))
+    }
+
     /// Generates the control file that obtains all the important information about the package.
-    pub fn generate_control(&self) -> CDResult<Vec<u8>> {
+    pub fn generate_control(&self, config: &Config) -> CDResult<Vec<u8>> {
         // Create and return the handle to the control file with write access.
         let mut control: Vec<u8> = Vec::with_capacity(1024);
 
@@ -771,12 +831,12 @@ impl PackageConfig {
             writeln!(&mut control, " {line}")?;
         }
 
-        if let Some(ref desc) = self.extended_description {
+        if let Some(desc) = self.extended_description(config)? {
             for line in desc.split_by_chars(79) {
                 writeln!(&mut control, " {line}")?;
             }
         }
-        control.push(10);
+        control.push(b'\n');
 
         Ok(control)
     }
@@ -829,6 +889,21 @@ impl PackageConfig {
     }
 }
 
+fn parse_license_file(package: &cargo_toml::Package<CargoPackageMetadata>, license_file: Option<&LicenseFile>) -> CDResult<(Option<PathBuf>, usize)> {
+    Ok(match license_file {
+        Some(LicenseFile::Vec(args)) => {
+            let mut args = args.iter();
+            let file = args.next();
+            let lines = if let Some(lines) = args.next() {
+                lines.parse().map_err(|e| CargoDebError::NumParse("invalid number of lines", e))?
+            } else {0};
+            (file.map(|s|s.into()), lines)
+        },
+        Some(LicenseFile::String(s)) => (Some(s.into()), 0),
+        None => (package.license_file().as_ref().map(|s| s.into()), 0),
+    })
+}
+
 fn has_copyright_metadata(file: &str) -> bool {
     file.lines().take(10)
         .any(|l| l.starts_with("License: ") || l.starts_with("Source: ") || l.starts_with("Upstream-Name: ") || l.starts_with("Format: "))
@@ -842,57 +917,12 @@ fn debian_package_name(crate_name: &str) -> String {
     }).collect()
 }
 
-fn manifest_check_config(package: &cargo_toml::Package<CargoPackageMetadata>, manifest_dir: &Path, deb: &CargoDeb, listener: &dyn Listener) {
-    let readme_rel_path = package.readme().as_path();
-    if package.description().is_none() {
-        listener.warning("description field is missing in Cargo.toml".to_owned());
-    }
-    if package.license().is_none() && package.license_file().is_none() {
-        listener.warning("license field is missing in Cargo.toml".to_owned());
-    }
-    if let Some(readme_rel_path) = readme_rel_path {
-        let ext = readme_rel_path.extension().unwrap_or("".as_ref());
-        if deb.extended_description.is_none() && deb.extended_description_file.is_none() && (ext == "md" || ext == "markdown") {
-            listener.info(format!("extended-description field missing. Using {}, but markdown may not render well.", readme_rel_path.display()));
-        }
-    } else {
-        for p in &["README.md", "README.markdown", "README.txt", "README"] {
-            if manifest_dir.join(p).exists() {
-                listener.warning(format!("{p} file exists, but is not specified in `readme` Cargo.toml field"));
-                break;
-            }
-        }
-    }
-}
-
-fn manifest_extended_description(desc: Option<String>, desc_file: Option<&Path>) -> CDResult<Option<String>> {
-    Ok(if desc.is_some() {
-        desc
-    } else if let Some(desc_file) = desc_file {
-        Some(fs::read_to_string(desc_file)
-            .map_err(|err| CargoDebError::IoFile(
-                    "unable to read extended description from file", err, PathBuf::from(desc_file)))?)
-    } else {
-        None
-    })
-}
-
 impl Config {
-    fn take_assets(&mut self, package_deb: &mut PackageConfig, cargo_package: &cargo_toml::Package<CargoPackageMetadata>, assets: Option<Vec<Vec<String>>>, build_targets: &[CargoMetadataTarget], profile: &str, listener: &dyn Listener) -> CDResult<()> {
-        let assets = if let Some(assets) = assets {
+    fn take_assets(&mut self, package_deb: &mut PackageConfig, cargo_package: &cargo_toml::Package<CargoPackageMetadata>, build_targets: &[CargoMetadataTarget], profile: &str) -> CDResult<()> {
+        let assets = if let Some(assets) = package_deb.raw_assets.take() {
             let profile_target_dir = format!("target/{profile}");
             // Treat all explicit assets as unresolved until after the build step
-            let mut unresolved_assets = Vec::with_capacity(assets.len());
-            for mut asset_line in assets {
-                let mut asset_parts = asset_line.drain(..);
-                let source_path = PathBuf::from(asset_parts.next()
-                    .ok_or("missing path (first array entry) for asset in Cargo.toml")?);
-                if source_path.starts_with("target/debug/") {
-                    listener.warning(format!("Packaging of development-only binaries is intentionally unsupported in cargo-deb.
-    Please only use `target/release/` directory for built products, not `{}`.
-    To add debug information or additional assertions use `[profile.release]` in `Cargo.toml` instead.
-    This will be hard error in a future release of cargo-deb.", source_path.display()));
-                }
+            let unresolved_assets = assets.into_iter().map(|RawAsset { source_path, target_path, chmod }| {
                 // target/release is treated as a magic prefix that resolves to any profile
                 let (is_built, source_path, is_example) = if let Ok(rel_path) = source_path.strip_prefix("target/release").or_else(|_| source_path.strip_prefix(&profile_target_dir)) {
                     let is_example = rel_path.starts_with("examples");
@@ -901,12 +931,8 @@ impl Config {
                 } else {
                     (IsBuilt::No, self.path_in_package(&source_path), false)
                 };
-                let target_path = PathBuf::from(asset_parts.next().ok_or("missing target (second array entry) for asset in Cargo.toml. Use something like \"usr/local/bin/\".")?);
-                let chmod = u32::from_str_radix(&asset_parts.next().ok_or("missing chmod (third array entry) for asset in Cargo.toml. Use an octal string like \"777\".")?, 8)
-                    .map_err(|e| CargoDebError::NumParse("unable to parse chmod argument", e))?;
-
-                unresolved_assets.push(UnresolvedAsset::new(source_path, target_path, chmod, is_built, is_example));
-            }
+                Ok(UnresolvedAsset::new(source_path, target_path, chmod, is_built, is_example))
+            }).collect::<CDResult<Vec<_>>>()?;
             Assets::with_unresolved_assets(unresolved_assets)
         } else {
             let mut implied_assets: Vec<_> = build_targets.iter()
@@ -937,7 +963,7 @@ impl Config {
             if let Some(readme_rel_path) = cargo_package.readme().as_path() {
                 let path = self.path_in_package(readme_rel_path);
                 let target_path = Path::new("usr/share/doc")
-                    .join(&cargo_package.name)
+                    .join(&package_deb.deb_name)
                     .join(path.file_name().ok_or("bad README path")?);
                 implied_assets.push(Asset::new(AssetSource::Path(path), target_path, 0o644, IsBuilt::No, false));
             }
@@ -1049,7 +1075,7 @@ mod tests {
         let (mut config, mut package_deb) = Config::from_manifest(Some(Path::new("Cargo.toml")), None, None, None, None, None, None, &mock_listener, "release", None, None).unwrap();
 
         package_deb.systemd_units.get_or_insert(vec![SystemdUnitsConfig::default()]);
-        package_deb.maintainer_scripts.get_or_insert(PathBuf::new());
+        package_deb.maintainer_scripts_rel_path.get_or_insert(PathBuf::new());
 
         config.add_systemd_assets(&mut package_deb).unwrap();
 

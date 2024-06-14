@@ -40,21 +40,6 @@ pub(crate) fn manifest_debug_flag(manifest: &cargo_toml::Manifest<CargoPackageMe
     Some(*profile.debug.as_ref()? != DebugSetting::None)
 }
 
-pub(crate) fn manifest_license_file(package: &cargo_toml::Package<CargoPackageMetadata>, license_file: Option<&LicenseFile>) -> CDResult<(Option<PathBuf>, usize)> {
-    Ok(match license_file {
-        Some(LicenseFile::Vec(args)) => {
-            let mut args = args.iter();
-            let file = args.next();
-            let lines = if let Some(lines) = args.next() {
-                lines.parse().map_err(|e| CargoDebError::NumParse("invalid number of lines", e))?
-            } else {0};
-            (file.map(|s|s.into()), lines)
-        },
-        Some(LicenseFile::String(s)) => (Some(s.into()), 0),
-        None => (package.license_file().as_ref().map(|s| s.into()), 0),
-    })
-}
-
 /// Debian-compatible version of the semver version
 pub(crate) fn manifest_version_string<'a>(package: &'a cargo_toml::Package<CargoPackageMetadata>, revision: Option<&str>) -> Cow<'a, str> {
     let mut version = Cow::Borrowed(package.version());

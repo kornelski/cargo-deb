@@ -24,15 +24,15 @@ impl<'l, W: Write> ControlArchiveBuilder<'l, W> {
 
     /// Generates an uncompressed tar archive with `control`, `sha256sums`, and others
     pub fn generate_archive(&mut self, config: &Config, package_deb: &PackageConfig) -> CDResult<()> {
-        self.add_control(&package_deb.generate_control()?)?;
+        self.add_control(&package_deb.generate_control(config)?)?;
 
         if let Some(files) = package_deb.conf_files() {
             self.add_conf_files(&files)?;
         }
 
         self.generate_scripts(config, package_deb)?;
-        if let Some(ref file) = package_deb.triggers_file {
-            let triggers_file = &config.package_manifest_dir.as_path().join(file);
+        if let Some(ref file) = package_deb.triggers_file_rel_path {
+            let triggers_file = &config.path_in_package(file);
             self.add_triggers_file(triggers_file)?;
         }
         Ok(())
@@ -60,8 +60,8 @@ impl<'l, W: Write> ControlArchiveBuilder<'l, W> {
     /// contain a `#DEBHELPER#` token at the point where shell script fragments
     /// should be inserted.
     fn generate_scripts(&mut self, config: &Config, package_deb: &PackageConfig) -> CDResult<()> {
-        if let Some(ref maintainer_scripts_dir) = package_deb.maintainer_scripts {
-            let maintainer_scripts_dir = config.package_manifest_dir.as_path().join(maintainer_scripts_dir);
+        if let Some(ref maintainer_scripts_dir) = package_deb.maintainer_scripts_rel_path {
+            let maintainer_scripts_dir = config.path_in_package(maintainer_scripts_dir);
             let mut scripts = ScriptFragments::with_capacity(0);
 
             if let Some(systemd_units_config_vec) = &package_deb.systemd_units {
@@ -297,7 +297,7 @@ mod tests {
         }
 
         // specify a path relative to the (root or workspace child) package
-        package_deb.maintainer_scripts.get_or_insert(PathBuf::from("debian"));
+        package_deb.maintainer_scripts_rel_path.get_or_insert(PathBuf::from("debian"));
 
         // generate scripts and store them in the given archive
         in_ar.generate_scripts(&config, &package_deb).unwrap();
@@ -408,7 +408,7 @@ mod tests {
 
         // look in the current dir for maintainer scripts (none, but the systemd
         // unit processing will be skipped if we don't set this)
-        package_deb.maintainer_scripts.get_or_insert(PathBuf::from("debian"));
+        package_deb.maintainer_scripts_rel_path.get_or_insert(PathBuf::from("debian"));
 
         // enable systemd unit processing
         package_deb.systemd_units.get_or_insert(vec![SystemdUnitsConfig::default()]);
