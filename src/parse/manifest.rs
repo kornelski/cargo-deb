@@ -31,10 +31,13 @@ pub(crate) struct SystemdUnitsConfig {
     pub stop_on_upgrade: Option<bool>,
 }
 
-pub(crate) fn manifest_debug_flag(manifest: &cargo_toml::Manifest<CargoPackageMetadata>) -> bool {
-    manifest.profile.release.as_ref()
-        .and_then(|r| r.debug.as_ref())
-        .map_or(false, |debug| *debug != DebugSetting::None)
+pub(crate) fn manifest_debug_flag(manifest: &cargo_toml::Manifest<CargoPackageMetadata>, selected_profile: &str) -> Option<bool> {
+    let profile = if selected_profile == "release" {
+        manifest.profile.release.as_ref()?
+    } else {
+        manifest.profile.custom.get(selected_profile)?
+    };
+    Some(*profile.debug.as_ref()? != DebugSetting::None)
 }
 
 pub(crate) fn manifest_license_file(package: &cargo_toml::Package<CargoPackageMetadata>, license_file: Option<&LicenseFile>) -> CDResult<(Option<PathBuf>, usize)> {

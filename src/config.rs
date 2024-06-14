@@ -233,13 +233,10 @@ impl Config {
             target_dir.push(target);
         };
 
-        // FIXME: support other named profiles
-        let debug_enabled = if selected_profile == "release" {
-            manifest_debug_flag(&manifest) || root_manifest.as_ref().map_or(false, manifest_debug_flag)
-        } else {
-            false
-        };
-        drop(root_manifest);
+        let debug_enabled = manifest_debug_flag(&manifest, selected_profile)
+            .or_else(move || manifest_debug_flag(root_manifest.as_ref()?, selected_profile))
+            .unwrap_or(false);
+
         let cargo_package = manifest.package.as_mut().ok_or("bad package")?;
 
         // If we build against a variant use that config and change the package name
