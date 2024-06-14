@@ -94,13 +94,13 @@ impl CargoDeb {
         // cargo build accordingly. you could argue that the other way around is
         // more desirable. However for now we want all commands coming in via the
         // same `interface`
-        let selected_profile = self.options.profile.as_deref().unwrap_or("release");
-        if selected_profile == "dev" {
+        let selected_profile = self.options.profile;
+        if selected_profile.as_deref() == Some("dev") {
             listener.warning("dev profile is not supported and will be a hard error in the future. \
                 cargo-deb is for making releases, and it doesn't make sense to use it with dev profiles.".into());
             listener.warning("To enable debug symbols set `[profile.release] debug = true` instead.".into());
         }
-        self.options.cargo_build_flags.push(format!("--profile={selected_profile}"));
+        self.options.cargo_build_flags.push(format!("--profile={}", selected_profile.as_deref().unwrap_or("release")));
 
         let root_manifest_path = self.options.manifest_path.as_deref().map(Path::new);
         let (mut config, mut package_deb) = Config::from_manifest(

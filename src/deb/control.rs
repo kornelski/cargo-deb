@@ -216,7 +216,7 @@ mod tests {
             None,
             None,
             mock_listener,
-            "release",
+            None,
             None,
             None,
         )

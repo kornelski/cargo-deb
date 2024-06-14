@@ -102,6 +102,9 @@ pub struct Config {
     pub default_features: bool,
     /// Should the binary be stripped from debug symbols?
     pub debug_symbols: DebugSymbols,
+
+    /// "release" if None
+    build_profile_override: Option<String>,
 }
 
 #[derive(Debug)]
@@ -187,6 +190,8 @@ pub struct PackageConfig {
     pub(crate) assets: Assets,
     pub(crate) raw_assets: Option<Vec<RawAsset>>,
 
+    /// Added to usr/share/doc as a fallback
+    pub readme_rel_path: Option<PathBuf>,
     /// The location of the triggers file
     pub triggers_file_rel_path: Option<PathBuf>,
     /// The path where possible maintainer scripts live
@@ -223,7 +228,7 @@ impl Config {
         deb_version: Option<String>,
         deb_revision: Option<String>,
         listener: &dyn Listener,
-        selected_profile: &str,
+        build_profile_override: Option<String>,
         separate_debug_symbols: Option<bool>,
         compress_debug_symbols: Option<bool>,
     ) -> CDResult<(Self, PackageConfig)> {
@@ -243,6 +248,8 @@ impl Config {
         if let Some(target) = target {
             target_dir.push(target);
         };
+
+        let selected_profile = build_profile_override.as_deref().unwrap_or("release");
 
         let debug_enabled = manifest_debug_flag(&manifest, selected_profile)
             .or_else(move || manifest_debug_flag(root_manifest.as_ref()?, selected_profile))
@@ -290,11 +297,12 @@ impl Config {
             features: deb.features.take().unwrap_or_default(),
             default_features: deb.default_features.unwrap_or(true),
             debug_symbols,
+            build_profile_override,
         };
 
         let mut package_deb = PackageConfig::new(deb, cargo_package, listener, default_timestamp, deb_version, deb_revision, target)?;
 
-        config.take_assets(&mut package_deb, cargo_package, &targets, selected_profile)?;
+        config.take_assets(&mut package_deb, &targets)?;
         config.add_copyright_asset(&mut package_deb)?;
         config.add_changelog_asset(&mut package_deb)?;
         config.add_systemd_assets(&mut package_deb)?;
@@ -468,14 +476,15 @@ impl Config {
         Ok(())
     }
 
-    pub(crate) fn path_in_build<P: AsRef<Path>>(&self, rel_path: P, profile: &str) -> PathBuf {
-        self.path_in_build_(rel_path.as_ref(), profile)
+    pub(crate) fn path_in_build<P: AsRef<Path>>(&self, rel_path: P) -> PathBuf {
+        self.path_in_build_(rel_path.as_ref())
     }
 
-    pub(crate) fn path_in_build_(&self, rel_path: &Path, profile: &str) -> PathBuf {
-        let profile = match profile {
-            "dev" => "debug",
-            p => p,
+    pub(crate) fn path_in_build_(&self, rel_path: &Path) -> PathBuf {
+        let profile = match self.build_profile_override.as_deref() {
+            None => "release",
+            Some("dev") => "debug",
+            Some(p) => p,
         };
 
         let mut path = self.target_dir.join(profile);
@@ -560,6 +569,7 @@ impl PackageConfig {
             } else {
                 ExtendedDescription::None
             },
+            readme_rel_path: cargo_package.readme().as_path().map(|p| p.to_path_buf()),
             maintainer: deb.maintainer.take().ok_or_then(|| {
                 Ok(cargo_package.authors().first()
                     .ok_or("The package must have a maintainer or authors property")?.to_owned())
@@ -918,16 +928,18 @@ fn debian_package_name(crate_name: &str) -> String {
 }
 
 impl Config {
-    fn take_assets(&mut self, package_deb: &mut PackageConfig, cargo_package: &cargo_toml::Package<CargoPackageMetadata>, build_targets: &[CargoMetadataTarget], profile: &str) -> CDResult<()> {
+    fn take_assets(&mut self, package_deb: &mut PackageConfig, build_targets: &[CargoMetadataTarget]) -> CDResult<()> {
         let assets = if let Some(assets) = package_deb.raw_assets.take() {
-            let profile_target_dir = format!("target/{profile}");
+            let custom_profile_target_dir = self.build_profile_override.as_deref().map(|profile| format!("target/{profile}"));
             // Treat all explicit assets as unresolved until after the build step
             let unresolved_assets = assets.into_iter().map(|RawAsset { source_path, target_path, chmod }| {
                 // target/release is treated as a magic prefix that resolves to any profile
-                let (is_built, source_path, is_example) = if let Ok(rel_path) = source_path.strip_prefix("target/release").or_else(|_| source_path.strip_prefix(&profile_target_dir)) {
+                let target_artifact_rel_path = source_path.strip_prefix("target/release").ok()
+                    .or_else(|| source_path.strip_prefix(custom_profile_target_dir.as_ref()?).ok());
+                let (is_built, source_path, is_example) = if let Some(rel_path) = target_artifact_rel_path {
                     let is_example = rel_path.starts_with("examples");
 
-                    (self.find_is_built_file_in_package(rel_path, build_targets, if is_example { "example" } else { "bin" }), self.path_in_build(rel_path, profile), is_example)
+                    (self.find_is_built_file_in_package(rel_path, build_targets, if is_example { "example" } else { "bin" }), self.path_in_build(rel_path), is_example)
                 } else {
                     (IsBuilt::No, self.path_in_package(&source_path), false)
                 };
@@ -939,7 +951,7 @@ impl Config {
                 .filter_map(|t| {
                     if t.crate_types.iter().any(|ty| ty == "bin") && t.kind.iter().any(|k| k == "bin") {
                         Some(Asset::new(
-                            AssetSource::Path(self.path_in_build(&t.name, profile)),
+                            AssetSource::Path(self.path_in_build(&t.name)),
                             Path::new("usr/bin").join(&t.name),
                             0o755,
                             self.is_built_file_in_package(t),
@@ -949,7 +961,7 @@ impl Config {
                         // FIXME: std has constants for the host arch, but not for cross-compilation
                         let lib_name = format!("{DLL_PREFIX}{}{DLL_SUFFIX}", t.name);
                         Some(Asset::new(
-                            AssetSource::Path(self.path_in_build(&lib_name, profile)),
+                            AssetSource::Path(self.path_in_build(&lib_name)),
                             Path::new("usr/lib").join(lib_name),
                             0o644,
                             self.is_built_file_in_package(t),
@@ -960,7 +972,7 @@ impl Config {
                     }
                 })
                 .collect();
-            if let Some(readme_rel_path) = cargo_package.readme().as_path() {
+            if let Some(readme_rel_path) = package_deb.readme_rel_path.as_deref() {
                 let path = self.path_in_package(readme_rel_path);
                 let target_path = Path::new("usr/share/doc")
                     .join(&package_deb.deb_name)
@@ -1055,7 +1067,7 @@ mod tests {
         // supply a systemd unit file as if it were available on disk
         let _g = add_test_fs_paths(&[to_canon_static_str("cargo-deb.service")]);
 
-        let (_config, package_deb) = Config::from_manifest(Some(Path::new("Cargo.toml")), None, None, None, None, None, None, &mock_listener, "release", None, None).unwrap();
+        let (_config, package_deb) = Config::from_manifest(Some(Path::new("Cargo.toml")), None, None, None, None, None, None, &mock_listener, None, None, None).unwrap();
 
         let num_unit_assets = package_deb.assets.resolved.iter()
             .filter(|a| a.c.target_path.starts_with("lib/systemd/system/"))
@@ -1072,7 +1084,7 @@ mod tests {
         // supply a systemd unit file as if it were available on disk
         let _g = add_test_fs_paths(&[to_canon_static_str("cargo-deb.service")]);
 
-        let (mut config, mut package_deb) = Config::from_manifest(Some(Path::new("Cargo.toml")), None, None, None, None, None, None, &mock_listener, "release", None, None).unwrap();
+        let (mut config, mut package_deb) = Config::from_manifest(Some(Path::new("Cargo.toml")), None, None, None, None, None, None, &mock_listener, None, None, None).unwrap();
 
         package_deb.systemd_units.get_or_insert(vec![SystemdUnitsConfig::default()]);
         package_deb.maintainer_scripts_rel_path.get_or_insert(PathBuf::new());
