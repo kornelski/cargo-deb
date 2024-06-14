@@ -103,7 +103,7 @@ impl CargoDeb {
         self.options.cargo_build_flags.push(format!("--profile={selected_profile}"));
 
         let root_manifest_path = self.options.manifest_path.as_deref().map(Path::new);
-        let mut config = Config::from_manifest(
+        let (mut config, mut package_deb) = Config::from_manifest(
             root_manifest_path,
             self.options.selected_package_name.as_deref(),
             self.options.output_path,
@@ -117,26 +117,26 @@ impl CargoDeb {
             self.options.compress_debug_symbols,
         )?;
 
-        config.extend_cargo_build_flags(&mut self.options.cargo_build_flags);
+        config.extend_cargo_build_flags(&package_deb, &mut self.options.cargo_build_flags);
 
         if !self.options.no_build {
             cargo_build(&config, self.options.target.as_deref(), &self.options.cargo_build_cmd, &self.options.cargo_build_flags, self.options.verbose)?;
         }
 
-        config.deb.resolve_assets()?;
-        config.deb.resolve_binary_dependencies(config.target.as_deref(), listener)?;
+        package_deb.resolve_assets()?;
+        package_deb.resolve_binary_dependencies(config.target.as_deref(), listener)?;
 
-        compress_assets(&mut config, listener)?;
+        compress_assets(&mut package_deb, listener)?;
 
         if self.options.strip_override.unwrap_or(config.debug_symbols != DebugSymbols::Keep) {
-            strip_binaries(&mut config, self.options.target.as_deref(), listener)?;
+            strip_binaries(&mut config, &mut package_deb, self.options.target.as_deref(), listener)?;
         } else {
             log::debug!("not stripping debug={:?} strip-flag={:?}", config.debug_symbols, self.options.strip_override);
         }
 
-        config.deb.sort_assets_by_type();
+        package_deb.sort_assets_by_type();
 
-        let generated = write_deb(&config, &CompressConfig {
+        let generated = write_deb(&config, &package_deb, &CompressConfig {
             fast: self.options.fast,
             compress_type: self.options.compress_type,
             compress_system: self.options.compress_system,
@@ -217,20 +217,20 @@ pub fn install_deb(path: &Path) -> CDResult<()> {
     Ok(())
 }
 
-pub fn write_deb(config: &Config, &compress::CompressConfig { fast, compress_type, compress_system, rsyncable }: &compress::CompressConfig, listener: &dyn Listener) -> Result<PathBuf, CargoDebError> {
+pub fn write_deb(config: &Config, package_deb: &PackageConfig, &compress::CompressConfig { fast, compress_type, compress_system, rsyncable }: &compress::CompressConfig, listener: &dyn Listener) -> Result<PathBuf, CargoDebError> {
     let (control_builder, data_result) = rayon::join(
         move || {
             // The control archive is the metadata for the package manager
-            let mut control_builder = ControlArchiveBuilder::new(util::compress::select_compressor(fast, compress_type, compress_system)?, config.deb.default_timestamp, listener);
-            control_builder.generate_archive(config)?;
+            let mut control_builder = ControlArchiveBuilder::new(util::compress::select_compressor(fast, compress_type, compress_system)?, package_deb.default_timestamp, listener);
+            control_builder.generate_archive(config, package_deb)?;
             Ok::<_, CargoDebError>(control_builder)
         },
         move || {
             // Initialize the contents of the data archive (files that go into the filesystem).
             let dest = util::compress::select_compressor(fast, compress_type, compress_system)?;
-            let archive = Tarball::new(dest, config.deb.default_timestamp);
-            let (compressed, asset_hashes) = archive.archive_files(config, rsyncable, listener)?;
-            let sums = config.deb.generate_sha256sums(&asset_hashes)?;
+            let archive = Tarball::new(dest, package_deb.default_timestamp);
+            let (compressed, asset_hashes) = archive.archive_files(package_deb, rsyncable, listener)?;
+            let sums = package_deb.generate_sha256sums(&asset_hashes)?;
             let original_data_size = compressed.uncompressed_size;
             Ok::<_, CargoDebError>((compressed.finish()?, original_data_size, sums))
         },
@@ -241,7 +241,7 @@ pub fn write_deb(config: &Config, &compress::CompressConfig { fast, compress_typ
     drop(sums);
     let control_compressed = control_builder.finish()?.finish()?;
 
-    let mut deb_contents = DebArchive::new(config.deb_output_path(), config.deb.default_timestamp)?;
+    let mut deb_contents = DebArchive::new(config.deb_output_path(package_deb), package_deb.default_timestamp)?;
 
     deb_contents.add_control(control_compressed)?;
     let compressed_data_size = data_compressed.len();
@@ -252,20 +252,20 @@ pub fn write_deb(config: &Config, &compress::CompressConfig { fast, compress_typ
     deb_contents.add_data(data_compressed)?;
     let generated = deb_contents.finish()?;
 
-    let deb_temp_dir = config.deb_temp_dir();
+    let deb_temp_dir = config.deb_temp_dir(package_deb);
     let _ = fs::remove_dir(deb_temp_dir);
 
     Ok(generated)
 }
 
 /// Creates empty (removes files if needed) target/debian/foo directory so that we can start fresh.
-fn reset_deb_temp_directory(config: &Config) -> io::Result<()> {
+fn reset_deb_temp_directory(config: &Config, package_deb: &PackageConfig) -> io::Result<()> {
     let deb_dir = config.default_deb_output_dir();
-    let deb_temp_dir = config.deb_temp_dir();
+    let deb_temp_dir = config.deb_temp_dir(package_deb);
     let _ = fs::remove_dir(&deb_temp_dir);
     // For backwards compatibility with previous cargo-deb behavior, also delete .deb from target/debian,
     // but this time only debs from other versions of the same package
-    let g = deb_dir.join(config.deb.filename_glob());
+    let g = deb_dir.join(package_deb.filename_glob());
     if let Ok(old_files) = glob::glob(g.to_str().expect("utf8 path")) {
         for old_file in old_files.flatten() {
             let _ = fs::remove_file(old_file);
@@ -376,7 +376,7 @@ fn ensure_success(status: ExitStatus) -> io::Result<()> {
 }
 
 /// Strips the binary that was created with cargo
-pub fn strip_binaries(config: &mut Config, target: Option<&str>, listener: &dyn Listener) -> CDResult<()> {
+pub fn strip_binaries(config: &mut Config, package_deb: &mut PackageConfig, target: Option<&str>, listener: &dyn Listener) -> CDResult<()> {
     let mut cargo_config = None;
     let objcopy_tmp;
     let strip_tmp;
@@ -406,7 +406,7 @@ pub fn strip_binaries(config: &mut Config, target: Option<&str>, listener: &dyn 
         DebugSymbols::Separate { compress } => (true, compress),
     };
 
-    let added_debug_assets = config.deb.built_binaries_mut().into_par_iter().enumerate()
+    let added_debug_assets = package_deb.built_binaries_mut().into_par_iter().enumerate()
         .filter(|(_, asset)| !asset.source.archive_as_symlink_only()) // data won't be included, so nothing to strip
         .map(|(i, asset)| {
         let (new_source, new_debug_asset) = if let Some(path) = asset.source.path() {
@@ -508,7 +508,7 @@ pub fn strip_binaries(config: &mut Config, target: Option<&str>, listener: &dyn 
         Ok::<_, CargoDebError>(new_debug_asset)
     }).collect::<Result<Vec<_>, _>>()?;
 
-    config.deb.assets.resolved
+    package_deb.assets.resolved
         .extend(added_debug_assets.into_iter().flatten());
 
     Ok(())

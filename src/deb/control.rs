@@ -1,7 +1,6 @@
-use crate::config::Config;
+use crate::config::{Config, PackageConfig};
 use crate::deb::tar::Tarball;
-use crate::dh::dh_installsystemd;
-use crate::dh::dh_lib;
+use crate::dh::{dh_installsystemd, dh_lib};
 use crate::error::{CDResult, CargoDebError};
 use crate::listener::Listener;
 use crate::util::{is_path_file, read_file_to_bytes};
@@ -24,15 +23,15 @@ impl<'l, W: Write> ControlArchiveBuilder<'l, W> {
     }
 
     /// Generates an uncompressed tar archive with `control`, `sha256sums`, and others
-    pub fn generate_archive(&mut self, config: &Config) -> CDResult<()> {
-        self.add_control(&config.deb.generate_control()?)?;
+    pub fn generate_archive(&mut self, config: &Config, package_deb: &PackageConfig) -> CDResult<()> {
+        self.add_control(&package_deb.generate_control()?)?;
 
-        if let Some(files) = config.deb.conf_files() {
+        if let Some(files) = package_deb.conf_files() {
             self.add_conf_files(&files)?;
         }
 
-        self.generate_scripts(config)?;
-        if let Some(ref file) = config.deb.triggers_file {
+        self.generate_scripts(config, package_deb)?;
+        if let Some(ref file) = package_deb.triggers_file {
             let triggers_file = &config.package_manifest_dir.as_path().join(file);
             self.add_triggers_file(triggers_file)?;
         }
@@ -60,18 +59,18 @@ impl<'l, W: Write> ControlArchiveBuilder<'l, W> {
     /// When `systemd_units` is configured, user supplied `maintainer_scripts` must
     /// contain a `#DEBHELPER#` token at the point where shell script fragments
     /// should be inserted.
-    fn generate_scripts(&mut self, config: &Config) -> CDResult<()> {
-        if let Some(ref maintainer_scripts_dir) = config.deb.maintainer_scripts {
+    fn generate_scripts(&mut self, config: &Config, package_deb: &PackageConfig) -> CDResult<()> {
+        if let Some(ref maintainer_scripts_dir) = package_deb.maintainer_scripts {
             let maintainer_scripts_dir = config.package_manifest_dir.as_path().join(maintainer_scripts_dir);
             let mut scripts = ScriptFragments::with_capacity(0);
 
-            if let Some(systemd_units_config_vec) = &config.deb.systemd_units {
+            if let Some(systemd_units_config_vec) = &package_deb.systemd_units {
                 for systemd_units_config in systemd_units_config_vec {
                     // Select and populate autoscript templates relevant to the unit
                     // file(s) in this package and the configuration settings chosen.
                     scripts = dh_installsystemd::generate(
-                        &config.deb.name,
-                        &config.deb.assets.resolved,
+                        &package_deb.name,
+                        &package_deb.assets.resolved,
                         &dh_installsystemd::Options::from(systemd_units_config),
                         self.listener,
                     )?;
@@ -84,7 +83,7 @@ impl<'l, W: Write> ControlArchiveBuilder<'l, W> {
                     dh_lib::apply(
                         &maintainer_scripts_dir,
                         &mut scripts,
-                        &config.deb.name,
+                        &package_deb.name,
                         unit_name,
                         self.listener,
                     )?;
@@ -205,10 +204,10 @@ mod tests {
     }
 
     #[track_caller]
-    fn prepare<'l, W: Write>(dest: W, package_name: Option<&str>, mock_listener: &'l mut MockListener) -> (Config, ControlArchiveBuilder<'l, W>) {
+    fn prepare<'l, W: Write>(dest: W, package_name: Option<&str>, mock_listener: &'l mut MockListener) -> (Config, PackageConfig, ControlArchiveBuilder<'l, W>) {
         mock_listener.expect_info().return_const(());
 
-        let mut config = Config::from_manifest(
+        let (mut config, package_deb) = Config::from_manifest(
             Some(Path::new("test-resources/testroot/Cargo.toml")),
             package_name,
             None,
@@ -232,19 +231,19 @@ mod tests {
 
         let ar = ControlArchiveBuilder::new(dest, 0, mock_listener);
 
-        (config, ar)
+        (config, package_deb, ar)
     }
 
     #[test]
     fn generate_scripts_does_nothing_if_maintainer_scripts_is_not_set() {
         let mut listener = MockListener::new();
-        let (config, mut in_ar) = prepare(vec![], None, &mut listener);
+        let (config, package_deb, mut in_ar) = prepare(vec![], None, &mut listener);
 
         // supply a maintainer script as if it were available on disk
         let _g = add_test_fs_paths(&["debian/postinst"]);
 
         // generate scripts and store them in the given archive
-        in_ar.generate_scripts(&config).unwrap();
+        in_ar.generate_scripts(&config, &package_deb).unwrap();
 
         // finish the archive and unwrap it as a byte vector
         let archive_bytes = in_ar.finish().unwrap();
@@ -286,7 +285,7 @@ mod tests {
     #[track_caller]
     fn generate_scripts_for_package_without_systemd_unit(package_name: Option<&str>, maintainer_script_paths: &[&'static str]) {
         let mut listener = MockListener::new();
-        let (mut config, mut in_ar) = prepare(vec![], package_name, &mut listener);
+        let (config, mut package_deb, mut in_ar) = prepare(vec![], package_name, &mut listener);
 
         // supply a maintainer script as if it were available on disk
         // provide file content that we can easily verify
@@ -298,10 +297,10 @@ mod tests {
         }
 
         // specify a path relative to the (root or workspace child) package
-        config.deb.maintainer_scripts.get_or_insert(PathBuf::from("debian"));
+        package_deb.maintainer_scripts.get_or_insert(PathBuf::from("debian"));
 
         // generate scripts and store them in the given archive
-        in_ar.generate_scripts(&config).unwrap();
+        in_ar.generate_scripts(&config, &package_deb).unwrap();
 
         // finish the archive and unwrap it as a byte vector
         let archive_bytes = in_ar.finish().unwrap();
@@ -388,7 +387,7 @@ mod tests {
         service_file: &'static str,
     ) {
         let mut listener = MockListener::new();
-        let (mut config, mut in_ar) = prepare(vec![], package_name, &mut listener);
+        let (config, mut package_deb, mut in_ar) = prepare(vec![], package_name, &mut listener);
 
         // supply a maintainer script as if it were available on disk
         // provide file content that we can easily verify
@@ -405,17 +404,17 @@ mod tests {
         // make the unit file available for systemd unit processing
         let source = AssetSource::Path(PathBuf::from(service_file));
         let target_path = PathBuf::from(format!("lib/systemd/system/{}", filename_from_path_str(service_file)));
-        config.deb.assets.resolved.push(Asset::new(source, target_path, 0o000, IsBuilt::No, false));
+        package_deb.assets.resolved.push(Asset::new(source, target_path, 0o000, IsBuilt::No, false));
 
         // look in the current dir for maintainer scripts (none, but the systemd
         // unit processing will be skipped if we don't set this)
-        config.deb.maintainer_scripts.get_or_insert(PathBuf::from("debian"));
+        package_deb.maintainer_scripts.get_or_insert(PathBuf::from("debian"));
 
         // enable systemd unit processing
-        config.deb.systemd_units.get_or_insert(vec![SystemdUnitsConfig::default()]);
+        package_deb.systemd_units.get_or_insert(vec![SystemdUnitsConfig::default()]);
 
         // generate scripts and store them in the given archive
-        in_ar.generate_scripts(&config).unwrap();
+        in_ar.generate_scripts(&config, &package_deb).unwrap();
 
         // finish the archive and unwrap it as a byte vector
         let archive_bytes = in_ar.finish().unwrap();

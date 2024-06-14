@@ -1,17 +1,14 @@
 use crate::assets::AssetSource;
-use crate::config::Config;
 use crate::error::{CDResult, CargoDebError};
 use crate::listener::Listener;
+use crate::PackageConfig;
 use sha2::{Digest, Sha256};
-use std::collections::HashMap;
-use std::collections::HashSet;
-use std::fs;
-use std::io;
+use std::collections::{HashMap, HashSet};
 use std::io::Write;
 use std::path::{Component, Path, PathBuf};
 use std::sync::mpsc;
-use tar::EntryType;
-use tar::Header as TarHeader;
+use std::{fs, io};
+use tar::{EntryType, Header as TarHeader};
 
 /// Tarball for control and data files
 pub(crate) struct Tarball<W: Write> {
@@ -31,10 +28,10 @@ impl<W: Write> Tarball<W> {
 
     /// Copies all the files to be packaged into the tar archive.
     /// Returns MD5 hashes of files copied
-    pub fn archive_files(mut self, options: &Config, rsyncable: bool, listener: &dyn Listener) -> CDResult<(W, HashMap<PathBuf, [u8; 32]>)> {
+    pub fn archive_files(mut self, package_deb: &PackageConfig, rsyncable: bool, listener: &dyn Listener) -> CDResult<(W, HashMap<PathBuf, [u8; 32]>)> {
         let hashes = std::thread::scope(|s| -> CDResult<_> {
             let (send, recv) = mpsc::sync_channel(2);
-            let num_items = options.deb.assets.resolved.len();
+            let num_items = package_deb.assets.resolved.len();
             let hash_thread = s.spawn(move || {
                 let mut hashes = HashMap::with_capacity(num_items);
                 hashes.extend(recv.into_iter().map(|(path, data)| {
@@ -45,8 +42,8 @@ impl<W: Write> Tarball<W> {
             let mut archive_data_added = 0;
             let mut prev_is_built = false;
 
-            debug_assert!(options.deb.assets.unresolved.is_empty());
-            for asset in &options.deb.assets.resolved {
+            debug_assert!(package_deb.assets.unresolved.is_empty());
+            for asset in &package_deb.assets.resolved {
                 let mut log_line = format!("{} {}-> {}",
                     asset.processed_from.as_ref().and_then(|p| p.original_path.as_deref())
                         .or(asset.source.path())

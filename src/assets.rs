@@ -1,8 +1,7 @@
-use crate::util::compress::gzipped;
-use crate::config::is_glob_pattern;
-use crate::config::Config;
+use crate::config::{is_glob_pattern, PackageConfig};
 use crate::error::{CDResult, CargoDebError};
 use crate::listener::Listener;
+use crate::util::compress::gzipped;
 use crate::util::read_file_to_bytes;
 use std::borrow::Cow;
 use std::env::consts::DLL_SUFFIX;
@@ -286,7 +285,7 @@ pub(crate) fn is_dynamic_library_filename(path: &Path) -> bool {
 ///
 /// <https://www.debian.org/doc/debian-policy/ch-docs.html>
 /// <https://lintian.debian.org/tags/manpage-not-compressed.html>
-pub fn compress_assets(config: &mut Config, listener: &dyn Listener) -> CDResult<()> {
+pub fn compress_assets(package_deb: &mut PackageConfig, listener: &dyn Listener) -> CDResult<()> {
     let mut indices_to_remove = Vec::new();
     let mut new_assets = Vec::new();
 
@@ -297,7 +296,7 @@ pub fn compress_assets(config: &mut Config, listener: &dyn Listener) -> CDResult
                 (path.starts_with("usr/share/info/") && path.ends_with(".info")))
     }
 
-    for (idx, orig_asset) in config.deb.assets.resolved.iter().enumerate() {
+    for (idx, orig_asset) in package_deb.assets.resolved.iter().enumerate() {
         if !orig_asset.c.target_path.starts_with("usr") {
             continue;
         }
@@ -322,10 +321,10 @@ pub fn compress_assets(config: &mut Config, listener: &dyn Listener) -> CDResult
     }
 
     for idx in indices_to_remove.iter().rev() {
-        config.deb.assets.resolved.swap_remove(*idx);
+        package_deb.assets.resolved.swap_remove(*idx);
     }
 
-    config.deb.assets.resolved.append(&mut new_assets);
+    package_deb.assets.resolved.append(&mut new_assets);
 
     Ok(())
 }
@@ -333,6 +332,7 @@ pub fn compress_assets(config: &mut Config, listener: &dyn Listener) -> CDResult
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::config::Config;
     use crate::parse::manifest::SystemdUnitsConfig;
     use crate::util::tests::add_test_fs_paths;
 
@@ -413,9 +413,9 @@ mod tests {
         // supply a systemd unit file as if it were available on disk
         let _g = add_test_fs_paths(&[to_canon_static_str("cargo-deb.service")]);
 
-        let config = Config::from_manifest(Some(Path::new("Cargo.toml")), None, None, None, None, None, None, &mock_listener, "release", None, None).unwrap();
+        let (_config, package_deb) = Config::from_manifest(Some(Path::new("Cargo.toml")), None, None, None, None, None, None, &mock_listener, "release", None, None).unwrap();
 
-        let num_unit_assets = config.deb.assets.resolved.iter()
+        let num_unit_assets = package_deb.assets.resolved.iter()
             .filter(|a| a.c.target_path.starts_with("lib/systemd/system/"))
             .count();
 
@@ -430,14 +430,14 @@ mod tests {
         // supply a systemd unit file as if it were available on disk
         let _g = add_test_fs_paths(&[to_canon_static_str("cargo-deb.service")]);
 
-        let mut config = Config::from_manifest(Some(Path::new("Cargo.toml")), None, None, None, None, None, None, &mock_listener, "release", None, None).unwrap();
+        let (mut config, mut package_deb) = Config::from_manifest(Some(Path::new("Cargo.toml")), None, None, None, None, None, None, &mock_listener, "release", None, None).unwrap();
 
-        config.deb.systemd_units.get_or_insert(vec![SystemdUnitsConfig::default()]);
-        config.deb.maintainer_scripts.get_or_insert(PathBuf::new());
+        package_deb.systemd_units.get_or_insert(vec![SystemdUnitsConfig::default()]);
+        package_deb.maintainer_scripts.get_or_insert(PathBuf::new());
 
-        config.add_systemd_assets().unwrap();
+        config.add_systemd_assets(&mut package_deb).unwrap();
 
-        let num_unit_assets = config.deb.assets.resolved
+        let num_unit_assets = package_deb.assets.resolved
             .iter()
             .filter(|a| a.c.target_path.starts_with("lib/systemd/system/"))
             .count();
