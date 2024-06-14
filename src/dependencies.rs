@@ -4,7 +4,7 @@ use std::path::Path;
 use std::process::Command;
 
 /// Resolves the dependencies based on the output of dpkg-shlibdeps on the binary.
-pub fn resolve(path: &Path, target: &Option<String>) -> CDResult<Vec<String>> {
+pub(crate) fn resolve(path: &Path, target: Option<&str>) -> CDResult<Vec<String>> {
     let temp_folder = tempfile::tempdir()?;
     let debian_folder = temp_folder.path().join("debian");
     let control_file_path = debian_folder.join("control");
@@ -56,7 +56,7 @@ pub fn resolve(path: &Path, target: &Option<String>) -> CDResult<Vec<String>> {
 #[cfg(target_os = "linux")]
 fn resolve_test() {
     let exe = std::env::current_exe().unwrap();
-    let deps = resolve(&exe, &None).unwrap();
+    let deps = resolve(&exe, None).unwrap();
     assert!(deps.iter().any(|d| d.starts_with("libc")));
     assert!(!deps.iter().any(|d| d.starts_with("libgcc")), "{deps:?}");
 }

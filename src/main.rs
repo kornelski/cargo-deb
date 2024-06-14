@@ -259,6 +259,7 @@ fn process(
     }
 
     config.deb.resolve_assets()?;
+    config.deb.resolve_binary_dependencies(config.target.as_deref(), listener)?;
 
     compress_assets(&mut config, listener)?;
 

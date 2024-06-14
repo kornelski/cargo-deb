@@ -136,8 +136,10 @@ pub struct Package {
     /// The maintainer of the Debian package.
     /// In Debian `control` file `Maintainer` field format.
     pub maintainer: String,
+    /// Deps including `$auto`
+    pub wildcard_depends: String,
     /// The Debian dependencies required to run the project.
-    pub depends: String,
+    pub resolved_depends: Option<String>,
     /// The Debian pre-dependencies.
     pub pre_depends: Option<String>,
     /// The Debian recommended dependencies.
@@ -315,7 +317,8 @@ impl Config {
                     Ok(package.authors().first()
                         .ok_or("The package must have a maintainer or authors property")?.to_owned())
                 })?,
-                depends: deb.depends.take().map(DependencyList::into_depends_string).unwrap_or_else(|| "$auto".to_owned()),
+                wildcard_depends: deb.depends.take().map(DependencyList::into_depends_string).unwrap_or_else(|| "$auto".to_owned()),
+                resolved_depends: None,
                 pre_depends: deb.pre_depends.take().map(DependencyList::into_depends_string),
                 recommends: deb.recommends.take().map(DependencyList::into_depends_string),
                 suggests: deb.suggests.take().map(DependencyList::into_depends_string),
@@ -350,40 +353,6 @@ impl Config {
 
         reset_deb_temp_directory(&config)?;
         Ok(config)
-    }
-
-    pub(crate) fn get_dependencies(&self, listener: &dyn Listener) -> CDResult<String> {
-        let mut deps = HashSet::new();
-        for word in self.deb.depends.split(',') {
-            let word = word.trim();
-            if word == "$auto" {
-                let bin = self.deb.all_binaries();
-                let resolved = bin.par_iter()
-                    .filter(|bin| !bin.archive_as_symlink_only())
-                    .filter_map(|p| p.path())
-                    .filter_map(|bname| match resolve(bname, &self.target) {
-                        Ok(bindeps) => Some(bindeps),
-                        Err(err) => {
-                            listener.warning(format!("{} (no auto deps for {})", err, bname.display()));
-                            None
-                        },
-                    })
-                    .collect::<Vec<_>>();
-                for dep in resolved.into_iter().flat_map(|s| s.into_iter()) {
-                    deps.insert(dep);
-                }
-            } else {
-                let (dep, arch_spec) = get_architecture_specification(word)?;
-                if let Some(spec) = arch_spec {
-                    if match_architecture(spec, &self.deb.architecture)? {
-                        deps.insert(dep);
-                    }
-                } else {
-                    deps.insert(dep);
-                }
-            }
-        }
-        Ok(deps.into_iter().collect::<Vec<_>>().join(", "))
     }
 
     pub fn extend_cargo_build_flags(&self, flags: &mut Vec<String>) {
@@ -629,6 +598,40 @@ impl Package {
         }
         self.conf_files.append(&mut new_conf);
     }
+
+    /// run dpkg/ldd to check deps of libs
+    pub fn resolve_binary_dependencies(&mut self, target: Option<&str>, listener: &dyn Listener) -> CDResult<()> {
+        let mut deps = HashSet::new();
+        for word in self.wildcard_depends.split(',') {
+            let word = word.trim();
+            if word == "$auto" {
+                let bin = self.all_binaries();
+                let resolved = bin.par_iter()
+                    .filter(|bin| !bin.archive_as_symlink_only())
+                    .filter_map(|p| p.path())
+                    .filter_map(|bname| match resolve(bname, target) {
+                        Ok(bindeps) => Some(bindeps),
+                        Err(err) => {
+                            listener.warning(format!("{} (no auto deps for {})", err, bname.display()));
+                            None
+                        },
+                    })
+                    .collect::<Vec<_>>();
+                for dep in resolved.into_iter().flat_map(|s| s.into_iter()) {
+                    deps.insert(dep);
+                }
+            } else {
+                let (dep, arch_spec) = get_architecture_specification(word)?;
+                if let Some(spec) = arch_spec {
+                    if match_architecture(spec, &self.architecture)? {
+                        deps.insert(dep);
+                    }
+                } else {
+                    deps.insert(dep);
+                }
+            }
+        }
+        self.resolved_depends = Some(deps.into_iter().collect::<Vec<_>>().join(", "));
         Ok(())
     }
 
@@ -688,7 +691,7 @@ impl Package {
     }
 
     /// Generates the control file that obtains all the important information about the package.
-    pub fn generate_control(&self, deps: &str) -> CDResult<Vec<u8>> {
+    pub fn generate_control(&self) -> CDResult<Vec<u8>> {
         // Create and return the handle to the control file with write access.
         let mut control: Vec<u8> = Vec::with_capacity(1024);
 
@@ -720,7 +723,7 @@ impl Package {
 
         writeln!(&mut control, "Installed-Size: {installed_size}")?;
 
-        if !deps.is_empty() {
+        if let Some(deps) = &self.resolved_depends {
             writeln!(&mut control, "Depends: {deps}")?;
         }
 
