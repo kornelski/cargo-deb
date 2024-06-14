@@ -1,12 +1,10 @@
 use crate::error::{CDResult, CargoDebError};
-use std::io;
 use std::io::{BufWriter, Read};
 use std::num::NonZeroU64;
 #[cfg(feature = "lzma")]
 use std::num::NonZeroUsize;
-use std::ops;
-use std::process::{Child, ChildStdin};
-use std::process::{Command, Stdio};
+use std::process::{Child, ChildStdin, Command, Stdio};
+use std::{io, ops};
 use zopfli::{BlockType, GzipEncoder, Options};
 
 pub struct CompressConfig {

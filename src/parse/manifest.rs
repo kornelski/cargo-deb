@@ -191,7 +191,7 @@ impl MergeByKey {
     }
 
     /// Folds the parent asset into a merge-map preparing to prepare for a merge,
-    /// 
+    ///
     fn prep_parent_item<'a>(&'a self, mut parent: MergeMap<'a>, asset: &'a Vec<String>) -> MergeMap<'_> {
         if let [src, dest, perm, ..] = &asset[..] {
             match &self {
@@ -213,8 +213,8 @@ impl MergeByKey {
     ///
     fn merge_with(&self, parent: MergeMap<'_>) -> AssetList {
         match self {
-            MergeByKey::Src(assets) => {
-               assets.iter().fold(parent, |mut acc, asset| {
+            MergeByKey::Src(assets) => assets.iter()
+                .fold(parent, |mut acc, asset| {
                     if let [src, dest, perm, ..] = &asset[..] {
                         if let Some([replaced_dest, replaced_perm]) = acc.insert(src, [dest, perm]) {
                             debug!("Replacing {:?} w/ {:?}", [replaced_dest, replaced_perm], [dest, perm]);
@@ -224,12 +224,12 @@ impl MergeByKey {
                         warn!("Incomplete asset entry {:?}", asset);
                         acc
                     }
-                }).iter().map(|(src, [dest, perm])| {
-                    vec![(*src).to_string(), (*dest).to_string(), (*perm).to_string()]
-                }).collect()
-            },
-            MergeByKey::Dest(assets) => {
-                assets.iter().fold(parent, |mut acc, asset| {
+                })
+                .iter()
+                .map(|(src, [dest, perm])| vec![(*src).to_string(), (*dest).to_string(), (*perm).to_string()])
+                .collect(),
+            MergeByKey::Dest(assets) => assets.iter()
+                .fold(parent, |mut acc, asset| {
                     if let [src, dest, perm, ..] = &asset[..] {
                         if let Some([replaced_src, replaced_perm]) = acc.insert(dest, [src, perm]) {
                             debug!("Replacing {:?} w/ {:?}", [replaced_src, replaced_perm], [src, perm]);
@@ -239,10 +239,10 @@ impl MergeByKey {
                         warn!("Incomplete asset entry {:?}", asset);
                         acc
                     }
-                }).iter().map(|(dest, [src, perm])| {
-                    vec![(*src).to_string(), (*dest).to_string(), (*perm).to_string()]
-                }).collect()
-            },
+                })
+                .iter()
+                .map(|(dest, [src, perm])| vec![(*src).to_string(), (*dest).to_string(), (*perm).to_string()])
+                .collect(),
         }
     }
 }
@@ -250,7 +250,7 @@ impl MergeByKey {
 impl CargoDeb {
     /// Inherit unset fields from parent,
     ///
-    /// **Note**: For backwards compat, if merge_assets is set, this will apply **after** the variant has overridden the assets.
+    /// **Note**: For backwards compat, if `merge_assets` is set, this will apply **after** the variant has overridden the assets.
     ///
     pub(crate) fn inherit_from(self, parent: CargoDeb) -> CargoDeb {
         let mut assets = self.assets.or(parent.assets);
@@ -365,8 +365,7 @@ pub fn cargo_metadata(root_manifest_path: Option<&Path>, selected_package_name: 
     let root_manifest = cargo_toml::Manifest::<CargoPackageMetadata>::from_path_with_metadata(workspace_root_manifest_path).ok();
     let target_dir = metadata.target_directory.into();
     let manifest_path = Path::new(&target_package.manifest_path);
-    let manifest_bytes =
-        fs::read(manifest_path).map_err(|e| CargoDebError::IoFile("unable to read manifest", e, manifest_path.to_owned()))?;
+    let manifest_bytes = fs::read(manifest_path).map_err(|e| CargoDebError::IoFile("unable to read manifest", e, manifest_path.to_owned()))?;
     let default_timestamp = if let Ok(source_date_epoch) = std::env::var("SOURCE_DATE_EPOCH") {
         source_date_epoch.parse().map_err(|e| CargoDebError::NumParse("SOURCE_DATE_EPOCH", e))?
     } else {

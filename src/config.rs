@@ -311,13 +311,13 @@ impl Config {
                 homepage: package.homepage().map(From::from),
                 documentation: package.documentation().map(From::from),
                 repository: package.repository.take().map(|v| v.unwrap()),
-                description: package.description.take().map(|v| v.unwrap()).unwrap_or_else(||format!("[generated from Rust crate {}]", package.name)),
+                description: package.description.take().map_or_else(||format!("[generated from Rust crate {}]", package.name), |v| v.unwrap()),
                 extended_description,
                 maintainer: deb.maintainer.take().ok_or_then(|| {
                     Ok(package.authors().first()
                         .ok_or("The package must have a maintainer or authors property")?.to_owned())
                 })?,
-                wildcard_depends: deb.depends.take().map(DependencyList::into_depends_string).unwrap_or_else(|| "$auto".to_owned()),
+                wildcard_depends: deb.depends.take().map_or_else(|| "$auto".to_owned(), DependencyList::into_depends_string),
                 resolved_depends: None,
                 pre_depends: deb.pre_depends.take().map(DependencyList::into_depends_string),
                 recommends: deb.recommends.take().map(DependencyList::into_depends_string),
@@ -580,7 +580,7 @@ impl Package {
     }
 
     /// Debian defaults all /etc files to be conf files
-    /// https://www.debian.org/doc/manuals/maint-guide/dother.en.html#conffiles
+    /// <https://www.debian.org/doc/manuals/maint-guide/dother.en.html#conffiles>
     fn add_conf_files(&mut self) {
         let existing_conf_files = self.conf_files.iter()
             .map(|c| c.trim_start_matches('/')).collect::<HashSet<_>>();

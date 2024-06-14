@@ -195,9 +195,7 @@ pub(crate) mod tests {
     }
 
     fn with_test_fs<F, R>(callback: F) -> R
-    where
-        F: Fn(&mut HashMap<&'static str, TestPath>) -> R,
-    {
+    where F: Fn(&mut HashMap<&'static str, TestPath>) -> R {
         MOCK_FS.with(|fs| callback(&mut fs.lock().unwrap()))
     }
 

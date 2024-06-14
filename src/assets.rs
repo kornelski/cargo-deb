@@ -131,17 +131,17 @@ impl UnresolvedAsset {
     pub(crate) fn new(source_path: PathBuf, target_path: PathBuf, chmod: u32, is_built: IsBuilt, is_example: bool) -> Self {
         Self {
             source_path,
-            c: AssetCommon { target_path, chmod, is_built, is_example },
+            c: AssetCommon { target_path, chmod, is_example, is_built },
         }
     }
 
-    /// Convert source_path (with glob or dir) to actual path
+    /// Convert `source_path` (with glob or dir) to actual path
     pub fn resolve(self, preserve_symlinks: bool) -> CDResult<Vec<Asset>> {
         let Self { source_path, c: AssetCommon { target_path, chmod, is_built, is_example } } = self;
         let source_prefix = is_glob_pattern(&source_path).then(|| {
             source_path.iter()
-            .take_while(|&part| !is_glob_pattern(part.as_ref()))
-            .collect::<PathBuf>()
+                .take_while(|&part| !is_glob_pattern(part.as_ref()))
+                .collect::<PathBuf>()
         });
         let matched_assets = glob::glob(source_path.to_str().ok_or("utf8 path")?)?
             // Remove dirs from globs without throwing away errors
@@ -218,9 +218,7 @@ impl Asset {
         Self {
             source,
             processed_from: None,
-            c: AssetCommon {
-                target_path, chmod, is_built, is_example,
-            },
+            c: AssetCommon { target_path, chmod, is_example, is_built },
         }
     }
 
@@ -293,10 +291,10 @@ pub fn compress_assets(config: &mut Config, listener: &dyn Listener) -> CDResult
     let mut new_assets = Vec::new();
 
     fn needs_compression(path: &str) -> bool {
-        !path.ends_with(".gz")
-            && (path.starts_with("usr/share/man/")
-                || (path.starts_with("usr/share/doc/") && (path.ends_with("/NEWS") || path.ends_with("/changelog")))
-                || (path.starts_with("usr/share/info/") && path.ends_with(".info")))
+        !path.ends_with(".gz") &&
+            (path.starts_with("usr/share/man/") ||
+                (path.starts_with("usr/share/doc/") && (path.ends_with("/NEWS") || path.ends_with("/changelog"))) ||
+                (path.starts_with("usr/share/info/") && path.ends_with(".info")))
     }
 
     for (idx, orig_asset) in config.deb.assets.resolved.iter().enumerate() {

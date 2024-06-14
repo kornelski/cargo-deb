@@ -138,8 +138,8 @@ pub fn find_units(dir: &Path, main_package: &str, unit_name: Option<&str>) -> Pa
     let mut installables = HashMap::new();
 
     for (package_suffix, unit_type, install_dir) in &SYSTEMD_UNIT_FILE_INSTALL_MAPPINGS {
-        let package = &format!("{main_package}{package_suffix}");
-        if let Some(src_path) = pkgfile(dir, main_package, package, unit_type, unit_name) {
+        let package_name = &format!("{main_package}{package_suffix}");
+        if let Some(src_path) = pkgfile(dir, main_package, package_name, unit_type, unit_name) {
             // .tmpfile files should be installed in a different directory and
             // with a different extension. See:
             //   https://www.freedesktop.org/software/systemd/man/tmpfiles.d.html
@@ -150,10 +150,10 @@ pub fn find_units(dir: &Path, main_package: &str, unit_name: Option<&str>) -> Pa
 
             // Determine the file name that the unit file should be installed as
             // which depends on whether or not a unit name was provided.
-            let install_filename = if let Some(name) = unit_name {
-                format!("{name}{package_suffix}.{actual_suffix}")
+            let install_filename = if let Some(unit_name) = unit_name {
+                format!("{unit_name}{package_suffix}.{actual_suffix}")
             } else {
-                format!("{package}.{actual_suffix}")
+                format!("{package_name}.{actual_suffix}")
             };
 
             // Construct the full install path for this unit file.
@@ -374,7 +374,7 @@ pub fn generate(package: &str, assets: &[Asset], options: &Options, listener: &d
 
         // Run this with "default" order so it is always after other service
         // related autosnippets.
-		autoscript(&mut scripts, package, "postrm", "postrm-systemd-reload-only", &replace, false, listener)?;
+        autoscript(&mut scripts, package, "postrm", "postrm-systemd-reload-only", &replace, false, listener)?;
     }
 
     Ok(scripts)
@@ -384,9 +384,7 @@ pub fn generate(package: &str, assets: &[Asset], options: &Options, listener: &d
 mod tests {
     use super::*;
     use crate::assets::{Asset, AssetSource};
-    use crate::util::tests::add_test_fs_paths;
-    use crate::util::tests::get_read_count;
-    use crate::util::tests::set_test_fs_path_content;
+    use crate::util::tests::{add_test_fs_paths, get_read_count, set_test_fs_path_content};
     use rstest::*;
 
     #[test]

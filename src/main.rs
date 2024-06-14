@@ -88,7 +88,7 @@ fn main() -> ExitCode {
             }
             print_error(&err);
             return ExitCode::FAILURE;
-        }
+        },
     };
     if matches.opt_present("h") {
         print!("{}", cli_opts.usage_with_format(|opts| {

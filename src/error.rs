@@ -1,8 +1,6 @@
 use quick_error::quick_error;
-use std::io;
-use std::num;
 use std::path::PathBuf;
-use std::time;
+use std::{io, num, time};
 
 quick_error! {
     #[derive(Debug)]

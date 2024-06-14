@@ -1,8 +1,7 @@
 use crate::error::CDResult;
 use std::borrow::Cow;
-use std::env;
-use std::fs;
 use std::path::{Path, PathBuf};
+use std::{env, fs};
 
 pub struct CargoConfig {
     path: PathBuf,

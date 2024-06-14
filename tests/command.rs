@@ -1,9 +1,7 @@
-use std::env;
-use std::env::consts::DLL_PREFIX;
-use std::env::consts::DLL_SUFFIX;
-use std::fs;
+use std::env::consts::{DLL_PREFIX, DLL_SUFFIX};
 use std::path::{Path, PathBuf};
 use std::process::Command;
+use std::{env, fs};
 
 use std::io::{BufRead, BufReader, Read, Seek};
 use tempfile::TempDir;
@@ -371,7 +369,6 @@ fn run_cargo_deb_command_on_example_dir_with_version() {
         &fs::read(ddir.path().join("usr/share/doc/example/changelog.Debian.gz")).unwrap()[..2]
     );
 }
-
 
 fn dir_test_run_in_subdir(subdir_path: &str) {
     let cargo_dir = tempfile::tempdir().unwrap();

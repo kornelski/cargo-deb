@@ -18,8 +18,9 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
 use crate::error::CargoDebError;
+use crate::listener::Listener;
 use crate::util::{is_path_file, read_file_to_string};
-use crate::{listener::Listener, CDResult};
+use crate::CDResult;
 
 /// DebHelper autoscripts are embedded in the Rust library binary.
 /// The autoscripts were taken from:
@@ -62,7 +63,7 @@ pub(crate) type ScriptFragments = HashMap<String, Vec<u8>>;
 ///
 /// # Known limitations
 ///
-/// The pkgfile() subroutine in the actual `dh_installsystemd` code is capable of
+/// The `pkgfile()` subroutine in the actual `dh_installsystemd` code is capable of
 /// matching architecture and O/S specific unit files, but this implementation
 /// does not support architecture or O/S specific unit files.
 ///
@@ -298,9 +299,7 @@ fn debhelper_script_subst(user_scripts_dir: &Path, scripts: &mut ScriptFragments
 /// on disk supplied by the user.
 ///
 /// See: <https://git.launchpad.net/ubuntu/+source/debhelper/tree/dh_installdeb?h=applied/12.10ubuntu1#n300>
-pub(crate) fn apply(user_scripts_dir: &Path, scripts: &mut ScriptFragments, package: &str, unit_name: Option<&str>,
-    listener: &dyn Listener) -> CDResult<()>
-{
+pub(crate) fn apply(user_scripts_dir: &Path, scripts: &mut ScriptFragments, package: &str, unit_name: Option<&str>, listener: &dyn Listener) -> CDResult<()> {
     for script in &["postinst", "preinst", "prerm", "postrm"] {
         // note: we don't support custom defines thus we don't have the final
         // 'package_subst' argument to debhelper_script_subst().
