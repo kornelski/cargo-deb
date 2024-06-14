@@ -335,7 +335,7 @@ pub(crate) struct CargoMetadataTarget {
 
 pub(crate) struct ManifestFound {
     pub targets: Vec<CargoMetadataTarget>,
-    pub manifest_path: PathBuf,
+    pub manifest_dir: PathBuf,
     pub root_manifest: Option<cargo_toml::Manifest<CargoPackageMetadata>>,
     pub target_dir: PathBuf,
     pub default_timestamp: u64,
@@ -378,8 +378,10 @@ pub fn cargo_metadata(root_manifest_path: Option<&Path>, selected_package_name: 
     manifest.complete_from_path_and_workspace(manifest_path, ws_root)
         .map_err(move |e| CargoDebError::TomlParsing(e, manifest_path.to_path_buf()))?;
 
+    let mut manifest_dir = target_package.manifest_path;
+    manifest_dir.pop();
     Ok(ManifestFound {
-        manifest_path: target_package.manifest_path,
+        manifest_dir,
         targets: target_package.targets,
         root_manifest,
         target_dir,

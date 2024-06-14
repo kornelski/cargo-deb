@@ -223,13 +223,11 @@ impl Config {
         let ManifestFound {
             targets,
             root_manifest,
-            mut manifest_path,
+            manifest_dir,
             mut target_dir,
             mut manifest,
             default_timestamp,
         } = cargo_metadata(root_manifest_path, selected_package_name)?;
-        manifest_path.pop();
-        let package_manifest_dir = manifest_path;
 
         // Cargo cross-compiles to a dir
         if let Some(target) = target {
@@ -279,18 +277,18 @@ impl Config {
 
         let (license_file, license_file_skip_lines) = manifest_license_file(package, deb.license_file.as_ref())?;
 
-        manifest_check_config(package, &package_manifest_dir, &deb, listener);
+        manifest_check_config(package, &manifest_dir, &deb, listener);
 
         let extended_description_file = deb.extended_description_file.is_none()
             .then(|| package.readme().as_path()).flatten()
-            .map(|readme_rel_path| package_manifest_dir.join(readme_rel_path));
+            .map(|readme_rel_path| manifest_dir.join(readme_rel_path));
         let extended_description = manifest_extended_description(
             deb.extended_description.take(),
             deb.extended_description_file.as_ref().map(Path::new).or(extended_description_file.as_deref()),
         )?;
 
         let mut config = Self {
-            package_manifest_dir,
+            package_manifest_dir: manifest_dir,
             deb_output_path,
             target: target.map(|t| t.to_string()),
             target_dir,
