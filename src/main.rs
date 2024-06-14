@@ -1,7 +1,7 @@
 #![allow(clippy::redundant_closure_for_method_calls)]
 
 use cargo_deb::assets::compress_assets;
-use cargo_deb::compress::{self, CompressConfig};
+use cargo_deb::compress::{Format, CompressConfig};
 use cargo_deb::config::{Config, DebugSymbols};
 use cargo_deb::{cargo_build, install_deb, listener, strip_binaries, write_deb};
 use cargo_deb::{CDResult, CargoDebError};
@@ -27,7 +27,7 @@ struct CliOptions {
     cargo_build_flags: Vec<String>,
     deb_version: Option<String>,
     deb_revision: Option<String>,
-    compress_type: compress::Format,
+    compress_type: Format,
     compress_system: bool,
     system_xz: bool,
     rsyncable: bool,
@@ -113,8 +113,8 @@ fn main() -> ExitCode {
     let install = matches.opt_present("install");
 
     let compress_type = match matches.opt_str("compress-type").as_deref() {
-        Some("gz" | "gzip") => compress::Format::Gzip,
-        Some("xz") | None => compress::Format::Xz,
+        Some("gz" | "gzip") => Format::Gzip,
+        Some("xz") | None => Format::Xz,
         _ => {
             print_error(&CargoDebError::Str("unrecognized compression format. Supported: gzip, xz"));
             return ExitCode::FAILURE;
@@ -221,7 +221,7 @@ fn process(
     if system_xz {
         listener.warning("--system-xz is deprecated, use --compress-system instead.".into());
 
-        compress_type = compress::Format::Xz;
+        compress_type = Format::Xz;
         compress_system = true;
     }
 

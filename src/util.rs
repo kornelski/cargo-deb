@@ -5,6 +5,8 @@ pub(crate) mod ok_or;
 pub(crate) mod pathbytes;
 pub(crate) mod wordsplit;
 
+pub mod compress;
+
 /// Get the filename from a path.
 /// Note: Due to the way the Path type works the final component is returned
 /// even if it looks like a directory, e.g. "/some/dir/" will return "dir"...

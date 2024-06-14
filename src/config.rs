@@ -1,6 +1,6 @@
 use crate::assets::is_dynamic_library_filename;
 use crate::assets::{Asset, AssetSource, Assets, IsBuilt, UnresolvedAsset};
-use crate::compress;
+use crate::util::compress::gzipped;
 use crate::debian_architecture_from_rust_triple;
 use crate::dependencies::resolve;
 use crate::dh::dh_installsystemd;
@@ -512,7 +512,7 @@ impl Config {
                         return Ok(content);
                     }
                     // The input is plaintext, but the debian package should contain gzipped one.
-                    compress::gzipped(&content)
+                    gzipped(&content)
                 })
                 .map_err(|e| CargoDebError::IoFile("unable to read changelog file", e, source_path.clone()))?;
             Ok(Some((source_path, changelog)))

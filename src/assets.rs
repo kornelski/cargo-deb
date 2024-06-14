@@ -1,4 +1,4 @@
-use crate::compress;
+use crate::util::compress::gzipped;
 use crate::config::is_glob_pattern;
 use crate::config::Config;
 use crate::error::{CDResult, CargoDebError};
@@ -311,7 +311,7 @@ pub fn compress_assets(config: &mut Config, listener: &dyn Listener) -> CDResult
             new_path.push_str(".gz");
             listener.info(format!("Compressing '{new_path}'"));
             new_assets.push(Asset::new(
-                crate::assets::AssetSource::Data(compress::gzipped(&orig_asset.source.data()?)?),
+                crate::assets::AssetSource::Data(gzipped(&orig_asset.source.data()?)?),
                 new_path.into(),
                 orig_asset.c.chmod,
                 IsBuilt::No,

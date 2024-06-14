@@ -24,7 +24,6 @@ cargo deb # run this in your Cargo project directory
 The library interface is experimental. See `main.rs` for usage.
 */
 
-pub mod compress;
 pub mod deb {
     pub mod ar;
     pub mod control;
@@ -44,6 +43,7 @@ pub(crate) mod parse {
 pub use crate::config::{Config, DebugSymbols, Package};
 pub use crate::deb::ar::DebArchive;
 pub use crate::error::*;
+pub use crate::util::compress;
 
 pub mod assets;
 pub mod config;
@@ -51,7 +51,6 @@ mod dependencies;
 mod error;
 
 use crate::assets::{Asset, AssetSource, IsBuilt, ProcessedFrom};
-use crate::compress::CompressConfig;
 use crate::deb::control::ControlArchiveBuilder;
 use crate::deb::tar::Tarball;
 use crate::listener::Listener;
@@ -77,17 +76,17 @@ pub fn install_deb(path: &Path) -> CDResult<()> {
     Ok(())
 }
 
-pub fn write_deb(config: &Config, &CompressConfig { fast, compress_type, compress_system, rsyncable }: &CompressConfig, listener: &dyn Listener) -> Result<PathBuf, CargoDebError> {
+pub fn write_deb(config: &Config, &compress::CompressConfig { fast, compress_type, compress_system, rsyncable }: &compress::CompressConfig, listener: &dyn Listener) -> Result<PathBuf, CargoDebError> {
     let (control_builder, data_result) = rayon::join(
         move || {
             // The control archive is the metadata for the package manager
-            let mut control_builder = ControlArchiveBuilder::new(compress::select_compressor(fast, compress_type, compress_system)?, config.deb.default_timestamp, listener);
+            let mut control_builder = ControlArchiveBuilder::new(util::compress::select_compressor(fast, compress_type, compress_system)?, config.deb.default_timestamp, listener);
             control_builder.generate_archive(config)?;
             Ok::<_, CargoDebError>(control_builder)
         },
         move || {
             // Initialize the contents of the data archive (files that go into the filesystem).
-            let dest = compress::select_compressor(fast, compress_type, compress_system)?;
+            let dest = util::compress::select_compressor(fast, compress_type, compress_system)?;
             let archive = Tarball::new(dest, config.deb.default_timestamp);
             let (compressed, asset_hashes) = archive.archive_files(config, rsyncable, listener)?;
             let sums = config.deb.generate_sha256sums(&asset_hashes)?;

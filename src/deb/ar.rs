@@ -1,4 +1,4 @@
-use crate::compress::Compressed;
+use crate::util::compress::Compressed;
 use crate::CDResult;
 use ar::{Builder, Header};
 use std::fs;
