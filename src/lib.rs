@@ -6,6 +6,8 @@
 #![allow(clippy::module_name_repetitions)]
 #![allow(clippy::redundant_closure_for_method_calls)]
 #![allow(clippy::similar_names)]
+#![allow(clippy::assigning_clones)] // buggy
+
 /*!
 
 ## Making deb packages
@@ -37,20 +39,21 @@ mod dh {
 }
 pub mod listener;
 pub(crate) mod parse {
-    pub(crate) mod config;
+    pub(crate) mod cargo;
     pub(crate) mod manifest;
 }
-pub use crate::config::{Config, DebugSymbols, Package};
+pub use crate::config::{Config, DebugSymbols, PackageConfig};
 pub use crate::deb::ar::DebArchive;
 pub use crate::error::*;
 pub use crate::util::compress;
+use crate::util::compress::{CompressConfig, Format};
 
 pub mod assets;
 pub mod config;
 mod dependencies;
 mod error;
 
-use crate::assets::{Asset, AssetSource, IsBuilt, ProcessedFrom};
+use crate::assets::{Asset, AssetSource, IsBuilt, ProcessedFrom, compress_assets};
 use crate::deb::control::ControlArchiveBuilder;
 use crate::deb::tar::Tarball;
 use crate::listener::Listener;
@@ -65,6 +68,144 @@ const TAR_REJECTS_CUR_DIR: bool = true;
 
 /// Set by `build.rs`
 const DEFAULT_TARGET: &str = env!("CARGO_DEB_DEFAULT_TARGET");
+
+pub struct CargoDeb {
+    options: CargoDebOptions,
+}
+
+impl CargoDeb {
+    pub fn new(options: CargoDebOptions) -> Self {
+        Self { options }
+    }
+
+    pub fn process(mut self, listener: &dyn Listener) -> CDResult<()> {
+        if self.options.install || self.options.target.is_none() {
+            warn_if_not_linux(); // compiling natively for non-linux = nope
+        }
+
+        if self.options.system_xz {
+            listener.warning("--system-xz is deprecated, use --compress-system instead.".into());
+
+            self.options.compress_type = Format::Xz;
+            self.options.compress_system = true;
+        }
+
+        // The profile is selected based on the given ClI options and then passed to
+        // cargo build accordingly. you could argue that the other way around is
+        // more desirable. However for now we want all commands coming in via the
+        // same `interface`
+        let selected_profile = self.options.profile.as_deref().unwrap_or("release");
+        if selected_profile == "dev" {
+            listener.warning("dev profile is not supported and will be a hard error in the future. \
+                cargo-deb is for making releases, and it doesn't make sense to use it with dev profiles.".into());
+            listener.warning("To enable debug symbols set `[profile.release] debug = true` instead.".into());
+        }
+        self.options.cargo_build_flags.push(format!("--profile={selected_profile}"));
+
+        let root_manifest_path = self.options.manifest_path.as_deref().map(Path::new);
+        let mut config = Config::from_manifest(
+            root_manifest_path,
+            self.options.selected_package_name.as_deref(),
+            self.options.output_path,
+            self.options.target.as_deref(),
+            self.options.variant.as_deref(),
+            self.options.deb_version,
+            self.options.deb_revision,
+            listener,
+            selected_profile,
+            self.options.separate_debug_symbols,
+            self.options.compress_debug_symbols,
+        )?;
+
+        config.extend_cargo_build_flags(&mut self.options.cargo_build_flags);
+
+        if !self.options.no_build {
+            cargo_build(&config, self.options.target.as_deref(), &self.options.cargo_build_cmd, &self.options.cargo_build_flags, self.options.verbose)?;
+        }
+
+        config.deb.resolve_assets()?;
+        config.deb.resolve_binary_dependencies(config.target.as_deref(), listener)?;
+
+        compress_assets(&mut config, listener)?;
+
+        if self.options.strip_override.unwrap_or(config.debug_symbols != DebugSymbols::Keep) {
+            strip_binaries(&mut config, self.options.target.as_deref(), listener)?;
+        } else {
+            log::debug!("not stripping debug={:?} strip-flag={:?}", config.debug_symbols, self.options.strip_override);
+        }
+
+        config.deb.sort_assets_by_type();
+
+        let generated = write_deb(&config, &CompressConfig {
+            fast: self.options.fast,
+            compress_type: self.options.compress_type,
+            compress_system: self.options.compress_system,
+            rsyncable: self.options.rsyncable,
+        }, listener)?;
+
+        listener.generated_archive(&generated);
+
+        if self.options.install {
+            install_deb(&generated)?;
+        }
+        Ok(())
+    }
+}
+
+pub struct CargoDebOptions {
+    pub no_build: bool,
+    pub strip_override: Option<bool>,
+    pub separate_debug_symbols: Option<bool>,
+    pub compress_debug_symbols: Option<bool>,
+    /// Don't compress heavily
+    pub fast: bool,
+    /// Build with --verbose
+    pub verbose: bool,
+    /// Run dpkg -i
+    pub install: bool,
+    pub selected_package_name: Option<String>,
+    pub output_path: Option<String>,
+    pub variant: Option<String>,
+    pub target: Option<String>,
+    pub manifest_path: Option<String>,
+    pub cargo_build_cmd: String,
+    pub cargo_build_flags: Vec<String>,
+    pub deb_version: Option<String>,
+    pub deb_revision: Option<String>,
+    pub compress_type: Format,
+    pub compress_system: bool,
+    pub system_xz: bool,
+    pub rsyncable: bool,
+    pub profile: Option<String>,
+}
+
+impl Default for CargoDebOptions {
+    fn default() -> Self {
+        Self {
+            no_build: false,
+            strip_override: None,
+            separate_debug_symbols: None,
+            compress_debug_symbols: None,
+            fast: false,
+            verbose: false,
+            install: false,
+            selected_package_name: None,
+            output_path: None,
+            variant: None,
+            target: None,
+            manifest_path: None,
+            cargo_build_cmd: "build".into(),
+            cargo_build_flags: Vec::new(),
+            deb_version: None,
+            deb_revision: None,
+            compress_type: Format::Xz,
+            compress_system: false,
+            system_xz: false,
+            rsyncable: false,
+            profile: None,
+        }
+    }
+}
 
 /// Run `dpkg` to install `deb` archive at the given path
 pub fn install_deb(path: &Path) -> CDResult<()> {
@@ -421,4 +562,14 @@ fn elf_gnu_debug_id(elf_file_path: &Path) -> Result<Option<PathBuf>, elf::ParseE
         }
     }
     Ok(None)
+}
+
+#[cfg(target_os = "linux")]
+fn warn_if_not_linux() {
+}
+
+#[cfg(not(target_os = "linux"))]
+fn warn_if_not_linux() {
+    const DEFAULT_TARGET: &str = env!("CARGO_DEB_DEFAULT_TARGET");
+    eprintln!("warning: You're creating a package for your current operating system only ({DEFAULT_TARGET}), and not for Linux.\nUse --target if you want to cross-compile.");
 }

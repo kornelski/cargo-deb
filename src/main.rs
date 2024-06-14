@@ -1,38 +1,7 @@
-#![allow(clippy::redundant_closure_for_method_calls)]
-
-use cargo_deb::assets::compress_assets;
-use cargo_deb::compress::{Format, CompressConfig};
-use cargo_deb::config::{Config, DebugSymbols};
-use cargo_deb::{cargo_build, install_deb, listener, strip_binaries, write_deb};
-use cargo_deb::{CDResult, CargoDebError};
+use cargo_deb::compress::Format;
+use cargo_deb::{listener, CargoDeb, CargoDebError, CargoDebOptions};
 use std::env;
-use std::path::Path;
 use std::process::ExitCode;
-
-struct CliOptions {
-    no_build: bool,
-    strip_override: Option<bool>,
-    separate_debug_symbols: Option<bool>,
-    compress_debug_symbols: Option<bool>,
-    fast: bool,
-    verbose: bool,
-    quiet: bool,
-    install: bool,
-    selected_package_name: Option<String>,
-    output_path: Option<String>,
-    variant: Option<String>,
-    target: Option<String>,
-    manifest_path: Option<String>,
-    cargo_build_cmd: String,
-    cargo_build_flags: Vec<String>,
-    deb_version: Option<String>,
-    deb_revision: Option<String>,
-    compress_type: Format,
-    compress_system: bool,
-    system_xz: bool,
-    rsyncable: bool,
-    profile: Option<String>,
-}
 
 fn main() -> ExitCode {
     env_logger::init();
@@ -66,7 +35,7 @@ fn main() -> ExitCode {
     cli_opts.optflag("", "rsyncable", "Use worse compression, but reduce differences between versions of packages");
     cli_opts.optflag("h", "help", "Print this help menu");
 
-    let matches = match cli_opts.parse(&args[1..]) {
+    let mut matches = match cli_opts.parse(&args[1..]) {
         Ok(m) => m,
         Err(err) => {
             eprintln!("cargo-deb: Error parsing arguments. See --help for details.");
@@ -121,13 +90,30 @@ fn main() -> ExitCode {
         },
     };
 
-    match process(CliOptions {
+    // `cargo deb` invocation passes the `deb` arg through.
+    if matches.free.first().is_some_and(|arg| arg == "deb") {
+        matches.free.remove(0);
+    }
+
+    let quiet = matches.opt_present("quiet");
+    let verbose = matches.opt_present("verbose") || env::var_os("RUST_LOG").is_some_and(|v| v == "debug");
+
+    // Listener conditionally prints warnings
+    let (listener_tmp1, listener_tmp2);
+    let listener: &dyn listener::Listener = if quiet {
+        listener_tmp1 = listener::NoOpListener;
+        &listener_tmp1
+    } else {
+        listener_tmp2 = listener::StdErrListener { verbose };
+        &listener_tmp2
+    };
+
+    match CargoDeb::new(CargoDebOptions {
         no_build: matches.opt_present("no-build"),
         strip_override: if matches.opt_present("strip") { Some(true) } else if matches.opt_present("no-strip") { Some(false) } else { None },
         separate_debug_symbols: if matches.opt_present("separate-debug-symbols") { Some(true) } else if matches.opt_present("no-separate-debug-symbols") { Some(false) } else { None },
         compress_debug_symbols: if matches.opt_present("compress-debug-symbols") { Some(true) } else { None },
-        quiet: matches.opt_present("quiet"),
-        verbose: matches.opt_present("verbose") || env::var_os("RUST_LOG").is_some_and(|v| v == "debug"),
+        verbose,
         install,
         // when installing locally it won't be transferred anywhere, so allow faster compression
         fast: install || matches.opt_present("fast"),
@@ -145,7 +131,7 @@ fn main() -> ExitCode {
         profile: matches.opt_str("profile"),
         cargo_build_cmd: matches.opt_str("cargo-build").unwrap_or("build".to_string()),
         cargo_build_flags: matches.free,
-    }) {
+    }).process(listener) {
         Ok(()) => ExitCode::SUCCESS,
         Err(err) => {
             print_error(&err);
@@ -167,126 +153,4 @@ fn err_cause(err: &dyn std::error::Error, max: usize) {
 fn print_error(err: &dyn std::error::Error) {
     eprintln!("cargo-deb: {err}");
     err_cause(err, 3);
-}
-
-fn process(
-    CliOptions {
-        manifest_path,
-        output_path,
-        selected_package_name,
-        variant,
-        target,
-        install,
-        no_build,
-        strip_override,
-        separate_debug_symbols,
-        compress_debug_symbols,
-        quiet,
-        fast,
-        verbose,
-        cargo_build_cmd,
-        mut cargo_build_flags,
-        deb_version,
-        deb_revision,
-        mut compress_type,
-        mut compress_system,
-        system_xz,
-        rsyncable,
-        profile,
-    }: CliOptions,
-) -> CDResult<()> {
-    let target = target.as_deref();
-    let variant = variant.as_deref();
-
-    if install || target.is_none() {
-        warn_if_not_linux(); // compiling natively for non-linux = nope
-    }
-
-    // `cargo deb` invocation passes the `deb` arg through.
-    if cargo_build_flags.first().map_or(false, |arg| arg == "deb") {
-        cargo_build_flags.remove(0);
-    }
-
-    // Listener conditionally prints warnings
-    let listener_tmp1;
-    let listener_tmp2;
-    let listener: &dyn listener::Listener = if quiet {
-        listener_tmp1 = listener::NoOpListener;
-        &listener_tmp1
-    } else {
-        listener_tmp2 = listener::StdErrListener { verbose };
-        &listener_tmp2
-    };
-
-    if system_xz {
-        listener.warning("--system-xz is deprecated, use --compress-system instead.".into());
-
-        compress_type = Format::Xz;
-        compress_system = true;
-    }
-
-    // The profile is selected based on the given ClI options and then passed to
-    // cargo build accordingly. you could argue that the other way around is
-    // more desirable. However for now we want all commands coming in via the
-    // same `interface`
-    let selected_profile = profile.as_deref().unwrap_or("release");
-    if selected_profile == "dev" {
-        listener.warning("dev profile is not supported and will be a hard error in the future. \
-            cargo-deb is for making releases, and it doesn't make sense to use it with dev profiles.".into());
-        listener.warning("To enable debug symbols set `[profile.release] debug = true` instead.".into());
-    }
-    cargo_build_flags.push(format!("--profile={selected_profile}"));
-
-    let root_manifest_path = manifest_path.as_deref().map(Path::new);
-    let mut config = Config::from_manifest(
-        root_manifest_path,
-        selected_package_name.as_deref(),
-        output_path,
-        target,
-        variant,
-        deb_version,
-        deb_revision,
-        listener,
-        selected_profile,
-        separate_debug_symbols,
-        compress_debug_symbols,
-    )?;
-
-    config.extend_cargo_build_flags(&mut cargo_build_flags);
-
-    if !no_build {
-        cargo_build(&config, target, &cargo_build_cmd, &cargo_build_flags, verbose)?;
-    }
-
-    config.deb.resolve_assets()?;
-    config.deb.resolve_binary_dependencies(config.target.as_deref(), listener)?;
-
-    compress_assets(&mut config, listener)?;
-
-    if strip_override.unwrap_or(config.debug_symbols != DebugSymbols::Keep) {
-        strip_binaries(&mut config, target, listener)?;
-    } else {
-        log::debug!("not stripping debug={:?} strip-flag={:?}", config.debug_symbols, strip_override);
-    }
-
-    config.deb.sort_assets_by_type();
-
-    let generated = write_deb(&config, &CompressConfig { fast, compress_type, compress_system, rsyncable}, listener)?;
-    if !quiet {
-        println!("{}", generated.display());
-    }
-
-    if install {
-        install_deb(&generated)?;
-    }
-    Ok(())
-}
-
-#[cfg(target_os = "linux")]
-fn warn_if_not_linux() {}
-
-#[cfg(not(target_os = "linux"))]
-fn warn_if_not_linux() {
-    const DEFAULT_TARGET: &str = env!("CARGO_DEB_DEFAULT_TARGET");
-    eprintln!("warning: You're creating a package for your current operating system only ({DEFAULT_TARGET}), and not for Linux.\nUse --target if you want to cross-compile.");
 }

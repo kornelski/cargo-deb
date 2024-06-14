@@ -6,7 +6,7 @@ use crate::dependencies::resolve;
 use crate::dh::dh_installsystemd;
 use crate::error::{CDResult, CargoDebError};
 use crate::listener::Listener;
-use crate::parse::config::CargoConfig;
+use crate::parse::cargo::CargoConfig;
 use crate::parse::manifest::{cargo_metadata, manifest_debug_flag, manifest_license_file, manifest_version_string};
 use crate::parse::manifest::{CargoDeb, CargoMetadataTarget, CargoPackageMetadata, ManifestFound};
 use crate::parse::manifest::{DependencyList, SystemUnitsSingleOrMultiple, SystemdUnitsConfig};
@@ -101,12 +101,12 @@ pub struct Config {
     pub default_features: bool,
     /// Should the binary be stripped from debug symbols?
     pub debug_symbols: DebugSymbols,
-    pub deb: Package,
+    pub deb: PackageConfig,
 }
 
 #[derive(Debug)]
 #[non_exhaustive]
-pub struct Package {
+pub struct PackageConfig {
     /// The name of the project to build
     pub name: String,
     /// The name to give the Debian package; usually the same as the Cargo project name
@@ -292,7 +292,7 @@ impl Config {
             deb_output_path,
             target: target.map(|t| t.to_string()),
             target_dir,
-            deb: Package {
+            deb: PackageConfig {
                 default_timestamp,
                 name: package.name.clone(),
                 deb_name: deb.name.take().unwrap_or_else(|| debian_package_name(&package.name)),
@@ -567,7 +567,7 @@ impl Config {
     }
 }
 
-impl Package {
+impl PackageConfig {
     pub fn resolve_assets(&mut self) -> CDResult<()> {
         for u in self.assets.unresolved.drain(..) {
             let matched = u.resolve(self.preserve_symlinks)?;
