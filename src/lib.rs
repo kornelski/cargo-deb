@@ -27,8 +27,8 @@ The library interface is experimental. See `main.rs` for usage.
 pub mod compress;
 pub mod deb {
     pub mod ar;
-    pub mod tar;
     pub mod control;
+    pub mod tar;
 }
 #[macro_use]
 mod util;
@@ -41,19 +41,20 @@ pub(crate) mod parse {
     pub(crate) mod config;
     pub(crate) mod manifest;
 }
-pub use crate::assets::{Config, Package};
+pub use crate::config::{Config, DebugSymbols, Package};
 pub use crate::deb::ar::DebArchive;
 pub use crate::error::*;
 
 pub mod assets;
+pub mod config;
 mod dependencies;
 mod error;
 
-use crate::assets::{Asset, AssetSource, DebugSymbols, IsBuilt, ProcessedFrom};
+use crate::assets::{Asset, AssetSource, IsBuilt, ProcessedFrom};
 use crate::compress::CompressConfig;
 use crate::deb::control::ControlArchiveBuilder;
-use crate::listener::Listener;
 use crate::deb::tar::Tarball;
+use crate::listener::Listener;
 use rayon::prelude::*;
 use std::env;
 use std::fs;

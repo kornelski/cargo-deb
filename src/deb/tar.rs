@@ -1,4 +1,5 @@
-use crate::assets::{AssetSource, Config};
+use crate::assets::AssetSource;
+use crate::config::Config;
 use crate::error::{CDResult, CargoDebError};
 use crate::listener::Listener;
 use sha2::{Digest, Sha256};

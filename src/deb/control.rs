@@ -1,9 +1,9 @@
-use crate::assets::Config;
+use crate::config::Config;
+use crate::deb::tar::Tarball;
 use crate::dh::dh_installsystemd;
 use crate::dh::dh_lib;
 use crate::error::{CDResult, CargoDebError};
 use crate::listener::Listener;
-use crate::deb::tar::Tarball;
 use crate::util::{is_path_file, read_file_to_bytes};
 use dh_lib::ScriptFragments;
 use std::fs;
