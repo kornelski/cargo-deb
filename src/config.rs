@@ -171,7 +171,8 @@ pub struct Package {
     /// The Debian architecture of the target system.
     pub architecture: String,
     /// A list of configuration files installed by the package.
-    pub conf_files: Option<String>,
+    /// Automatically includes all files in `/etc`
+    pub conf_files: Vec<String>,
     /// All of the files that are to be packaged.
     pub(crate) assets: Assets,
     /// The location of the triggers file
@@ -326,7 +327,7 @@ impl Config {
                 section: deb.section.take(),
                 priority: deb.priority.take().unwrap_or_else(|| "optional".to_owned()),
                 architecture: debian_architecture_from_rust_triple(target.unwrap_or(crate::DEFAULT_TARGET)).to_owned(),
-                conf_files: deb.conf_files.map(|x| format_conffiles(&x)),
+                conf_files: deb.conf_files.unwrap_or_default(),
                 assets: Assets::new(),
                 triggers_file: deb.triggers_file.map(PathBuf::from),
                 changelog: deb.changelog.take(),
@@ -605,6 +606,29 @@ impl Package {
             let matched = u.resolve(self.preserve_symlinks)?;
             self.assets.resolved.extend(matched);
         }
+        self.add_conf_files();
+        Ok(())
+    }
+
+    /// Debian defaults all /etc files to be conf files
+    /// https://www.debian.org/doc/manuals/maint-guide/dother.en.html#conffiles
+    fn add_conf_files(&mut self) {
+        let existing_conf_files = self.conf_files.iter()
+            .map(|c| c.trim_start_matches('/')).collect::<HashSet<_>>();
+
+        let mut new_conf = Vec::new();
+        for a in &self.assets.resolved {
+            if a.c.target_path.starts_with("etc") {
+                let Some(path_str) = a.c.target_path.to_str() else { continue };
+                if existing_conf_files.contains(path_str) {
+                    continue;
+                }
+                log::debug!("automatically adding /{path_str} to conffiles");
+                new_conf.push(format!("/{path_str}"));
+            }
+        }
+        self.conf_files.append(&mut new_conf);
+    }
         Ok(())
     }
 
@@ -798,6 +822,13 @@ impl Package {
             writeln!(copyright, "License: {license}")?;
         }
         Ok(())
+    }
+
+    pub(crate) fn conf_files(&self) -> Option<String> {
+        if self.conf_files.is_empty() {
+            return None;
+        }
+        Some(format_conffiles(&self.conf_files))
     }
 }
 

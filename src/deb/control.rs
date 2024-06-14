@@ -25,11 +25,10 @@ impl<'l, W: Write> ControlArchiveBuilder<'l, W> {
 
     /// Generates an uncompressed tar archive with `control`, `sha256sums`, and others
     pub fn generate_archive(&mut self, config: &Config) -> CDResult<()> {
-        let deps = config.get_dependencies(self.listener)?;
+        self.add_control(&config.deb.generate_control()?)?;
 
-        self.add_control(&config.deb.generate_control(&deps)?)?;
-        if let Some(ref files) = config.deb.conf_files {
-            self.add_conf_files(files)?;
+        if let Some(files) = config.deb.conf_files() {
+            self.add_conf_files(&files)?;
         }
 
         self.generate_scripts(config)?;
@@ -131,8 +130,8 @@ impl<'l, W: Write> ControlArchiveBuilder<'l, W> {
     }
 
     /// If configuration files are required, the conffiles file will be created.
-    fn add_conf_files(&mut self, files: &str) -> CDResult<()> {
-        self.archive.file("./conffiles", files.as_bytes(), 0o644)
+    fn add_conf_files(&mut self, list: &str) -> CDResult<()> {
+        self.archive.file("./conffiles", list.as_bytes(), 0o644)
     }
 
     fn add_triggers_file(&mut self, path: &Path) -> CDResult<()> {

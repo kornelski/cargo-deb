@@ -68,6 +68,7 @@ Everything is optional:
 - **separate-debug-symbols**: whether to keep debug symbols, but strip them from executables and save them in separate files (default `false`).
 - **preserve-symlinks**: Whether to preserve symlinks in the asset files (default `false`).
 - **systemd-units**: Optional configuration settings for automated installation of [systemd units](./systemd.md).
+- **conf-files**: List of absolute paths of [config files outside `/etc`](https://www.debian.org/doc/manuals/maint-guide/dother.en.html#conffiles) `["/not-etc/app/config"]`. You still need to list the files in `assets` to have them packaged.
 
 ### Example of custom `Cargo.toml` additions
 
