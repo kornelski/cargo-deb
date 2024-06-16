@@ -295,6 +295,8 @@ struct CargoMetadata {
     pub resolve: CargoMetadataResolve,
     #[serde(default)]
     pub workspace_members: Vec<String>,
+    #[serde(default)]
+    pub workspace_default_members: Vec<String>,
     pub target_directory: String,
     #[serde(default)]
     pub workspace_root: String,
@@ -342,10 +344,10 @@ pub(crate) fn cargo_metadata(root_manifest_path: Option<&Path>, selected_package
         metadata.packages.iter().position(|p| p.name == name)
             .ok_or_else(|| CargoDebError::PackageNotFoundInWorkspace(name.into(), available_package_names()))
     } else {
-        metadata.resolve.root.as_ref().and_then(|root_id| {
-            metadata.packages.iter()
-                .position(move |p| &p.id == root_id)
-        })
+        metadata.workspace_default_members.first()
+            .filter(|_| metadata.workspace_default_members.len() == 1)
+            .or(metadata.resolve.root.as_ref())
+            .and_then(|root_id| metadata.packages.iter().position(move |p| &p.id == root_id))
         .ok_or_else(|| CargoDebError::NoRootFoundInWorkspace(available_package_names()))
     }?;
     let target_package = metadata.packages.swap_remove(target_package_pos);
