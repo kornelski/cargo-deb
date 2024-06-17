@@ -258,22 +258,6 @@ pub fn write_deb(config: &Config, package_deb: &PackageConfig, &compress::Compre
     Ok(generated)
 }
 
-/// Creates empty (removes files if needed) target/debian/foo directory so that we can start fresh.
-fn reset_deb_temp_directory(config: &Config, package_deb: &PackageConfig) -> io::Result<()> {
-    let deb_dir = config.default_deb_output_dir();
-    let deb_temp_dir = config.deb_temp_dir(package_deb);
-    let _ = fs::remove_dir(&deb_temp_dir);
-    // For backwards compatibility with previous cargo-deb behavior, also delete .deb from target/debian,
-    // but this time only debs from other versions of the same package
-    let g = deb_dir.join(package_deb.filename_glob());
-    if let Ok(old_files) = glob::glob(g.to_str().expect("utf8 path")) {
-        for old_file in old_files.flatten() {
-            let _ = fs::remove_file(old_file);
-        }
-    }
-    fs::create_dir_all(deb_temp_dir)
-}
-
 /// Builds a binary with `cargo build`
 pub fn cargo_build(config: &Config, target: Option<&str>, build_command: &str, build_flags: &[String], verbose: bool) -> CDResult<()> {
     let mut cmd = Command::new("cargo");

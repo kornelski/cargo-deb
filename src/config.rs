@@ -10,7 +10,6 @@ use crate::parse::cargo::CargoConfig;
 use crate::parse::manifest::{cargo_metadata, manifest_debug_flag, manifest_version_string, LicenseFile};
 use crate::parse::manifest::{CargoDeb, CargoMetadataTarget, CargoPackageMetadata, ManifestFound};
 use crate::parse::manifest::{DependencyList, SystemUnitsSingleOrMultiple, SystemdUnitsConfig};
-use crate::reset_deb_temp_directory;
 use crate::util::ok_or::OkOrThen;
 use crate::util::pathbytes::AsUnixPathBytes;
 use crate::util::wordsplit::WordSplit;
@@ -20,6 +19,7 @@ use std::collections::HashMap;
 use std::collections::HashSet;
 use std::env::consts::{DLL_PREFIX, DLL_SUFFIX, EXE_SUFFIX};
 use std::fs;
+use std::io;
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -315,7 +315,7 @@ impl Config {
         config.add_changelog_asset(&mut package_deb)?;
         config.add_systemd_assets(&mut package_deb)?;
 
-        reset_deb_temp_directory(&config, &package_deb)?;
+        config.reset_deb_temp_directory(&package_deb)?;
         Ok((config, package_deb))
     }
 
@@ -531,6 +531,21 @@ impl Config {
     pub(crate) fn cargo_config(&self) -> CDResult<Option<CargoConfig>> {
         CargoConfig::new(&self.package_manifest_dir)
     }
+
+    /// Creates empty (removes files if needed) target/debian/foo directory so that we can start fresh.
+    fn reset_deb_temp_directory(&self, package_deb: &PackageConfig) -> io::Result<()> {
+        let deb_temp_dir = self.deb_temp_dir(package_deb);
+        let _ = fs::remove_dir(&deb_temp_dir);
+        // Delete previous .deb from target/debian, but only other versions of the same package
+        let mut deb_dir = self.default_deb_output_dir();
+        deb_dir.push(format!("{}_*_{}.deb", package_deb.deb_name, package_deb.architecture));
+        if let Ok(old_files) = glob::glob(deb_dir.to_str().ok_or(io::ErrorKind::InvalidInput)?) {
+            for old_file in old_files.flatten() {
+                let _ = fs::remove_file(old_file);
+            }
+        }
+        fs::create_dir_all(deb_temp_dir)
+    }
 }
 
 impl PackageConfig {
@@ -692,10 +707,6 @@ This will be hard error in a future release of cargo-deb.", source_path.display(
         }
         self.resolved_depends = Some(deps.into_iter().collect::<Vec<_>>().join(", "));
         Ok(())
-    }
-
-    pub(crate) fn filename_glob(&self) -> String {
-        format!("{}_*_{}.deb", self.deb_name, self.architecture)
     }
 
     /// Executables AND dynamic libraries. May include symlinks.
