@@ -31,9 +31,8 @@ impl<'l, W: Write> ControlArchiveBuilder<'l, W> {
         }
 
         self.generate_scripts(config, package_deb)?;
-        if let Some(ref file) = package_deb.triggers_file_rel_path {
-            let triggers_file = &config.path_in_package(file);
-            self.add_triggers_file(triggers_file)?;
+        if let Some(rel_path) = &package_deb.triggers_file_rel_path {
+            self.add_triggers_file(config, rel_path)?;
         }
         Ok(())
     }
@@ -93,27 +92,33 @@ impl<'l, W: Write> ControlArchiveBuilder<'l, W> {
             // Add maintainer scripts to the archive, either those supplied by the
             // user or if available prefer modified versions generated above.
             for name in ["config", "preinst", "postinst", "prerm", "postrm", "templates"] {
-                let mut script = scripts.remove(name);
-
-                if script.is_none() {
-                    let script_path = maintainer_scripts_dir.join(name);
-                    if is_path_file(&script_path) {
-                        script = Some(read_file_to_bytes(&script_path)?);
+                let script_path;
+                let (contents, source_path) = match scripts.remove(name) {
+                    Some(script) => (script, Some("systemd_units")),
+                    None => {
+                        script_path = maintainer_scripts_dir.join(name);
+                        if !is_path_file(&script_path) {
+                            continue;
+                        }
+                        (read_file_to_bytes(&script_path)?, script_path.to_str())
                     }
-                }
+                };
 
-                if let Some(contents) = script {
-                    // The config, postinst, postrm, preinst, and prerm
-                    // control files should use mode 0755; all other control files should use 0644.
-                    // See Debian Policy Manual section 10.9
-                    // and lintian tag control-file-has-bad-permissions
-                    let permissions = if name == "templates" { 0o644 } else { 0o755 };
-                    self.archive.file(name, &contents, permissions)?;
-                }
+                // The config, postinst, postrm, preinst, and prerm
+                // control files should use mode 0755; all other control files should use 0644.
+                // See Debian Policy Manual section 10.9
+                // and lintian tag control-file-has-bad-permissions
+                let permissions = if name == "templates" { 0o644 } else { 0o755 };
+                self.add_file_with_log(name.as_ref(), &contents, permissions, source_path)?;
             }
         }
 
         Ok(())
+    }
+
+    fn add_file_with_log(&mut self, name: &Path, contents: &[u8], permissions: u32, source_path: Option<&str>) -> CDResult<()> {
+        self.listener.info(format!("{} -> {}", source_path.unwrap_or("-"), name.display()));
+        self.archive.file(name, contents, permissions)
     }
 
     pub fn add_sha256sums(&mut self, sha256sums: &[u8]) -> CDResult<()> {
@@ -130,13 +135,16 @@ impl<'l, W: Write> ControlArchiveBuilder<'l, W> {
 
     /// If configuration files are required, the conffiles file will be created.
     fn add_conf_files(&mut self, list: &str) -> CDResult<()> {
-        self.archive.file("./conffiles", list.as_bytes(), 0o644)
+        self.add_file_with_log("./conffiles".as_ref(), list.as_bytes(), 0o644, None)
     }
 
-    fn add_triggers_file(&mut self, path: &Path) -> CDResult<()> {
-        let content = fs::read(path)
-            .map_err(|e| CargoDebError::IoFile("triggers file", e, path.to_path_buf()))?;
-        self.archive.file("./triggers", &content, 0o644)
+    fn add_triggers_file(&mut self, config: &Config, rel_path: &Path) -> CDResult<()> {
+        let path = config.path_in_package(rel_path);
+        let content = match fs::read(&path) {
+            Ok(p) => p,
+            Err(e) => return Err(CargoDebError::IoFile("triggers file", e, path)),
+        };
+        self.add_file_with_log("./triggers".as_ref(), &content, 0o644, path.to_str())
     }
 }
 
