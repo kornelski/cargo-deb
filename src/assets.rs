@@ -113,10 +113,6 @@ impl Assets {
             resolved: vec![],
         }
     }
-
-    pub(crate) fn is_empty(&self) -> bool {
-        self.unresolved.is_empty() && self.resolved.is_empty()
-    }
 }
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]

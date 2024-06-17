@@ -313,7 +313,7 @@ struct CargoMetadataPackage {
     pub manifest_path: PathBuf,
 }
 
-#[derive(Deserialize)]
+#[derive(Debug, Deserialize)]
 pub(crate) struct CargoMetadataTarget {
     pub name: String,
     pub kind: Vec<String>,
@@ -322,7 +322,7 @@ pub(crate) struct CargoMetadataTarget {
 }
 
 pub(crate) struct ManifestFound {
-    pub targets: Vec<CargoMetadataTarget>,
+    pub build_targets: Vec<CargoMetadataTarget>,
     pub manifest_dir: PathBuf,
     pub root_manifest: Option<cargo_toml::Manifest<CargoPackageMetadata>>,
     pub target_dir: PathBuf,
@@ -370,7 +370,7 @@ pub fn cargo_metadata(root_manifest_path: Option<&Path>, selected_package_name: 
     manifest_dir.pop();
     Ok(ManifestFound {
         manifest_dir,
-        targets: target_package.targets,
+        build_targets: target_package.targets,
         root_manifest,
         target_dir,
         default_timestamp,
