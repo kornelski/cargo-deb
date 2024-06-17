@@ -100,7 +100,6 @@ impl CargoDeb {
                 cargo-deb is for making releases, and it doesn't make sense to use it with dev profiles.".into());
             listener.warning("To enable debug symbols set `[profile.release] debug = true` instead.".into());
         }
-        self.options.cargo_build_flags.push(format!("--profile={}", selected_profile.as_deref().unwrap_or("release")));
 
         let root_manifest_path = self.options.manifest_path.as_deref().map(Path::new);
         let (mut config, mut package_deb) = Config::from_manifest(
@@ -116,10 +115,10 @@ impl CargoDeb {
             self.options.separate_debug_symbols,
             self.options.compress_debug_symbols,
         )?;
-
-        config.extend_cargo_build_flags(&package_deb, &mut self.options.cargo_build_flags);
+        config.prepare_assets_before_build(&mut package_deb).unwrap();
 
         if !self.options.no_build {
+            config.set_cargo_build_flags_for_package(&package_deb, &mut self.options.cargo_build_flags);
             cargo_build(&config, self.options.target.as_deref(), &self.options.cargo_build_cmd, &self.options.cargo_build_flags, self.options.verbose)?;
         }
 

@@ -292,7 +292,7 @@ impl Config {
             DebugSymbols::Strip
         };
 
-        let mut config = Self {
+        let config = Self {
             package_manifest_dir: manifest_dir,
             deb_output_path,
             target: target.map(|t| t.to_string()),
@@ -304,22 +304,28 @@ impl Config {
             build_targets,
         };
 
-        let mut package_deb = PackageConfig::new(deb, cargo_package, listener, default_timestamp, deb_version, deb_revision, target)?;
+        let package_deb = PackageConfig::new(deb, cargo_package, listener, default_timestamp, deb_version, deb_revision, target)?;
 
-        package_deb.assets = if let Some(raw_assets) = package_deb.raw_assets.take() {
-            config.explicit_assets(raw_assets)?
-        } else {
-            config.implicit_assets(&package_deb.deb_name, package_deb.readme_rel_path.as_deref())?
-        };
-        config.add_copyright_asset(&mut package_deb)?;
-        config.add_changelog_asset(&mut package_deb)?;
-        config.add_systemd_assets(&mut package_deb)?;
-
-        config.reset_deb_temp_directory(&package_deb)?;
         Ok((config, package_deb))
     }
 
-    pub fn extend_cargo_build_flags(&self, package_deb: &PackageConfig, flags: &mut Vec<String>) {
+    pub fn prepare_assets_before_build(&self, package_deb: &mut PackageConfig) -> CDResult<()> {
+        package_deb.assets = if let Some(raw_assets) = package_deb.raw_assets.take() {
+            self.explicit_assets(raw_assets)?
+        } else {
+            self.implicit_assets(&package_deb.deb_name, package_deb.readme_rel_path.as_deref())?
+        };
+        self.add_copyright_asset(package_deb)?;
+        self.add_changelog_asset(package_deb)?;
+        self.add_systemd_assets(package_deb)?;
+
+        self.reset_deb_temp_directory(&package_deb)?;
+        Ok(())
+    }
+
+    pub fn set_cargo_build_flags_for_package(&self, package_deb: &PackageConfig, flags: &mut Vec<String>) {
+        flags.push(self.build_profile_override.as_deref().map(|p| format!("--profile={p}")).unwrap_or("--release".into()));
+
         if flags.iter().any(|f| f == "--workspace" || f == "--all") {
             return;
         }
@@ -375,7 +381,7 @@ impl Config {
         }
     }
 
-    pub(crate) fn add_copyright_asset(&mut self, package_deb: &mut PackageConfig) -> CDResult<()> {
+    fn add_copyright_asset(&self, package_deb: &mut PackageConfig) -> CDResult<()> {
         let (source_path, copyright_file) = self.generate_copyright_asset(package_deb)?;
         log::debug!("added copyright via {}", source_path.display());
         package_deb.assets.resolved.push(Asset::new(
@@ -418,7 +424,7 @@ impl Config {
         Ok((source_path, copyright))
     }
 
-    fn add_changelog_asset(&mut self, package_deb: &mut PackageConfig) -> CDResult<()> {
+    fn add_changelog_asset(&self, package_deb: &mut PackageConfig) -> CDResult<()> {
         if package_deb.changelog.is_some() {
             if let Some((source_path, changelog_file)) = self.generate_changelog_asset(package_deb)? {
                 log::debug!("added changelog via {}", source_path.display());
@@ -435,7 +441,7 @@ impl Config {
     }
 
     /// Generates compressed changelog file
-    pub(crate) fn generate_changelog_asset(&self, package_deb: &PackageConfig) -> CDResult<Option<(PathBuf, Vec<u8>)>> {
+    fn generate_changelog_asset(&self, package_deb: &PackageConfig) -> CDResult<Option<(PathBuf, Vec<u8>)>> {
         if let Some(ref path) = package_deb.changelog {
             let source_path = self.path_in_package(path);
             let changelog = fs::read(&source_path)
@@ -454,7 +460,7 @@ impl Config {
         }
     }
 
-    pub(crate) fn add_systemd_assets(&mut self, package_deb: &mut PackageConfig) -> CDResult<()> {
+    fn add_systemd_assets(&self, package_deb: &mut PackageConfig) -> CDResult<()> {
         if let Some(ref config_vec) = package_deb.systemd_units {
             for config in config_vec {
                 let units_dir_option = config.unit_scripts.as_ref()
@@ -946,7 +952,7 @@ fn debian_package_name(crate_name: &str) -> String {
 }
 
 impl Config {
-    fn explicit_assets(&mut self, assets: Vec<RawAsset>) -> CDResult<Assets> {
+    fn explicit_assets(&self, assets: Vec<RawAsset>) -> CDResult<Assets> {
         let custom_profile_target_dir = self.build_profile_override.as_deref().map(|profile| format!("target/{profile}"));
         // Treat all explicit assets as unresolved until after the build step
         let unresolved_assets = assets.into_iter().map(|RawAsset { source_path, target_path, chmod }| {
@@ -965,7 +971,7 @@ impl Config {
         Ok(Assets::with_unresolved_assets(unresolved_assets))
     }
 
-    fn implicit_assets(&mut self, deb_package_name: &str, readme_rel_path: Option<&Path>) -> CDResult<Assets> {
+    fn implicit_assets(&self, deb_package_name: &str, readme_rel_path: Option<&Path>) -> CDResult<Assets> {
         let mut implied_assets: Vec<_> = self.build_targets.iter()
             .filter_map(|t| {
                 if t.crate_types.iter().any(|ty| ty == "bin") && t.kind.iter().any(|k| k == "bin") {
@@ -1083,7 +1089,8 @@ mod tests {
         // supply a systemd unit file as if it were available on disk
         let _g = add_test_fs_paths(&[to_canon_static_str("cargo-deb.service")]);
 
-        let (_config, package_deb) = Config::from_manifest(Some(Path::new("Cargo.toml")), None, None, None, None, None, None, &mock_listener, None, None, None).unwrap();
+        let (config, mut package_deb) = Config::from_manifest(Some(Path::new("Cargo.toml")), None, None, None, None, None, None, &mock_listener, None, None, None).unwrap();
+        config.prepare_assets_before_build(&mut package_deb).unwrap();
 
         let num_unit_assets = package_deb.assets.resolved.iter()
             .filter(|a| a.c.target_path.starts_with("lib/systemd/system/"))
@@ -1100,7 +1107,8 @@ mod tests {
         // supply a systemd unit file as if it were available on disk
         let _g = add_test_fs_paths(&[to_canon_static_str("cargo-deb.service")]);
 
-        let (mut config, mut package_deb) = Config::from_manifest(Some(Path::new("Cargo.toml")), None, None, None, None, None, None, &mock_listener, None, None, None).unwrap();
+        let (config, mut package_deb) = Config::from_manifest(Some(Path::new("Cargo.toml")), None, None, None, None, None, None, &mock_listener, None, None, None).unwrap();
+        config.prepare_assets_before_build(&mut package_deb).unwrap();
 
         package_deb.systemd_units.get_or_insert(vec![SystemdUnitsConfig::default()]);
         package_deb.maintainer_scripts_rel_path.get_or_insert(PathBuf::new());

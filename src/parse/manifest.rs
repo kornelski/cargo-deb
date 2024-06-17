@@ -330,7 +330,7 @@ pub(crate) struct ManifestFound {
     pub manifest: cargo_toml::Manifest<CargoPackageMetadata>,
 }
 
-pub fn cargo_metadata(root_manifest_path: Option<&Path>, selected_package_name: Option<&str>) -> Result<ManifestFound, CargoDebError> {
+pub(crate) fn cargo_metadata(root_manifest_path: Option<&Path>, selected_package_name: Option<&str>) -> Result<ManifestFound, CargoDebError> {
     let mut metadata = run_cargo_metadata(root_manifest_path)?;
     let available_package_names = || {
         metadata.packages.iter()

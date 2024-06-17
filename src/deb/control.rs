@@ -207,7 +207,7 @@ mod tests {
     fn prepare<'l, W: Write>(dest: W, package_name: Option<&str>, mock_listener: &'l mut MockListener) -> (Config, PackageConfig, ControlArchiveBuilder<'l, W>) {
         mock_listener.expect_info().return_const(());
 
-        let (mut config, package_deb) = Config::from_manifest(
+        let (mut config, mut package_deb) = Config::from_manifest(
             Some(Path::new("test-resources/testroot/Cargo.toml")),
             package_name,
             None,
@@ -221,6 +221,7 @@ mod tests {
             None,
         )
         .unwrap();
+        config.prepare_assets_before_build(&mut package_deb).unwrap();
 
         // make the absolute manifest dir relative to our crate root dir
         // as the static paths we receive from the caller cannot be set
