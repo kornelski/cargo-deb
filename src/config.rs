@@ -557,16 +557,24 @@ impl Config {
 impl PackageConfig {
     pub(crate) fn new(mut deb: CargoDeb, cargo_package: &mut cargo_toml::Package<CargoPackageMetadata>, listener: &dyn Listener, default_timestamp: u64, deb_version: Option<String>, deb_revision: Option<String>, target: Option<&str>) -> Result<PackageConfig, CargoDebError> {
         let (license_file_rel_path, license_file_skip_lines) = parse_license_file(cargo_package, deb.license_file.as_ref())?;
-        if cargo_package.license().is_none() && license_file_rel_path.is_none() {
-            listener.warning("license field is missing in Cargo.toml".to_owned());
+        let mut license = cargo_package.license.take().map(|v| v.unwrap());
+
+        if license.is_none() && license_file_rel_path.is_none() {
+            if cargo_package.publish() == false {
+                license = Some("UNLICENSED".into());
+                listener.info("license field defaulted to UNLICENSED".into());
+            } else {
+                listener.warning("license field is missing in Cargo.toml".into());
+            }
         }
+
         Ok(Self {
             default_timestamp,
             raw_assets: deb.assets.take().map(|assets| Self::parse_assets(assets, listener)).transpose()?,
             name: cargo_package.name.clone(),
             deb_name: deb.name.take().unwrap_or_else(|| debian_package_name(&cargo_package.name)),
             deb_version: deb_version.unwrap_or_else(|| manifest_version_string(cargo_package, deb_revision.or(deb.revision.take()).as_deref()).into_owned()),
-            license: cargo_package.license.take().map(|v| v.unwrap()),
+            license,
             license_file_rel_path,
             license_file_skip_lines,
             copyright: deb.copyright.take().ok_or_then(|| {
