@@ -21,8 +21,6 @@ cargo deb
 
 Upon running `cargo deb` from the base directory of your Rust project, the Debian package will be created in `target/debian/<project_name>_<version>-1_<arch>.deb` (or you can change the location with the `--output` option). This package can be installed with `dpkg -i target/debian/*.deb`.
 
-Debug symbols are stripped from the main binary by default, unless `[profile.release] debug = true` is set in `Cargo.toml`. If `cargo deb --separate-debug-symbols` is run, the debug symbols will be packaged as a separate file installed at `/usr/lib/debug/<path-to-binary>.debug`. This can also be configured in the `[package.metadata.deb]` section with the **separate-debug-symbols** key. If it is enabled there the parameter `cargo deb --no-separate-debug-symbols` can be used to suppress inclusion of the debug symbols.
-
 `cargo deb --install` builds and installs the project system-wide.
 
 ## Configuration
@@ -32,6 +30,10 @@ No configuration is necessary to make a basic package from a Cargo project with 
 For a more complete Debian package, you may also define a new table, `[package.metadata.deb]` that contains `maintainer`, `copyright`, `license-file`, `changelog`, `depends`, `conflicts`, `breaks`, `replaces`, `provides`, `extended-description`/`extended-description-file`, `section`, `priority`, and `assets`.
 
 For a Debian package that includes one or more systemd unit files you may also wish to define a new (inline) table, `[package.metadata.deb.systemd-units]`, so that the unit files are automatically added as assets and the units are properly installed. [Systemd integration](./systemd.md)
+
+### Debug symbols
+
+Debug symbols are stripped from built binaries by default, unless `[profile.release] debug = true` is set in `Cargo.toml`. If `cargo deb --separate-debug-symbols` is run, the debug symbols will be packaged as a separate file installed at `/usr/lib/debug/<build-id-or-path>.debug`. This can also be enabled via `[package.metadata.deb]` under `separate-debug-symbols`.
 
 ### `[package.metadata.deb]` options
 
@@ -65,7 +67,7 @@ Everything is optional:
 - **changelog**: Path to Debian-formatted [changelog file](https://www.debian.org/doc/manuals/maint-guide/dreq.en.html#changelog).
 - **features**: List of [Cargo features](https://doc.rust-lang.org/cargo/reference/manifest.html#the-features-section) to use when building the package.
 - **default-features**: whether to use default crate features in addition to the `features` list (default `true`).
-- **separate-debug-symbols**: whether to keep debug symbols, but strip them from executables and save them in separate files (default `false`).
+- **separate-debug-symbols**: whether to keep debug symbols, but strip them from executables and save them in separate files (default `false`). If it is enabled, then `cargo deb --no-separate-debug-symbols` can be used to suppress extraction of the debug symbols.
 - **preserve-symlinks**: Whether to preserve symlinks in the asset files (default `false`).
 - **systemd-units**: Optional configuration settings for automated installation of [systemd units](./systemd.md).
 - **conf-files**: List of absolute paths of [config files outside `/etc`](https://www.debian.org/doc/manuals/maint-guide/dother.en.html#conffiles) `["/not-etc/app/config"]`. You still need to list the files in `assets` to have them packaged.
@@ -101,13 +103,11 @@ The format can be explicitly specified using the `--compress-type` command-line 
 
 ### `[package.metadata.deb.variants.$name]`
 
-There can be multiple variants of the metadata in one `Cargo.toml` file. `--variant=name` selects the variant to use. Options set in a variant override `[package.metadata.deb]` options. It automatically adjusts package name.
+There can be multiple variants of the metadata in one `Cargo.toml` file. `--variant=name` selects the variant to use. Options set in a variant override `[package.metadata.deb]` options. It automatically adjusts the package name.
 
-#### Merging Assets
+### Merging Assets
 
-When defining a variant it can be useful to also define a asset merging strategy.
-
-If the `merge-assets` option is used, `cargo-deb` will merge the list of assets provided to the option with the parent asset list. There are three merging strategies, `append`, `by.dest`, and `by.src`.
+When defining a variant it can be useful to also define different assets. If the `merge-assets` option is used, `cargo-deb` will merge the list of assets provided to the option with the parent asset list. There are three merging strategies, `append`, `by.dest`, and `by.src`.
 
 - **merge-assets.append**: Appends this list of assets to the parent list of assets.
 - **merge-assets.by.dest**: Merges this list of assets to the parent list of assets, joining on the destination path. Will replace both the source path and permissions.
@@ -171,7 +171,7 @@ merge-assets.by.src = [
    * `dpkg --add-architecture <debian architecture name>`
    * `apt-get install pkg-config build-essential crossbuild-essential-<debian architecture name>`
 * Cargo must be [configured to use a cross-linker](https://doc.rust-lang.org/cargo/reference/config.html#targettriplelinker).
-* Cargo dependencies that use C libraries probably won't work, unless you install a target's sysroot for pkg-config. Setting `PKG_CONFIG_ALLOW_CROSS=1` will not help at all, and will only make things *worse*.
+* Cargo dependencies that use C libraries probably won't work, unless you install a target's sysroot for `pkg-config`. Setting `PKG_CONFIG_ALLOW_CROSS=1` *will not help* at all, and will only make things *worse*.
    * `apt-get install libssl-dev:<debian architecture name>`
 * Cargo dependencies that build C code probably won't work, unless you install a C compiler for the target system, and configure appropriate `CC_<target>` variables.
    * `export HOST_CC=gcc`
@@ -204,7 +204,7 @@ Note: building using the `dev` profile is intentionally unsupported.
 cargo deb --separate-debug-symbols --compress-debug-symbols
 ```
 
-Removes debug symbols from the executables, and places them in separate files in `/usr/lib/debug/.build-id/*`. Requires GNU `objcopy` tool.
+Removes debug symbols from the executables, and places them in separate files in `/usr/lib/debug/.build-id/*`. Requires GNU `objcopy` tool. `--compress-debug-symbols` uses zstd, and requires `objcopy` to support it.
 
 ### Custom build flags
 
