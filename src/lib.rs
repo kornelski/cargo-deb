@@ -261,7 +261,7 @@ pub fn write_deb(config: &Config, package_deb: &PackageConfig, &compress::Compre
 pub fn cargo_build(config: &Config, target: Option<&str>, build_command: &str, build_flags: &[String], verbose: bool) -> CDResult<()> {
     let mut cmd = Command::new("cargo");
     cmd.current_dir(&config.package_manifest_dir);
-    cmd.arg(build_command);
+    cmd.args(build_command.split(' '));
 
     cmd.args(build_flags);
 
