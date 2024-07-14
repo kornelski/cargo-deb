@@ -1,7 +1,7 @@
 use crate::assets::is_dynamic_library_filename;
 use crate::assets::{Asset, AssetSource, Assets, IsBuilt, UnresolvedAsset, RawAsset};
 use crate::util::compress::gzipped;
-use crate::debian_architecture_from_rust_triple;
+use crate::{debian_architecture_from_rust_triple, CargoLockingFlags};
 use crate::dependencies::resolve;
 use crate::dh::dh_installsystemd;
 use crate::error::{CDResult, CargoDebError};
@@ -108,6 +108,7 @@ pub struct Config {
 
     /// Products available in the package
     build_targets: Vec<CargoMetadataTarget>,
+    cargo_locking_flags: CargoLockingFlags,
 }
 
 #[derive(Debug)]
@@ -234,6 +235,7 @@ impl Config {
         build_profile_override: Option<String>,
         separate_debug_symbols: Option<bool>,
         compress_debug_symbols: Option<bool>,
+        cargo_locking_flags: CargoLockingFlags,
     ) -> CDResult<(Self, PackageConfig)> {
         // **IMPORTANT**: This function must not create or expect to see any files on disk!
         // It's run before destination directory is cleaned up, and before the build start!
@@ -245,7 +247,7 @@ impl Config {
             mut target_dir,
             mut manifest,
             default_timestamp,
-        } = cargo_metadata(root_manifest_path, selected_package_name)?;
+        } = cargo_metadata(root_manifest_path, selected_package_name, cargo_locking_flags)?;
 
         // Cargo cross-compiles to a dir
         if let Some(target) = target {
@@ -302,6 +304,7 @@ impl Config {
             debug_symbols,
             build_profile_override,
             build_targets,
+            cargo_locking_flags,
         };
 
         let package_deb = PackageConfig::new(deb, cargo_package, listener, default_timestamp, deb_version, deb_revision, target)?;
@@ -325,6 +328,7 @@ impl Config {
 
     pub fn set_cargo_build_flags_for_package(&self, package_deb: &PackageConfig, flags: &mut Vec<String>) {
         flags.push(self.build_profile_override.as_deref().map(|p| format!("--profile={p}")).unwrap_or("--release".into()));
+        flags.extend(self.cargo_locking_flags.flags().map(String::from));
 
         if flags.iter().any(|f| f == "--workspace" || f == "--all") {
             return;
@@ -1097,7 +1101,7 @@ mod tests {
         // supply a systemd unit file as if it were available on disk
         let _g = add_test_fs_paths(&[to_canon_static_str("cargo-deb.service")]);
 
-        let (config, mut package_deb) = Config::from_manifest(Some(Path::new("Cargo.toml")), None, None, None, None, None, None, &mock_listener, None, None, None).unwrap();
+        let (config, mut package_deb) = Config::from_manifest(Some(Path::new("Cargo.toml")), None, None, None, None, None, None, &mock_listener, None, None, None, CargoLockingFlags::default()).unwrap();
         config.prepare_assets_before_build(&mut package_deb).unwrap();
 
         let num_unit_assets = package_deb.assets.resolved.iter()
@@ -1115,7 +1119,7 @@ mod tests {
         // supply a systemd unit file as if it were available on disk
         let _g = add_test_fs_paths(&[to_canon_static_str("cargo-deb.service")]);
 
-        let (config, mut package_deb) = Config::from_manifest(Some(Path::new("Cargo.toml")), None, None, None, None, None, None, &mock_listener, None, None, None).unwrap();
+        let (config, mut package_deb) = Config::from_manifest(Some(Path::new("Cargo.toml")), None, None, None, None, None, None, &mock_listener, None, None, None, CargoLockingFlags::default()).unwrap();
         config.prepare_assets_before_build(&mut package_deb).unwrap();
 
         package_deb.systemd_units.get_or_insert(vec![SystemdUnitsConfig::default()]);

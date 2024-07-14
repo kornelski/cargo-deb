@@ -114,6 +114,7 @@ impl CargoDeb {
             selected_profile,
             self.options.separate_debug_symbols,
             self.options.compress_debug_symbols,
+            self.options.cargo_locking_flags,
         )?;
         config.prepare_assets_before_build(&mut package_deb).unwrap();
 
@@ -176,6 +177,28 @@ pub struct CargoDebOptions {
     pub system_xz: bool,
     pub rsyncable: bool,
     pub profile: Option<String>,
+    pub cargo_locking_flags: CargoLockingFlags,
+}
+
+#[derive(Copy, Clone, Default, Debug)]
+pub struct CargoLockingFlags {
+    /// `--offline`
+    pub offline: bool,
+    /// `--frozen`
+    pub frozen: bool,
+    /// `--locked`
+    pub locked: bool,
+}
+
+impl CargoLockingFlags {
+    #[inline]
+    pub(crate) fn flags(self) -> impl Iterator<Item=&'static str> {
+        [
+            self.offline.then_some("--offline"),
+            self.frozen.then_some("--frozen"),
+            self.locked.then_some("--locked"),
+        ].into_iter().flatten()
+    }
 }
 
 impl Default for CargoDebOptions {
@@ -202,6 +225,7 @@ impl Default for CargoDebOptions {
             system_xz: false,
             rsyncable: false,
             profile: None,
+            cargo_locking_flags: CargoLockingFlags::default(),
         }
     }
 }

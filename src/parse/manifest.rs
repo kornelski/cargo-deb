@@ -1,4 +1,5 @@
 use crate::error::{CDResult, CargoDebError};
+use crate::CargoLockingFlags;
 use cargo_toml::DebugSetting;
 use log::{debug, warn};
 use serde::Deserialize;
@@ -332,8 +333,8 @@ pub(crate) struct ManifestFound {
     pub manifest: cargo_toml::Manifest<CargoPackageMetadata>,
 }
 
-pub(crate) fn cargo_metadata(root_manifest_path: Option<&Path>, selected_package_name: Option<&str>) -> Result<ManifestFound, CargoDebError> {
-    let mut metadata = run_cargo_metadata(root_manifest_path)?;
+pub(crate) fn cargo_metadata(root_manifest_path: Option<&Path>, selected_package_name: Option<&str>, cargo_locking_flags: CargoLockingFlags) -> Result<ManifestFound, CargoDebError> {
+    let mut metadata = run_cargo_metadata(root_manifest_path, cargo_locking_flags)?;
     let available_package_names = || {
         metadata.packages.iter()
             .filter(|p| metadata.workspace_members.iter().any(|w| w == &p.id))
@@ -381,10 +382,11 @@ pub(crate) fn cargo_metadata(root_manifest_path: Option<&Path>, selected_package
 }
 
 /// Returns the path of the `Cargo.toml` that we want to build.
-fn run_cargo_metadata(manifest_path: Option<&Path>) -> CDResult<CargoMetadata> {
+fn run_cargo_metadata(manifest_path: Option<&Path>, cargo_locking_flags: CargoLockingFlags) -> CDResult<CargoMetadata> {
     let mut cmd = Command::new("cargo");
     cmd.arg("metadata");
     cmd.arg("--format-version=1");
+    cmd.args(cargo_locking_flags.flags());
     if let Some(path) = manifest_path {
         cmd.arg("--manifest-path");
         cmd.arg(path);

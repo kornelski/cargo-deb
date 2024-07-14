@@ -1,5 +1,5 @@
 use cargo_deb::compress::Format;
-use cargo_deb::{listener, CargoDeb, CargoDebError, CargoDebOptions};
+use cargo_deb::{listener, CargoDeb, CargoDebError, CargoDebOptions, CargoLockingFlags};
 use std::env;
 use std::process::ExitCode;
 
@@ -23,6 +23,9 @@ fn main() -> ExitCode {
     cli_opts.optopt("", "deb-version", "Alternate version string for the package", "version");
     cli_opts.optopt("", "deb-revision", "Alternate revision suffix string for the package", "num");
     cli_opts.optopt("", "manifest-path", "Cargo project file location", "./Cargo.toml");
+    cli_opts.optflag("", "offline", "Passed to Cargo");
+    cli_opts.optflag("", "locked", "Passed to Cargo");
+    cli_opts.optflag("", "frozen", "Passed to Cargo");
     cli_opts.optopt("", "variant", "Alternative Cargo.toml configuration section to use", "name");
     cli_opts.optopt("", "target", "Rust target for cross-compilation", "triple");
     cli_opts.optopt("", "profile", "Select which Cargo build profile to use", "release|<custom>");
@@ -130,6 +133,11 @@ fn main() -> ExitCode {
         rsyncable: matches.opt_present("rsyncable"),
         profile: matches.opt_str("profile"),
         cargo_build_cmd: matches.opt_str("cargo-build").unwrap_or("build".to_string()),
+        cargo_locking_flags: CargoLockingFlags {
+            offline: matches.opt_present("offline"),
+            frozen: matches.opt_present("frozen"),
+            locked: matches.opt_present("locked"),
+        },
         cargo_build_flags: matches.free,
     }).process(listener) {
         Ok(()) => ExitCode::SUCCESS,

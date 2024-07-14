@@ -178,6 +178,7 @@ mod tests {
     use crate::listener::MockListener;
     use crate::parse::manifest::SystemdUnitsConfig;
     use crate::util::tests::{add_test_fs_paths, set_test_fs_path_content};
+    use crate::CargoLockingFlags;
     use std::io::prelude::Read;
     use std::collections::HashMap;
     use std::path::PathBuf;
@@ -226,7 +227,7 @@ mod tests {
             mock_listener,
             None,
             None,
-            None,
+            None, CargoLockingFlags::default(),
         )
         .unwrap();
         config.prepare_assets_before_build(&mut package_deb).unwrap();
