@@ -1,5 +1,10 @@
 For more details see https://github.com/kornelski/cargo-deb/commits/main/
 
+# 2.5.0
+
+ * `--offline`, `--locked`, `--frozen` passed to `cargo metadata` and `cargo build`
+ * `--cargo-build="custom build"` splits on spaces, allowing custom cargo subcommands
+
 # 2.4.0
 
  * If run in a workspace without any package name specified, it picks a default workspace member.
