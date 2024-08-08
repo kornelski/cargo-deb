@@ -8,7 +8,6 @@ use std::collections::{BTreeMap, HashMap};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
-use std::time::SystemTime;
 
 /// Configuration settings for the systemd_units functionality.
 ///
@@ -326,10 +325,9 @@ pub(crate) struct CargoMetadataTarget {
 
 pub(crate) struct ManifestFound {
     pub build_targets: Vec<CargoMetadataTarget>,
-    pub manifest_dir: PathBuf,
+    pub manifest_path: PathBuf,
     pub root_manifest: Option<cargo_toml::Manifest<CargoPackageMetadata>>,
     pub target_dir: PathBuf,
-    pub default_timestamp: u64,
     pub manifest: cargo_toml::Manifest<CargoPackageMetadata>,
 }
 
@@ -357,26 +355,17 @@ pub(crate) fn cargo_metadata(root_manifest_path: Option<&Path>, selected_package
     let target_dir = metadata.target_directory.into();
     let manifest_path = Path::new(&target_package.manifest_path);
     let manifest_bytes = fs::read(manifest_path).map_err(|e| CargoDebError::IoFile("unable to read manifest", e, manifest_path.to_owned()))?;
-    let default_timestamp = if let Ok(source_date_epoch) = std::env::var("SOURCE_DATE_EPOCH") {
-        source_date_epoch.parse().map_err(|e| CargoDebError::NumParse("SOURCE_DATE_EPOCH", e))?
-    } else {
-        let manifest_mdate = fs::metadata(manifest_path)?.modified().unwrap_or_else(|_| SystemTime::now());
-        manifest_mdate.duration_since(SystemTime::UNIX_EPOCH).map_err(CargoDebError::SystemTime)?.as_secs()
-    };
     let mut manifest = cargo_toml::Manifest::<CargoPackageMetadata>::from_slice_with_metadata(&manifest_bytes)
         .map_err(|e| CargoDebError::TomlParsing(e, manifest_path.into()))?;
     let ws_root = root_manifest.as_ref().map(|ws| (ws, Path::new(&metadata.workspace_root)));
     manifest.complete_from_path_and_workspace(manifest_path, ws_root)
         .map_err(move |e| CargoDebError::TomlParsing(e, manifest_path.to_path_buf()))?;
 
-    let mut manifest_dir = target_package.manifest_path;
-    manifest_dir.pop();
     Ok(ManifestFound {
-        manifest_dir,
+        manifest_path: target_package.manifest_path,
         build_targets: target_package.targets,
         root_manifest,
         target_dir,
-        default_timestamp,
         manifest,
     })
 }

@@ -23,6 +23,7 @@ use std::io;
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::Command;
+use std::time::SystemTime;
 
 pub(crate) fn is_glob_pattern(s: &Path) -> bool {
     s.to_bytes().iter().any(|&c| c == b'*' || c == b'[' || c == b']' || c == b'!')
@@ -237,17 +238,28 @@ impl Config {
         compress_debug_symbols: Option<bool>,
         cargo_locking_flags: CargoLockingFlags,
     ) -> CDResult<(Self, PackageConfig)> {
-        // **IMPORTANT**: This function must not create or expect to see any files on disk!
+        // **IMPORTANT**: This function must not create or expect to see any asset files on disk!
         // It's run before destination directory is cleaned up, and before the build start!
 
         let ManifestFound {
             build_targets,
             root_manifest,
-            manifest_dir,
+            mut manifest_path,
             mut target_dir,
             mut manifest,
-            default_timestamp,
         } = cargo_metadata(root_manifest_path, selected_package_name, cargo_locking_flags)?;
+
+        let default_timestamp = if let Ok(source_date_epoch) = std::env::var("SOURCE_DATE_EPOCH") {
+            source_date_epoch.parse().map_err(|e| CargoDebError::NumParse("SOURCE_DATE_EPOCH", e))?
+        } else {
+            let manifest_mdate = fs::metadata(&manifest_path)?.modified().unwrap_or_else(|_| SystemTime::now());
+            let mut timestamp = manifest_mdate.duration_since(SystemTime::UNIX_EPOCH).map_err(CargoDebError::SystemTime)?.as_secs();
+            timestamp -= timestamp % (24 * 3600);
+            timestamp
+        };
+
+        manifest_path.pop();
+        let manifest_dir = manifest_path;
 
         // Cargo cross-compiles to a dir
         if let Some(target) = target {
