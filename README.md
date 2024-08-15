@@ -40,7 +40,7 @@ Debug symbols are stripped from built binaries by default, unless `[profile.rele
 Everything is optional:
 
 - **name**: The name of the Debian package. If not present, the name of the crate is used.
-- **maintainer**: The person maintaining the Debian packaging. If not present, the first author is used.
+- **maintainer**: The person maintaining the Debian packaging. If not present, the first author is used. Can be set via `--maintainer` on the command line.
 - **copyright**: To whom and when the copyright of the software is granted. If not present, the list of authors is used.
 - **license-file**: 2-element array with a location of the license file and the amount of lines to skip at the top. If not present, package-level `license-file` is used.
 - **depends**: The runtime [dependencies](https://www.debian.org/doc/debian-policy/ch-relationships.html) of the project. Generated automatically when absent, or if the list includes the `$auto` keyword.

@@ -22,6 +22,7 @@ fn main() -> ExitCode {
     cli_opts.optflag("", "version", "Show version of the cargo-deb tool");
     cli_opts.optopt("", "deb-version", "Override version string for the package", "version");
     cli_opts.optopt("", "deb-revision", "Override revision suffix string for the package", "num");
+    cli_opts.optopt("", "maintainer", "Override Maintainer field", "name");
     cli_opts.optopt("", "manifest-path", "Cargo project file location", "./Cargo.toml");
     cli_opts.optflag("", "offline", "Passed to Cargo");
     cli_opts.optflag("", "locked", "Passed to Cargo");
@@ -135,6 +136,7 @@ fn main() -> ExitCode {
         overrides: cargo_deb::config::DebConfigOverrides {
             deb_version,
             deb_revision,
+            maintainer: matches.opt_str("maintainer"),
         },
         compress_type,
         compress_system: matches.opt_present("compress-system"),

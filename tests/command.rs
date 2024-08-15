@@ -311,9 +311,9 @@ fn run_cargo_deb_command_on_example_dir_with_variant() {
 }
 
 #[test]
-#[cfg(all(feature = "lzma", target_family = "unix", not(target_os = "macos")))]
+#[cfg(all(feature = "lzma", target_family = "unix"))]
 fn run_cargo_deb_command_on_example_dir_with_version() {
-    let (_bdir, deb_path) = cargo_deb("example/Cargo.toml", &["--deb-version=my-custom-version"]);
+    let (_bdir, deb_path) = cargo_deb("example/Cargo.toml", &["--deb-version=my-custom-version", "--maintainer=alternative maintainer"]);
 
     let ardir = tempfile::tempdir().unwrap();
     assert!(ardir.path().exists());
@@ -340,7 +340,7 @@ fn run_cargo_deb_command_on_example_dir_with_version() {
     assert!(control.contains("Version: my-custom-version\n"));
     assert!(control.contains("Section: utils\n"));
     assert!(control.contains("Architecture: "));
-    assert!(control.contains("Maintainer: cargo-deb developers <cargo-deb@example.invalid>\n"));
+    assert!(control.contains("Maintainer: alternative maintainer\n"));
 
     let sha256sums = fs::read_to_string(cdir.path().join("sha256sums")).unwrap();
     assert!(sha256sums.contains(" usr/bin/example\n"));

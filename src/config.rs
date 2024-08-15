@@ -225,6 +225,7 @@ pub enum DebugSymbols {
 pub struct DebConfigOverrides {
     pub deb_version: Option<String>,
     pub deb_revision: Option<String>,
+    pub maintainer: Option<String>,
 }
 
 impl Config {
@@ -628,7 +629,7 @@ impl PackageConfig {
                 ExtendedDescription::None
             },
             readme_rel_path: cargo_package.readme().as_path().map(|p| p.to_path_buf()),
-            maintainer: deb.maintainer.take().ok_or_then(|| {
+            maintainer: overrides.maintainer.or_else(|| deb.maintainer.take()).ok_or_then(|| {
                 Ok(cargo_package.authors().first()
                     .ok_or("The package must have a maintainer or authors property")?.to_owned())
             })?,
