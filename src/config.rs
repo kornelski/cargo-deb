@@ -137,7 +137,7 @@ pub struct PackageConfig {
     pub license_file_skip_lines: usize,
     /// The copyright of the project
     /// (Debian's `copyright` file contents).
-    pub copyright: String,
+    pub copyright: Option<String>,
     pub changelog: Option<String>,
     /// The homepage URL of the project.
     pub homepage: Option<String>,
@@ -591,6 +591,7 @@ impl PackageConfig {
             }
         }
 
+        let has_maintainer_override = overrides.maintainer.is_some();
         Ok(Self {
             default_timestamp,
             raw_assets: deb.assets.take().map(|assets| Self::parse_assets(assets, listener)).transpose()?,
@@ -600,12 +601,20 @@ impl PackageConfig {
             license,
             license_file_rel_path,
             license_file_skip_lines,
-            copyright: deb.copyright.take().ok_or_then(|| {
-                if cargo_package.authors().is_empty() {
-                    return Err("The package must have a copyright or authors property".into());
-                }
-                Ok(cargo_package.authors().join(", "))
+            maintainer: overrides.maintainer.or_else(|| deb.maintainer.take()).ok_or_then(|| {
+                Ok(cargo_package.authors().first()
+                    .ok_or("The package must have a maintainer specified (--maintainer works too) or have the authors property")?.to_owned())
             })?,
+            copyright: match deb.copyright.take() {
+                ok @ Some(_) => ok,
+                _ if !cargo_package.authors().is_empty() => Some(cargo_package.authors().join(", ")),
+                _ if has_maintainer_override => {
+                    // generally we'd prefer to have real authors to credit copyright to, but this is now an optional field.
+                    // As a compromise if the maintainer is set on the command-line, assume they can't fix the metadata, and let it be missing.
+                    None
+                },
+                _ => return Err("The package must have a copyright or authors property".into()),
+            },
             homepage: cargo_package.homepage().map(From::from),
             documentation: cargo_package.documentation().map(From::from),
             repository: cargo_package.repository.take().map(|v| v.unwrap()),
@@ -629,10 +638,6 @@ impl PackageConfig {
                 ExtendedDescription::None
             },
             readme_rel_path: cargo_package.readme().as_path().map(|p| p.to_path_buf()),
-            maintainer: overrides.maintainer.or_else(|| deb.maintainer.take()).ok_or_then(|| {
-                Ok(cargo_package.authors().first()
-                    .ok_or("The package must have a maintainer or authors property")?.to_owned())
-            })?,
             wildcard_depends: deb.depends.take().map_or_else(|| "$auto".to_owned(), DependencyList::into_depends_string),
             resolved_depends: None,
             pre_depends: deb.pre_depends.take().map(DependencyList::into_depends_string),
@@ -936,11 +941,13 @@ This will be hard error in a future release of cargo-deb.", source_path.display(
     pub(crate) fn append_copyright_metadata(&self, copyright: &mut Vec<u8>) -> Result<(), CargoDebError> {
         writeln!(copyright, "Format: https://www.debian.org/doc/packaging-manuals/copyright-format/1.0/")?;
         writeln!(copyright, "Upstream-Name: {}", self.name)?;
-        if let Some(source) = self.repository.as_ref().or(self.homepage.as_ref()) {
+        if let Some(source) = self.repository.as_deref().or(self.homepage.as_deref()) {
             writeln!(copyright, "Source: {source}")?;
         }
-        writeln!(copyright, "Copyright: {}", self.copyright)?;
-        if let Some(ref license) = self.license {
+        if let Some(c) = self.copyright.as_deref() {
+            writeln!(copyright, "Copyright: {c}")?;
+        }
+        if let Some(license) = self.license.as_deref() {
             writeln!(copyright, "License: {license}")?;
         }
         Ok(())
@@ -971,7 +978,7 @@ fn parse_license_file(package: &cargo_toml::Package<CargoPackageMetadata>, licen
 
 fn has_copyright_metadata(file: &str) -> bool {
     file.lines().take(10)
-        .any(|l| l.starts_with("License: ") || l.starts_with("Source: ") || l.starts_with("Upstream-Name: ") || l.starts_with("Format: "))
+        .any(|l| ["Copyright: ", "License: ", "Source: ", "Upstream-Name: ", "Format: "].into_iter().any(|f| l.starts_with(f)))
 }
 
 /// Debian doesn't like `_` in names
