@@ -379,8 +379,18 @@ fn run_cargo_metadata(manifest_path: Option<&Path>, cargo_locking_flags: CargoLo
     cmd.arg("--format-version=1");
     cmd.args(cargo_locking_flags.flags());
     if let Some(path) = manifest_path {
+        // cargo will read ./.config relative to the current dir,
+        // so --manifest-path of another dir can end up finding a wrong config
+        // if the current dir isn't set to match.
+        let tmp;
+        let (cwd_path, manifest_path) = if path.is_absolute() { (path, path) } else {
+            tmp = path.canonicalize().map_err(|e| CargoDebError::IoFile("bad manifest path", e, path.into()))?;
+            (&*tmp, &*tmp)
+        };
+        cmd.current_dir(cwd_path.parent().ok_or("bad manifest path")?);
+
         cmd.arg("--manifest-path");
-        cmd.arg(path);
+        cmd.arg(manifest_path);
     }
 
     let output = cmd.output()
