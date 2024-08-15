@@ -1,5 +1,10 @@
 For more details see https://github.com/kornelski/cargo-deb/commits/main/
 
+# 2.6.0
+
+ * `--maintainer` overrides maintainer field and makes `authors` in TOML optional.
+ * Fixed use of `--manifest-path` used from out-of-workspace directories having `.cargo` dir
+
 # 2.5.0
 
  * `--offline`, `--locked`, `--frozen` passed to `cargo metadata` and `cargo build`
