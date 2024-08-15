@@ -20,8 +20,8 @@ fn main() -> ExitCode {
     cli_opts.optflag("q", "quiet", "Don't print warnings");
     cli_opts.optflag("v", "verbose", "Print progress");
     cli_opts.optflag("", "version", "Show version of the cargo-deb tool");
-    cli_opts.optopt("", "deb-version", "Alternate version string for the package", "version");
-    cli_opts.optopt("", "deb-revision", "Alternate revision suffix string for the package", "num");
+    cli_opts.optopt("", "deb-version", "Override version string for the package", "version");
+    cli_opts.optopt("", "deb-revision", "Override revision suffix string for the package", "num");
     cli_opts.optopt("", "manifest-path", "Cargo project file location", "./Cargo.toml");
     cli_opts.optflag("", "offline", "Passed to Cargo");
     cli_opts.optflag("", "locked", "Passed to Cargo");
@@ -111,6 +111,13 @@ fn main() -> ExitCode {
         &listener_tmp2
     };
 
+    let deb_version = matches.opt_str("deb-version");
+    let deb_revision = matches.opt_str("deb-revision");
+
+    if deb_version.is_some() && deb_revision.as_deref().is_some_and(|r| !r.is_empty()) {
+        listener.warning(format!("--deb-version takes precedence over --deb-revision. Revision '{}' will be ignored", deb_revision.as_deref().unwrap_or_default()));
+    }
+
     match CargoDeb::new(CargoDebOptions {
         no_build: matches.opt_present("no-build"),
         strip_override: if matches.opt_present("strip") { Some(true) } else if matches.opt_present("no-strip") { Some(false) } else { None },
@@ -125,8 +132,10 @@ fn main() -> ExitCode {
         output_path: matches.opt_str("output"),
         selected_package_name: matches.opt_str("package"),
         manifest_path: matches.opt_str("manifest-path"),
-        deb_version: matches.opt_str("deb-version"),
-        deb_revision: matches.opt_str("deb-revision"),
+        overrides: cargo_deb::config::DebConfigOverrides {
+            deb_version,
+            deb_revision,
+        },
         compress_type,
         compress_system: matches.opt_present("compress-system"),
         system_xz: matches.opt_present("system-xz"),

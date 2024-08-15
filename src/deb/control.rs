@@ -222,12 +222,11 @@ mod tests {
             None,
             None,
             None,
-            None,
-            None,
-            mock_listener,
+            Default::default(),
             None,
             None,
             None, CargoLockingFlags::default(),
+            mock_listener,
         )
         .unwrap();
         config.prepare_assets_before_build(&mut package_deb).unwrap();

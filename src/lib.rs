@@ -57,6 +57,7 @@ use crate::assets::{Asset, AssetSource, IsBuilt, ProcessedFrom, compress_assets}
 use crate::deb::control::ControlArchiveBuilder;
 use crate::deb::tar::Tarball;
 use crate::listener::Listener;
+use config::DebConfigOverrides;
 use rayon::prelude::*;
 use std::env;
 use std::fs;
@@ -108,13 +109,12 @@ impl CargoDeb {
             self.options.output_path,
             self.options.target.as_deref(),
             self.options.variant.as_deref(),
-            self.options.deb_version,
-            self.options.deb_revision,
-            listener,
+            self.options.overrides,
             selected_profile,
             self.options.separate_debug_symbols,
             self.options.compress_debug_symbols,
             self.options.cargo_locking_flags,
+            listener,
         )?;
         config.prepare_assets_before_build(&mut package_deb)?;
 
@@ -170,8 +170,7 @@ pub struct CargoDebOptions {
     pub manifest_path: Option<String>,
     pub cargo_build_cmd: String,
     pub cargo_build_flags: Vec<String>,
-    pub deb_version: Option<String>,
-    pub deb_revision: Option<String>,
+    pub overrides: DebConfigOverrides,
     pub compress_type: Format,
     pub compress_system: bool,
     pub system_xz: bool,
@@ -218,8 +217,7 @@ impl Default for CargoDebOptions {
             manifest_path: None,
             cargo_build_cmd: "build".into(),
             cargo_build_flags: Vec::new(),
-            deb_version: None,
-            deb_revision: None,
+            overrides: DebConfigOverrides::default(),
             compress_type: Format::Xz,
             compress_system: false,
             system_xz: false,

@@ -56,11 +56,13 @@ pub(crate) fn manifest_version_string<'a>(package: &'a cargo_toml::Package<Cargo
         }
     }
 
-    match revision {
-        None => format!("{version}-1").into(),
-        Some("") => version,
-        Some(revision) => format!("{version}-{revision}").into(),
+    let revision = revision.unwrap_or("1");
+    if !revision.is_empty() {
+        let v = version.to_mut();
+        v.push('-');
+        v.push_str(revision);
     }
+    version
 }
 
 #[derive(Clone, Debug, Deserialize, Default)]
