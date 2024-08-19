@@ -43,11 +43,14 @@ fn build_with_explicit_compress_type_xz() {
 }
 
 #[test]
-fn build_with_command_line_compress() {
+fn build_with_command_line_compress_xz() {
     // ws1 with system xz
     let (_, ddir) = extract_built_package_from_manifest("tests/test-workspace/test-ws1/Cargo.toml", "xz", &["--no-strip", "--compress-system", "--compress-type", "xz"]);
     assert!(ddir.path().join("usr/local/bin/decoy").exists());
+}
 
+#[test]
+fn build_with_command_line_compress_gz() {
     // ws2 with system gzip
     let (_, ddir) = extract_built_package_from_manifest("tests/test-workspace/test-ws2/Cargo.toml", "gz", &["--no-strip", "--compress-system", "--compress-type", "gz"]);
     assert!(ddir.path().join("usr/bin/renamed2").exists());
@@ -313,7 +316,7 @@ fn run_cargo_deb_command_on_example_dir_with_variant() {
 #[test]
 #[cfg(all(feature = "lzma", target_family = "unix"))]
 fn run_cargo_deb_command_on_example_dir_with_version() {
-    let (_bdir, deb_path) = cargo_deb("example/Cargo.toml", &["--deb-version=my-custom-version", "--maintainer=alternative maintainer"]);
+    let (_bdir, deb_path) = cargo_deb("example/Cargo.toml", &["--deb-version=1my-custom-version", "--maintainer=alternative maintainer"]);
 
     let ardir = tempfile::tempdir().unwrap();
     assert!(ardir.path().exists());
@@ -337,7 +340,7 @@ fn run_cargo_deb_command_on_example_dir_with_version() {
 
     let control = fs::read_to_string(cdir.path().join("control")).unwrap();
     assert!(control.contains("Package: example\n"));
-    assert!(control.contains("Version: my-custom-version\n"));
+    assert!(control.contains("Version: 1my-custom-version\n"));
     assert!(control.contains("Section: utils\n"));
     assert!(control.contains("Architecture: "));
     assert!(control.contains("Maintainer: alternative maintainer\n"));

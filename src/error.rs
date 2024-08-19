@@ -34,6 +34,9 @@ quick_error! {
             display("{}", msg)
             source(err)
         }
+        InvalidVersion(msg: &'static str, ver: String) {
+            display("Version '{}' is invalid: {}", ver, msg)
+        }
         InstallFailed {
             display("installation failed, because dpkg -i returned error")
         }

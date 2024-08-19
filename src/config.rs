@@ -592,12 +592,16 @@ impl PackageConfig {
         }
 
         let has_maintainer_override = overrides.maintainer.is_some();
+        let deb_version = overrides.deb_version.unwrap_or_else(|| manifest_version_string(cargo_package, overrides.deb_revision.or(deb.revision.take()).as_deref()).into_owned());
+        if let Err(why) = check_debian_version(&deb_version) {
+            return Err(CargoDebError::InvalidVersion(why, deb_version));
+        }
         Ok(Self {
+            deb_version,
             default_timestamp,
             raw_assets: deb.assets.take().map(|assets| Self::parse_assets(assets, listener)).transpose()?,
             name: cargo_package.name.clone(),
             deb_name: deb.name.take().unwrap_or_else(|| debian_package_name(&cargo_package.name)),
-            deb_version: overrides.deb_version.unwrap_or_else(|| manifest_version_string(cargo_package, overrides.deb_revision.or(deb.revision.take()).as_deref()).into_owned()),
             license,
             license_file_rel_path,
             license_file_skip_lines,
@@ -1086,6 +1090,28 @@ fn format_conffiles<S: AsRef<str>>(files: &[S]) -> String {
         }
         acc + pth + "\n"
     })
+}
+
+fn check_debian_version(mut ver: &str) -> Result<(), &'static str> {
+    if ver.trim_start().is_empty() {
+        return Err("empty string");
+    }
+
+    if let Some((epoch, ver_rest)) = ver.split_once(':') {
+        ver = ver_rest;
+        if epoch.is_empty() || epoch.as_bytes().iter().any(|c| !c.is_ascii_digit()) {
+            return Err("version has unexpected ':' char");
+        }
+    }
+
+    if !ver.starts_with(|c: char| c.is_ascii_digit()) {
+        return Err("version must start with a digit");
+    }
+
+    if ver.as_bytes().iter().any(|&c| !c.is_ascii_alphanumeric() && !matches!(c, b'.' | b'+' | b'-' | b'~')) {
+        return Err("contains characters other than a-z 0-9 . + - ~");
+    }
+    Ok(())
 }
 
 #[cfg(test)]

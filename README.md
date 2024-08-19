@@ -220,7 +220,7 @@ Cargo-deb understands workspaces and can build all crates in the workspace if ne
 
 ### Custom version strings
 
-    cargo deb --deb-version my-custom-version
+    cargo deb --deb-version 1.my-custom-version
 
 Overrides the version string generated from the Cargo manifest, including revision. Alternatively, `--deb-revision` can be used to change only the suffix.
 
