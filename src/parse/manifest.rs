@@ -47,9 +47,7 @@ pub(crate) fn manifest_version_string<'a>(package: &'a cargo_toml::Package<Cargo
     // Make debian's version ordering (newer versions) more compatible with semver's.
     // Keep "semver-1" and "semver-xxx" as-is (assuming these are irrelevant, or debian revision already),
     // but change "semver-beta.1" to "semver~beta.1"
-    let mut parts = version.splitn(2, '-');
-    let semver_main = parts.next().unwrap();
-    if let Some(semver_pre) = parts.next() {
+    if let Some((semver_main, semver_pre)) = version.split_once('-') {
         let pre_ascii = semver_pre.as_bytes();
         if pre_ascii.iter().any(|c| !c.is_ascii_digit()) && pre_ascii.iter().any(u8::is_ascii_digit) {
             version = Cow::Owned(format!("{semver_main}~{semver_pre}"));
@@ -57,7 +55,7 @@ pub(crate) fn manifest_version_string<'a>(package: &'a cargo_toml::Package<Cargo
     }
 
     let revision = revision.unwrap_or("1");
-    if !revision.is_empty() {
+    if !revision.is_empty() && revision != "0" {
         let v = version.to_mut();
         v.push('-');
         v.push_str(revision);
@@ -539,5 +537,5 @@ fn deb_ver() {
     c.version = cargo_toml::Inheritable::Set("1.2.0-new".into());
     assert_eq!("1.2.0-new-1", manifest_version_string(&c, None));
     assert_eq!("1.2.0-new-11", manifest_version_string(&c, Some("11")));
-    assert_eq!("1.2.0-new", manifest_version_string(&c, Some("")));
+    assert_eq!("1.2.0-new", manifest_version_string(&c, Some("0")));
 }
