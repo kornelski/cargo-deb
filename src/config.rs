@@ -782,6 +782,7 @@ This will be hard error in a future release of cargo-deb.", source_path.display(
         self.assets.resolved.sort_by(|a,b| {
             a.c.is_executable().cmp(&b.c.is_executable())
             .then(a.c.is_dynamic_library().cmp(&b.c.is_dynamic_library()))
+            .then(a.processed_from.as_ref().map(|p| p.action).cmp(&b.processed_from.as_ref().map(|p| p.action)))
             .then(a.c.target_path.extension().cmp(&b.c.target_path.extension()))
             .then(a.c.target_path.cmp(&b.c.target_path))
         });
