@@ -299,8 +299,15 @@ pub fn compress_assets(package_deb: &mut PackageConfig, listener: &dyn Listener)
                 (path.starts_with("usr/share/info/") && path.ends_with(".info")))
     }
 
+    fn is_symlink(asset: &AssetSource) -> bool {
+        match asset {
+            AssetSource::Symlink(_) => true,
+            _ => false,
+        }
+    }
+
     for (idx, orig_asset) in package_deb.assets.resolved.iter().enumerate() {
-        if !orig_asset.c.target_path.starts_with("usr") || orig_asset.c.target_path.is_symlink() {
+        if !orig_asset.c.target_path.starts_with("usr") || is_symlink(&orig_asset.source) {
             continue;
         }
         let target_path_str = orig_asset.c.target_path.to_string_lossy();
