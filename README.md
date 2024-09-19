@@ -55,11 +55,11 @@ Everything is optional:
 - **section**: The [application category](https://packages.debian.org/bookworm/) that the software belongs to.
 - **priority**: Defines if the package is `required` or `optional`.
 - **assets**: Files to be included in the package and the permissions to assign them. If assets are not specified, then defaults are taken from binaries listed in `[[bin]]` (copied to `/usr/bin/`) and package `readme` (copied to `usr/share/doc/…`).
-    1. The first argument of each asset is the location of that asset in the Rust project. Glob patterns are allowed. You can use `target/release/` in asset paths, even if Cargo is configured to cross-compile or use custom `CARGO_TARGET_DIR`. The target dir paths will be automatically corrected.
-    2. The second argument is where the file will be copied.
+    1. `source`: the first argument of each asset is the location of that asset in the Rust project. Glob patterns are allowed. You can use `target/release/` in asset paths, even if Cargo is configured to cross-compile or use custom `CARGO_TARGET_DIR`. The target dir paths will be automatically corrected.
+    2. `dest`: the second argument is where the file will be copied.
         - If is argument ends with `/` it will be inferred that the target is the directory where the file will be copied.
         - Otherwise, it will be inferred that the source argument will be renamed when copied.
-    3. The third argument is the permissions (octal string) to assign that file.
+    3. `mode`: the third argument is the permissions (octal string) to assign that file.
 - **merge-assets**: [See "Merging Assets" section under "Advanced Usage"](#merging-assets)
 - **maintainer-scripts**: directory containing `templates`, `preinst`, `postinst`, `prerm`, or `postrm` [scripts](https://www.debian.org/doc/debian-policy/ch-maintainerscripts.html).
 - **conf-files**: [List of configuration files](https://www.debian.org/doc/manuals/maint-guide/dother.en.html#conffiles) that the package management system will not overwrite when the package is upgraded.
@@ -86,8 +86,9 @@ depends = "$auto"
 section = "utility"
 priority = "optional"
 assets = [
+    # both syntaxes are equivalent:
     ["target/release/cargo-deb", "usr/bin/", "755"],
-    ["README.md", "usr/share/doc/cargo-deb/README", "644"],
+    { source = "README.md", dest = "usr/share/doc/cargo-deb/README", mode = "644"},
 ]
 ```
 

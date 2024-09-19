@@ -599,7 +599,7 @@ impl PackageConfig {
         Ok(Self {
             deb_version,
             default_timestamp,
-            raw_assets: deb.assets.take().map(|assets| Self::parse_assets(assets, listener)).transpose()?,
+            raw_assets: deb.assets.take(),
             name: cargo_package.name.clone(),
             deb_name: deb.name.take().unwrap_or_else(|| debian_package_name(&cargo_package.name)),
             license,
@@ -667,27 +667,6 @@ impl PackageConfig {
                 Some(SystemUnitsSingleOrMultiple::Multi(v)) => Some(v),
             },
         })
-    }
-
-    fn parse_assets(assets: Vec<Vec<String>>, listener: &dyn Listener) -> CDResult<Vec<RawAsset>> {
-        // Treat all explicit assets as unresolved until after the build step
-        assets.into_iter().map(|mut asset_line| {
-            let mut asset_parts = asset_line.drain(..);
-            let source_path = PathBuf::from(asset_parts.next()
-                .ok_or("missing path (first array entry) for asset in Cargo.toml")?);
-            if source_path.starts_with("target/debug") {
-                listener.warning(format!("Packaging of development-only binaries is intentionally unsupported in cargo-deb.
-Please only use `target/release/` directory for built products, not `{}`.
-To add debug information or additional assertions use `[profile.release]` in `Cargo.toml` instead.
-This will be hard error in a future release of cargo-deb.", source_path.display()));
-            }
-            Ok(RawAsset {
-                source_path,
-                target_path: PathBuf::from(asset_parts.next().ok_or("missing target (second array entry) for asset in Cargo.toml. Use something like \"usr/local/bin/\".")?),
-                chmod: u32::from_str_radix(&asset_parts.next().ok_or("missing chmod (third array entry) for asset in Cargo.toml. Use an octal string like \"777\".")?, 8)
-                    .map_err(|e| CargoDebError::NumParse("unable to parse chmod argument", e))?,
-            })
-        }).collect()
     }
 
     pub fn resolve_assets(&mut self) -> CDResult<()> {
@@ -963,6 +942,37 @@ This will be hard error in a future release of cargo-deb.", source_path.display(
             return None;
         }
         Some(format_conffiles(&self.conf_files))
+    }
+}
+
+impl TryFrom<CargoDebAssetArrayOrTable> for RawAsset {
+    type Error = String;
+    fn try_from(toml: CargoDebAssetArrayOrTable) -> Result<Self, Self::Error> {
+        fn parse_chmod(mode: &str) -> Result<u32, String> {
+            u32::from_str_radix(mode, 8).map_err(|e| format!("Unable to parse mode argument (third array element) as an octal number in an asset: {e}"))
+        }
+        let a = match toml {
+            CargoDebAssetArrayOrTable::Table(a) => Self {
+                source_path: a.source.into(), target_path: a.dest.into(), chmod: parse_chmod(&a.mode)?
+            },
+            CargoDebAssetArrayOrTable::Array(a) => {
+                let mut a = a.into_iter();
+                Self {
+                    source_path: PathBuf::from(a.next().ok_or("Missing source path (first array element) in an asset in Cargo.toml")?),
+                    target_path: PathBuf::from(a.next().ok_or("missing dest path (second array entry) for asset in Cargo.toml. Use something like \"usr/local/bin/\".")?),
+                    chmod: parse_chmod(&a.next().ok_or("Missing mode (third array element) in an asset")?)?
+                }
+            },
+            CargoDebAssetArrayOrTable::Invalid(bad) => {
+                return Err(format!("Expected assets array to contain either an array of 3 strings, or a `{{source, dest, mode}}` object, but found: {bad}"));
+            },
+        };
+        if a.source_path.starts_with("target/debug") {
+                            return Err(format!("Packaging of development-only binaries is intentionally unsupported in cargo-deb.
+Please only use `target/release/` directory for built products, not `{}`.
+To add debug information or additional assertions use `[profile.release]` in `Cargo.toml` instead.", a.source_path.display()));
+        }
+        Ok(a)
     }
 }
 

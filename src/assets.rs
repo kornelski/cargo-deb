@@ -1,3 +1,4 @@
+use crate::parse::manifest::CargoDebAssetArrayOrTable;
 use crate::config::{is_glob_pattern, PackageConfig};
 use crate::error::{CDResult, CargoDebError};
 use crate::listener::Listener;
@@ -85,7 +86,9 @@ pub(crate) struct Assets {
     pub resolved: Vec<Asset>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
+#[derive(serde::Deserialize)]
+#[serde(try_from = "CargoDebAssetArrayOrTable")]
 pub(crate) struct RawAsset {
     pub source_path: PathBuf,
     pub target_path: PathBuf,

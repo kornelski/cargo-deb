@@ -24,7 +24,8 @@ depends = "$auto"
 section = "utility"
 priority = "optional"
 assets = [
-    ["target/release/cargo-deb", "usr/bin/", "755"],
+    # both syntaxes work
+    { source = "target/release/cargo-deb", dest = "usr/bin/", mode = "755" },
     ["README.md", "usr/share/doc/cargo-deb/README", "644"],
 ]
 

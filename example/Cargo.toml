@@ -41,7 +41,7 @@ assets =  [
 
 [package.metadata.deb.variants.mergeappend]
 merge-assets.append = [
-    ["4.txt", "var/lib/example/appended/4.txt", "644"]
+    { source = "4.txt", dest = "var/lib/example/appended/4.txt", mode = "644" }
 ]
 
 [package.metadata.deb.variants.mergedest]
