@@ -101,7 +101,7 @@ impl<'l, W: Write> ControlArchiveBuilder<'l, W> {
                             continue;
                         }
                         (read_file_to_bytes(&script_path)?, script_path.to_str())
-                    }
+                    },
                 };
 
                 // The config, postinst, postrm, preinst, and prerm
@@ -179,8 +179,8 @@ mod tests {
     use crate::parse::manifest::SystemdUnitsConfig;
     use crate::util::tests::{add_test_fs_paths, set_test_fs_path_content};
     use crate::CargoLockingFlags;
-    use std::io::prelude::Read;
     use std::collections::HashMap;
+    use std::io::prelude::Read;
     use std::path::PathBuf;
 
     fn filename_from_path_str(path: &str) -> String {
@@ -225,7 +225,8 @@ mod tests {
             Default::default(),
             None,
             None,
-            None, CargoLockingFlags::default(),
+            None,
+            CargoLockingFlags::default(),
             mock_listener,
         )
         .unwrap();
@@ -306,7 +307,9 @@ mod tests {
         }
 
         // specify a path relative to the (root or workspace child) package
-        package_deb.maintainer_scripts_rel_path.get_or_insert(PathBuf::from("debian"));
+        package_deb
+            .maintainer_scripts_rel_path
+            .get_or_insert(PathBuf::from("debian"));
 
         // generate scripts and store them in the given archive
         in_ar.generate_scripts(&config, &package_deb).unwrap();

@@ -8,7 +8,7 @@ use crate::error::{CDResult, CargoDebError};
 use crate::listener::Listener;
 use crate::parse::cargo::CargoConfig;
 use crate::parse::manifest::{cargo_metadata, manifest_debug_flag, manifest_version_string, LicenseFile};
-use crate::parse::manifest::{CargoDeb, CargoMetadataTarget, CargoPackageMetadata, ManifestFound};
+use crate::parse::manifest::{CargoDeb, CargoDebAssetArrayOrTable, CargoMetadataTarget, CargoPackageMetadata, ManifestFound};
 use crate::parse::manifest::{DependencyList, SystemUnitsSingleOrMultiple, SystemdUnitsConfig};
 use crate::util::ok_or::OkOrThen;
 use crate::util::pathbytes::AsUnixPathBytes;
@@ -755,7 +755,6 @@ impl PackageConfig {
             .collect()
     }
 
-
     /// similar files next to each other improve tarball compression
     pub fn sort_assets_by_type(&mut self) {
         self.assets.resolved.sort_by(|a,b| {
@@ -968,7 +967,7 @@ impl TryFrom<CargoDebAssetArrayOrTable> for RawAsset {
             },
         };
         if a.source_path.starts_with("target/debug") {
-                            return Err(format!("Packaging of development-only binaries is intentionally unsupported in cargo-deb.
+            return Err(format!("Packaging of development-only binaries is intentionally unsupported in cargo-deb.
 Please only use `target/release/` directory for built products, not `{}`.
 To add debug information or additional assertions use `[profile.release]` in `Cargo.toml` instead.", a.source_path.display()));
         }

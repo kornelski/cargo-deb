@@ -1,7 +1,7 @@
-use crate::parse::manifest::CargoDebAssetArrayOrTable;
 use crate::config::{is_glob_pattern, PackageConfig};
 use crate::error::{CDResult, CargoDebError};
 use crate::listener::Listener;
+use crate::parse::manifest::CargoDebAssetArrayOrTable;
 use crate::util::compress::gzipped;
 use crate::util::read_file_to_bytes;
 use std::borrow::Cow;
@@ -86,8 +86,7 @@ pub(crate) struct Assets {
     pub resolved: Vec<Asset>,
 }
 
-#[derive(Debug, Clone)]
-#[derive(serde::Deserialize)]
+#[derive(Debug, Clone, serde::Deserialize)]
 #[serde(try_from = "CargoDebAssetArrayOrTable")]
 pub(crate) struct RawAsset {
     pub source_path: PathBuf,
@@ -342,7 +341,6 @@ mod tests {
     use crate::parse::manifest::SystemdUnitsConfig;
     use crate::util::tests::add_test_fs_paths;
     use crate::CargoLockingFlags;
-
 
     #[test]
     fn assets() {

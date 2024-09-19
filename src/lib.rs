@@ -191,7 +191,7 @@ pub struct CargoLockingFlags {
 
 impl CargoLockingFlags {
     #[inline]
-    pub(crate) fn flags(self) -> impl Iterator<Item=&'static str> {
+    pub(crate) fn flags(self) -> impl Iterator<Item = &'static str> {
         [
             self.offline.then_some("--offline"),
             self.frozen.then_some("--frozen"),
