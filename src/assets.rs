@@ -75,7 +75,11 @@ impl AssetSource {
                 Cow::Owned(data)
             },
             AssetSource::Data(d) => Cow::Borrowed(d),
-            AssetSource::Symlink(_) => return Err(CargoDebError::Str("Symlink unexpectedly used to read file data")),
+            AssetSource::Symlink(p) => {
+                let data = read_file_to_bytes(p)
+                    .map_err(|e| CargoDebError::IoFile("Symlink unexpectedly used to read file data", e, p.clone()))?;
+                Cow::Owned(data)
+            },
         })
     }
 }
