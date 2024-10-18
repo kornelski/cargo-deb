@@ -1,5 +1,9 @@
 For more details see https://github.com/kornelski/cargo-deb/commits/main/
 
+# Unreleased
+
+* Don't add Vcs-* to the binary control file.
+
 # 2.6.0
 
  * `--maintainer` overrides maintainer field and makes `authors` in TOML optional.
