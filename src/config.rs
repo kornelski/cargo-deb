@@ -804,14 +804,6 @@ impl PackageConfig {
         writeln!(&mut control, "Package: {}", self.deb_name)?;
         writeln!(&mut control, "Version: {}", self.deb_version)?;
         writeln!(&mut control, "Architecture: {}", self.architecture)?;
-        if let Some(ref repo) = self.repository {
-            if repo.starts_with("http") {
-                writeln!(&mut control, "Vcs-Browser: {repo}")?;
-            }
-            if let Some(kind) = self.repository_type() {
-                writeln!(&mut control, "Vcs-{kind}: {repo}")?;
-            }
-        }
         if let Some(homepage) = self.homepage.as_ref().or(self.documentation.as_ref()) {
             writeln!(&mut control, "Homepage: {homepage}")?;
         }
@@ -895,7 +887,7 @@ impl PackageConfig {
     /// Tries to guess type of source control used for the repo URL.
     /// It's a guess, and it won't be 100% accurate, because Cargo suggests using
     /// user-friendly URLs or webpages instead of tool-specific URL schemes.
-    pub(crate) fn repository_type(&self) -> Option<&str> {
+    pub(crate) fn _repository_type(&self) -> Option<&str> {
         if let Some(ref repo) = self.repository {
             if repo.starts_with("git+") ||
                 repo.ends_with(".git") ||
