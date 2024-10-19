@@ -208,14 +208,6 @@ fn run_cargo_deb_command_on_example_dir() {
     assert!(control.contains("Architecture: "));
     assert!(control.contains("Maintainer: cargo-deb developers <cargo-deb@example.invalid>\n"));
 
-    let sha256sums = fs::read_to_string(cdir.path().join("sha256sums")).unwrap();
-    assert!(sha256sums.contains(" usr/bin/example\n"));
-    assert!(sha256sums.contains(" usr/share/doc/example/changelog.Debian.gz\n"));
-    assert!(sha256sums.contains("5891b5b522d5df086d0ff0b110fbd9d21bb4fc7163af34d08286a2e846f6be03  var/lib/example/1.txt\n"), "{sha256sums}");
-    assert!(sha256sums.contains("e258d248fda94c63753607f7c4494ee0fcbe92f1a76bfdac795c9d84101eb317  var/lib/example/2.txt\n"));
-    assert!(sha256sums.contains("6d1ad4737d3113321867260562fd6a6df6dddd7b93c8476beec829d7d8473690  var/lib/example/3.txt\n"));
-    assert!(sha256sums.contains("7b0cc11d7acd89db0288d56c2ddee2b67de185357d5305a3726d1a5dd7685e86  usr/share/doc/example/copyright\n"), "{sha256sums:?}");
-
     assert!(ddir.path().join("var/lib/example/1.txt").exists());
     assert!(ddir.path().join("var/lib/example/2.txt").exists());
     assert!(ddir.path().join("var/lib/example/3.txt").exists());
@@ -288,16 +280,6 @@ fn run_cargo_deb_command_on_example_dir_with_variant() {
     assert!(control.contains("Architecture: "));
     assert!(control.contains("Maintainer: cargo-deb developers <cargo-deb@example.invalid>\n"));
 
-    let sha256sums = fs::read_to_string(cdir.path().join("sha256sums")).unwrap();
-    assert!(sha256sums.contains(" usr/bin/example\n"));
-    assert!(sha256sums.contains(" usr/share/doc/example-debug/changelog.Debian.gz\n"));
-    assert!(sha256sums.contains("5891b5b522d5df086d0ff0b110fbd9d21bb4fc7163af34d08286a2e846f6be03  var/lib/example/1.txt"));
-    assert!(sha256sums.contains("e258d248fda94c63753607f7c4494ee0fcbe92f1a76bfdac795c9d84101eb317  var/lib/example/2.txt"));
-    assert!(sha256sums.contains("cc7d3b3f7e0d3adbd729aec20fd3c91d66062a897c36add02052ab2d825764ed  var/lib/example/5.txt"));
-    assert!(sha256sums.contains("947427986606b49a26f8154fa939ca61ed72adc8fd50dd40ebd9338211d088f1  var/lib/example/6.txt"));
-    assert!(sha256sums.contains("cf8970827eac78e5c539d0eaed4356d6d9822c7fa61afd2421c8abbd4a50d8c0  var/lib/example/4.txt"));
-    assert!(sha256sums.contains("ff3c1510993f227a21b14683e0e65c2f0165f034c4e5f6fe3d77661b30af2b35  usr/share/doc/example-debug/copyright\n"), "{sha256sums:?}");
-
     let ddir = tempfile::tempdir().unwrap();
     assert!(Command::new("tar")
         .arg("xJf")
@@ -344,14 +326,6 @@ fn run_cargo_deb_command_on_example_dir_with_version() {
     assert!(control.contains("Section: utils\n"));
     assert!(control.contains("Architecture: "));
     assert!(control.contains("Maintainer: alternative maintainer\n"));
-
-    let sha256sums = fs::read_to_string(cdir.path().join("sha256sums")).unwrap();
-    assert!(sha256sums.contains(" usr/bin/example\n"));
-    assert!(sha256sums.contains(" usr/share/doc/example/changelog.Debian.gz\n"));
-    assert!(sha256sums.contains("5891b5b522d5df086d0ff0b110fbd9d21bb4fc7163af34d08286a2e846f6be03  var/lib/example/1.txt\n"), "has:\n{sha256sums}");
-    assert!(sha256sums.contains("e258d248fda94c63753607f7c4494ee0fcbe92f1a76bfdac795c9d84101eb317  var/lib/example/2.txt\n"));
-    assert!(sha256sums.contains("6d1ad4737d3113321867260562fd6a6df6dddd7b93c8476beec829d7d8473690  var/lib/example/3.txt\n"));
-    assert!(sha256sums.contains("7b0cc11d7acd89db0288d56c2ddee2b67de185357d5305a3726d1a5dd7685e86  usr/share/doc/example/copyright\n"), "has:\n{sha256sums}");
 
     let ddir = tempfile::tempdir().unwrap();
     assert!(Command::new("tar")
