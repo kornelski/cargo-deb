@@ -17,7 +17,7 @@ impl DebArchive {
         let _ = fs::create_dir_all(out_abspath.parent().ok_or("invalid dir")?);
         let ar_builder = Builder::new(File::create(&out_abspath)?);
 
-        let mut ar = DebArchive {
+        let mut ar = Self {
             out_abspath,
             ar_builder,
             mtime_timestamp,

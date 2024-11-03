@@ -121,10 +121,7 @@ impl io::Write for Compressor {
 
 impl Compressor {
     fn new(writer: Writer) -> Self {
-        Self {
-            writer,
-            uncompressed_size: 0,
-        }
+        Self { writer, uncompressed_size: 0 }
     }
 
     pub fn finish(self) -> CDResult<Compressed> {

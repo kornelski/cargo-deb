@@ -1,8 +1,8 @@
-/// This module is a partial implementation of the Debian DebHelper command
+/// This module is a partial implementation of the Debian `DebHelper` command
 /// for properly installing systemd units as part of a .deb package install aka
 /// `dh_installsystemd`. Specifically this implementation is based on the Ubuntu
 /// version labelled 12.10ubuntu1 which is included in Ubuntu 20.04 LTS. For
-/// more details on the source version see the comments in dh_lib.rs.
+/// more details on the source version see the comments in `dh_lib.rs`.
 ///
 /// # See also
 ///
@@ -201,7 +201,7 @@ fn unquote(s: &str) -> &str {
 /// This function implements the primary logic of the Debian dh_installsystemd
 /// Perl script, which is to say it identifies systemd units being installed,
 /// inspects them and decides, based on the unit file and the configuration
-/// options provided, which DebHelper autoscripts to use to correctly install
+/// options provided, which `DebHelper` autoscripts to use to correctly install
 /// those units.
 ///
 /// # Cargo Deb specific behaviour

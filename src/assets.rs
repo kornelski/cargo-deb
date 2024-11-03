@@ -37,45 +37,45 @@ impl AssetSource {
     #[must_use]
     pub fn path(&self) -> Option<&Path> {
         match self {
-            AssetSource::Symlink(ref p) |
-            AssetSource::Path(ref p) => Some(p),
-            AssetSource::Data(_) => None,
+            Self::Symlink(ref p) |
+            Self::Path(ref p) => Some(p),
+            Self::Data(_) => None,
         }
     }
 
     #[must_use]
     pub fn into_path(self) -> Option<PathBuf> {
         match self {
-            AssetSource::Symlink(p) |
-            AssetSource::Path(p) => Some(p),
-            AssetSource::Data(_) => None,
+            Self::Symlink(p) |
+            Self::Path(p) => Some(p),
+            Self::Data(_) => None,
         }
     }
 
     #[must_use]
     pub fn archive_as_symlink_only(&self) -> bool {
-        matches!(self, AssetSource::Symlink(_))
+        matches!(self, Self::Symlink(_))
     }
 
     #[must_use]
     pub fn file_size(&self) -> Option<u64> {
         match *self {
             // FIXME: may not be accurate if the executable is not stripped yet?
-            AssetSource::Path(ref p) => fs::metadata(p).ok().map(|m| m.len()),
-            AssetSource::Data(ref d) => Some(d.len() as u64),
-            AssetSource::Symlink(_) => None,
+            Self::Path(ref p) => fs::metadata(p).ok().map(|m| m.len()),
+            Self::Data(ref d) => Some(d.len() as u64),
+            Self::Symlink(_) => None,
         }
     }
 
     pub fn data(&self) -> CDResult<Cow<'_, [u8]>> {
         Ok(match self {
-            AssetSource::Path(p) => {
+            Self::Path(p) => {
                 let data = read_file_to_bytes(p)
                     .map_err(|e| CargoDebError::IoFile("unable to read asset to add to archive", e, p.clone()))?;
                 Cow::Owned(data)
             },
-            AssetSource::Data(d) => Cow::Borrowed(d),
-            AssetSource::Symlink(p) => {
+            Self::Data(d) => Cow::Borrowed(d),
+            Self::Symlink(p) => {
                 let data = read_file_to_bytes(p)
                     .map_err(|e| CargoDebError::IoFile("Symlink unexpectedly used to read file data", e, p.clone()))?;
                 Cow::Owned(data)
@@ -99,22 +99,22 @@ pub(crate) struct RawAsset {
 }
 
 impl Assets {
-    pub(crate) fn new() -> Assets {
-        Assets {
+    pub(crate) fn new() -> Self {
+        Self {
             unresolved: vec![],
             resolved: vec![],
         }
     }
 
-    pub(crate) fn with_resolved_assets(assets: Vec<Asset>) -> Assets {
-        Assets {
+    pub(crate) fn with_resolved_assets(assets: Vec<Asset>) -> Self {
+        Self {
             unresolved: vec![],
             resolved: assets,
         }
     }
 
-    pub(crate) fn with_unresolved_assets(assets: Vec<UnresolvedAsset>) -> Assets {
-        Assets {
+    pub(crate) fn with_unresolved_assets(assets: Vec<UnresolvedAsset>) -> Self {
+        Self {
             unresolved: assets,
             resolved: vec![],
         }

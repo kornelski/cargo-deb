@@ -53,17 +53,15 @@ pub mod config;
 mod dependencies;
 mod error;
 
-use crate::assets::{Asset, AssetSource, IsBuilt, ProcessedFrom, compress_assets};
+use crate::assets::{compress_assets, Asset, AssetSource, IsBuilt, ProcessedFrom};
 use crate::deb::control::ControlArchiveBuilder;
 use crate::deb::tar::Tarball;
 use crate::listener::Listener;
 use config::DebConfigOverrides;
 use rayon::prelude::*;
-use std::env;
-use std::fs;
-use std::io;
 use std::path::{Path, PathBuf};
 use std::process::{Command, ExitStatus};
+use std::{env, fs, io};
 
 const TAR_REJECTS_CUR_DIR: bool = true;
 
@@ -75,6 +73,7 @@ pub struct CargoDeb {
 }
 
 impl CargoDeb {
+    #[must_use]
     pub fn new(options: CargoDebOptions) -> Self {
         Self { options }
     }
