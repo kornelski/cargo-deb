@@ -10,7 +10,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-/// Configuration settings for the systemd_units functionality.
+/// Configuration settings for the `systemd_units` functionality.
 ///
 /// `unit_scripts`: (optional) relative path to a directory containing correctly
 /// named systemd unit files. See `dh_lib::pkgfile()` and `dh_installsystemd.rs`
@@ -198,10 +198,10 @@ impl MergeByKey {
     ///
     fn prep_parent_item<'a>(&'a self, mut parent: MergeMap<'a>, RawAsset { source_path: src,target_path: dest, chmod: perm }: &'a RawAsset) -> MergeMap<'_> {
         match &self {
-            MergeByKey::Src(_) => {
+            Self::Src(_) => {
                 parent.insert(src, (dest, *perm));
             },
-            MergeByKey::Dest(_) => {
+            Self::Dest(_) => {
                 parent.insert(dest, (src, *perm));
             },
         }
@@ -212,7 +212,7 @@ impl MergeByKey {
     ///
     fn merge_with(&self, parent: MergeMap<'_>) -> AssetList {
         match self {
-            MergeByKey::Src(assets) => assets.iter()
+            Self::Src(assets) => assets.iter()
                 .fold(parent, |mut acc, RawAsset { source_path: src,target_path: dest, chmod: perm }| {
                     if let Some((replaced_dest, replaced_perm)) = acc.insert(src, (dest, *perm)) {
                         debug!("Replacing {:?} w/ {:?}", (replaced_dest, replaced_perm), (dest, perm));
@@ -222,7 +222,7 @@ impl MergeByKey {
                 .into_iter()
                 .map(|(src, (dest, perm))| RawAsset { source_path: src.clone(), target_path: dest.clone(), chmod: perm })
                 .collect(),
-            MergeByKey::Dest(assets) => assets.iter()
+            Self::Dest(assets) => assets.iter()
                 .fold(parent, |mut acc, RawAsset { source_path: src, target_path: dest, chmod: perm }| {
                     if let Some((replaced_src, replaced_perm)) = acc.insert(dest, (src, *perm)) {
                         debug!("Replacing {:?} w/ {:?}", (replaced_src, replaced_perm), (src, perm));
@@ -241,7 +241,7 @@ impl CargoDeb {
     ///
     /// **Note**: For backwards compat, if `merge_assets` is set, this will apply **after** the variant has overridden the assets.
     ///
-    pub(crate) fn inherit_from(self, parent: CargoDeb) -> CargoDeb {
+    pub(crate) fn inherit_from(self, parent: Self) -> Self {
         let mut assets = self.assets.or(parent.assets);
 
         if let (Some(merge_assets), Some(old_assets)) = (self.merge_assets, assets.as_mut()) {
@@ -254,7 +254,7 @@ impl CargoDeb {
             }
         }
 
-        CargoDeb {
+        Self {
             name: self.name.or(parent.name),
             maintainer: self.maintainer.or(parent.maintainer),
             copyright: self.copyright.or(parent.copyright),

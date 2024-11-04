@@ -1,11 +1,11 @@
-/// This module is a partial implementation of the Debian DebHelper core library
-/// aka dh_lib. Specifically this implementation is based on the Ubuntu version
+/// This module is a partial implementation of the Debian `DebHelper` core library
+/// aka `dh_lib`. Specifically this implementation is based on the Ubuntu version
 /// labelled 12.10ubuntu1 which is included in Ubuntu 20.04 LTS. I believe 12 is
 /// a reference to Debian 12 "Bookworm", i.e. Ubuntu uses future Debian sources
 /// and is also referred to as compat level 12 by debhelper documentation. Only
 /// functionality that was needed to properly script installation of systemd
-/// units, i.e. that used by the debhelper dh_instalsystemd command or rather
-/// our dh_installsystemd.rs implementation of it, is included here.
+/// units, i.e. that used by the debhelper `dh_instalsystemd` command or rather
+/// our `dh_installsystemd.rs` implementation of it, is included here.
 ///
 /// # See also
 ///
@@ -644,7 +644,7 @@ mod tests {
         mock_listener.expect_info().times(1).return_const(());
 
         let mut scripts = ScriptFragments::new();
-        scripts.insert("mypkg.myscript.debhelper".to_owned(), "injected".as_bytes().to_vec());
+        scripts.insert("mypkg.myscript.debhelper".to_owned(), b"injected".to_vec());
 
         assert_eq!(1, scripts.len());
         debhelper_script_subst(Path::new(""), &mut scripts, "mypkg", "myscript", None, &mock_listener).unwrap();
@@ -666,7 +666,7 @@ mod tests {
         mock_listener.expect_info().times(1).return_const(());
 
         let mut scripts = ScriptFragments::new();
-        scripts.insert("mypkg.myscript.debhelper".to_owned(), "injected".as_bytes().to_vec());
+        scripts.insert("mypkg.myscript.debhelper".to_owned(), b"injected".to_vec());
 
         assert_eq!(1, scripts.len());
         debhelper_script_subst(Path::new(""), &mut scripts, "mypkg", "myscript", None, &mock_listener).unwrap();
@@ -697,8 +697,8 @@ mod tests {
         mock_listener.expect_info().times(1).return_const(());
 
         let mut scripts = ScriptFragments::new();
-        scripts.insert(format!("mypkg.{maintainer_script}.debhelper"), "first".as_bytes().to_vec());
-        scripts.insert(format!("mypkg.{maintainer_script}.service"), "second".as_bytes().to_vec());
+        scripts.insert(format!("mypkg.{maintainer_script}.debhelper"), b"first".to_vec());
+        scripts.insert(format!("mypkg.{maintainer_script}.service"), b"second".to_vec());
 
         assert_eq!(2, scripts.len());
         debhelper_script_subst(Path::new(""), &mut scripts, "mypkg", maintainer_script, None, &mock_listener).unwrap();

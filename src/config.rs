@@ -15,15 +15,13 @@ use crate::util::pathbytes::AsUnixPathBytes;
 use crate::util::wordsplit::WordSplit;
 use rayon::prelude::*;
 use std::borrow::Cow;
-use std::collections::HashMap;
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::env::consts::{DLL_PREFIX, DLL_SUFFIX, EXE_SUFFIX};
-use std::fs;
-use std::io;
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::time::SystemTime;
+use std::{fs, io};
 
 pub(crate) fn is_glob_pattern(s: &Path) -> bool {
     s.to_bytes().iter().any(|&c| c == b'*' || c == b'[' || c == b']' || c == b'!')
@@ -341,7 +339,7 @@ impl Config {
         self.add_changelog_asset(package_deb)?;
         self.add_systemd_assets(package_deb)?;
 
-        self.reset_deb_temp_directory(&package_deb)?;
+        self.reset_deb_temp_directory(package_deb)?;
         Ok(())
     }
 
@@ -578,7 +576,7 @@ impl Config {
 }
 
 impl PackageConfig {
-    pub(crate) fn new(mut deb: CargoDeb, cargo_package: &mut cargo_toml::Package<CargoPackageMetadata>, listener: &dyn Listener, default_timestamp: u64, overrides: DebConfigOverrides, target: Option<&str>) -> Result<PackageConfig, CargoDebError> {
+    pub(crate) fn new(mut deb: CargoDeb, cargo_package: &mut cargo_toml::Package<CargoPackageMetadata>, listener: &dyn Listener, default_timestamp: u64, overrides: DebConfigOverrides, target: Option<&str>) -> Result<Self, CargoDebError> {
         let (license_file_rel_path, license_file_skip_lines) = parse_license_file(cargo_package, deb.license_file.as_ref())?;
         let mut license = cargo_package.license.take().map(|v| v.unwrap());
 
@@ -938,6 +936,7 @@ impl PackageConfig {
 
 impl TryFrom<CargoDebAssetArrayOrTable> for RawAsset {
     type Error = String;
+
     fn try_from(toml: CargoDebAssetArrayOrTable) -> Result<Self, Self::Error> {
         fn parse_chmod(mode: &str) -> Result<u32, String> {
             u32::from_str_radix(mode, 8).map_err(|e| format!("Unable to parse mode argument (third array element) as an octal number in an asset: {e}"))
@@ -1133,11 +1132,13 @@ mod tests {
         // req
         assert_eq!(
             get_architecture_specification("libjpeg64-turbo [armhf]").expect("arch"),
-            ("libjpeg64-turbo".to_owned(), Some(Require("armhf".to_owned()))));
+            ("libjpeg64-turbo".to_owned(), Some(Require("armhf".to_owned())))
+        );
         // neg
         assert_eq!(
             get_architecture_specification("libjpeg64-turbo [!amd64]").expect("arch"),
-            ("libjpeg64-turbo".to_owned(), Some(NegRequire("amd64".to_owned()))));
+            ("libjpeg64-turbo".to_owned(), Some(NegRequire("amd64".to_owned())))
+        );
     }
 
     fn to_canon_static_str(s: &str) -> &'static str {

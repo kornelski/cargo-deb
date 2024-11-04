@@ -145,7 +145,7 @@ pub(crate) mod tests {
 
     impl TestPath {
         fn new(filename: &'static str, contents: String) -> Self {
-            TestPath {
+            Self {
                 _filename: filename,
                 contents,
                 read_count: 0,

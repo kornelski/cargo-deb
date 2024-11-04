@@ -85,10 +85,11 @@ debug = false
 
 [dev-dependencies]
 mockall = "0.13.0"
-rstest = { version = "0.22", default-features = false }
+rstest = { version = "0.23", default-features = false }
 lazy_static = "1.5.0"
 
 [workspace]
+resolver = "2"
 exclude = ["example", "tests/*", "test-resources"]
 
 [package.metadata.docs.rs]
