@@ -93,15 +93,14 @@ impl<'l, W: Write> ControlArchiveBuilder<'l, W> {
             // user or if available prefer modified versions generated above.
             for name in ["config", "preinst", "postinst", "prerm", "postrm", "templates"] {
                 let script_path;
-                let (contents, source_path) = match scripts.remove(name) {
-                    Some(script) => (script, Some("systemd_units")),
-                    None => {
-                        script_path = maintainer_scripts_dir.join(name);
-                        if !is_path_file(&script_path) {
-                            continue;
-                        }
-                        (read_file_to_bytes(&script_path)?, script_path.to_str())
-                    },
+                let (contents, source_path) = if let Some(script) = scripts.remove(name) {
+                    (script, Some("systemd_units"))
+                } else {
+                    script_path = maintainer_scripts_dir.join(name);
+                    if !is_path_file(&script_path) {
+                        continue;
+                    }
+                    (read_file_to_bytes(&script_path)?, script_path.to_str())
                 };
 
                 // The config, postinst, postrm, preinst, and prerm
