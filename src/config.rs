@@ -141,7 +141,7 @@ pub struct PackageConfig {
     pub homepage: Option<String>,
     /// Documentation URL from `Cargo.toml`. Fallback if `homepage` is missing.
     pub documentation: Option<String>,
-    /// The URL of the software repository.
+    /// The URL of the software repository. Fallback if both `homepage` and `documentation` are missing.
     pub repository: Option<String>,
     /// A short description of the project.
     pub description: String,
@@ -804,7 +804,7 @@ impl PackageConfig {
         writeln!(&mut control, "Package: {}", self.deb_name)?;
         writeln!(&mut control, "Version: {}", self.deb_version)?;
         writeln!(&mut control, "Architecture: {}", self.architecture)?;
-        if let Some(homepage) = self.homepage.as_ref().or(self.documentation.as_ref()) {
+        if let Some(homepage) = self.homepage.as_deref().or(self.documentation.as_deref()).or(self.repository.as_deref()) {
             writeln!(&mut control, "Homepage: {homepage}")?;
         }
         if let Some(ref section) = self.section {
@@ -882,33 +882,6 @@ impl PackageConfig {
         control.push(b'\n');
 
         Ok(control)
-    }
-
-    /// Tries to guess type of source control used for the repo URL.
-    /// It's a guess, and it won't be 100% accurate, because Cargo suggests using
-    /// user-friendly URLs or webpages instead of tool-specific URL schemes.
-    pub(crate) fn _repository_type(&self) -> Option<&str> {
-        if let Some(ref repo) = self.repository {
-            if repo.starts_with("git+") ||
-                repo.ends_with(".git") ||
-                repo.contains("git@") ||
-                repo.contains("github.com") ||
-                repo.contains("gitlab.com")
-            {
-                return Some("Git");
-            }
-            if repo.starts_with("cvs+") || repo.contains("pserver:") || repo.contains("@cvs.") {
-                return Some("Cvs");
-            }
-            if repo.starts_with("hg+") || repo.contains("hg@") || repo.contains("/hg.") {
-                return Some("Hg");
-            }
-            if repo.starts_with("svn+") || repo.contains("/svn.") {
-                return Some("Svn");
-            }
-            return None;
-        }
-        None
     }
 
     pub(crate) fn append_copyright_metadata(&self, copyright: &mut Vec<u8>) -> Result<(), CargoDebError> {
