@@ -74,7 +74,7 @@ pub struct CargoDeb {
 
 impl CargoDeb {
     #[must_use]
-    pub fn new(options: CargoDebOptions) -> Self {
+    pub const fn new(options: CargoDebOptions) -> Self {
         Self { options }
     }
 

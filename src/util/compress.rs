@@ -36,7 +36,7 @@ impl Format {
         }
     }
 
-    fn level(self, fast: bool) -> u32 {
+    const fn level(self, fast: bool) -> u32 {
         match self {
             Self::Xz => if fast { 1 } else { 6 },
             Self::Gzip => if fast { 1 } else { 9 },
@@ -120,7 +120,7 @@ impl io::Write for Compressor {
 }
 
 impl Compressor {
-    fn new(writer: Writer) -> Self {
+    const fn new(writer: Writer) -> Self {
         Self { writer, uncompressed_size: 0 }
     }
 
@@ -136,7 +136,7 @@ pub struct Compressed {
 
 impl Compressed {
     #[must_use]
-    pub fn extension(&self) -> &'static str {
+    pub const fn extension(&self) -> &'static str {
         self.compress_format.extension()
     }
 }

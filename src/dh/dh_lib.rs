@@ -58,7 +58,7 @@ pub(crate) type ScriptFragments = HashMap<String, Vec<u8>>;
 /// <filename> is either a systemd unit type such as `service` or `socket`, or a
 /// maintainer script name such as `postinst`.
 ///
-/// Note: main_package should ne the first package listed in the Debian package
+/// Note: `main_package` should ne the first package listed in the Debian package
 /// control file.
 ///
 /// # Known limitations

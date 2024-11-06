@@ -99,7 +99,7 @@ pub(crate) struct RawAsset {
 }
 
 impl Assets {
-    pub(crate) fn new() -> Self {
+    pub(crate) const fn new() -> Self {
         Self {
             unresolved: vec![],
             resolved: vec![],
@@ -242,7 +242,7 @@ impl Asset {
 }
 
 impl AssetCommon {
-    pub(crate) fn is_executable(&self) -> bool {
+    pub(crate) const fn is_executable(&self) -> bool {
         0 != self.chmod & 0o111
     }
 
