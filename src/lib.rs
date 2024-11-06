@@ -249,16 +249,13 @@ pub fn write_deb(config: &Config, package_deb: &PackageConfig, &compress::Compre
             // Initialize the contents of the data archive (files that go into the filesystem).
             let dest = util::compress::select_compressor(fast, compress_type, compress_system)?;
             let archive = Tarball::new(dest, package_deb.default_timestamp);
-            let (compressed, asset_hashes) = archive.archive_files(package_deb, rsyncable, listener)?;
-            let sums = package_deb.generate_sha256sums(&asset_hashes)?;
+            let compressed = archive.archive_files(package_deb, rsyncable, listener)?;
             let original_data_size = compressed.uncompressed_size;
-            Ok::<_, CargoDebError>((compressed.finish()?, original_data_size, sums))
+            Ok::<_, CargoDebError>((compressed.finish()?, original_data_size))
         },
     );
-    let mut control_builder = control_builder?;
-    let (data_compressed, original_data_size, sums) = data_result?;
-    control_builder.add_sha256sums(&sums)?;
-    drop(sums);
+    let control_builder = control_builder?;
+    let (data_compressed, original_data_size) = data_result?;
     let control_compressed = control_builder.finish()?.finish()?;
 
     let mut deb_contents = DebArchive::new(config.deb_output_path(package_deb), package_deb.default_timestamp)?;

@@ -2,11 +2,9 @@ use crate::assets::AssetSource;
 use crate::error::{CDResult, CargoDebError};
 use crate::listener::Listener;
 use crate::PackageConfig;
-use sha2::{Digest, Sha256};
-use std::collections::{HashMap, HashSet};
+use std::collections::HashSet;
 use std::io::Write;
 use std::path::{Component, Path, PathBuf};
-use std::sync::mpsc;
 use std::{fs, io};
 use tar::{EntryType, Header as TarHeader};
 
@@ -28,61 +26,46 @@ impl<W: Write> Tarball<W> {
 
     /// Copies all the files to be packaged into the tar archive.
     /// Returns MD5 hashes of files copied
-    pub fn archive_files(mut self, package_deb: &PackageConfig, rsyncable: bool, listener: &dyn Listener) -> CDResult<(W, HashMap<PathBuf, [u8; 32]>)> {
-        let hashes = std::thread::scope(|s| -> CDResult<_> {
-            let (send, recv) = mpsc::sync_channel(2);
-            let num_items = package_deb.assets.resolved.len();
-            let hash_thread = s.spawn(move || {
-                let mut hashes = HashMap::with_capacity(num_items);
-                hashes.extend(recv.into_iter().map(|(path, data)| {
-                    (path, Sha256::digest(data).into())
-                }));
-                hashes
-            });
-            let mut archive_data_added = 0;
-            let mut prev_is_built = false;
+    pub fn archive_files(mut self, package_deb: &PackageConfig, rsyncable: bool, listener: &dyn Listener) -> CDResult<W> {
+        let mut archive_data_added = 0;
+        let mut prev_is_built = false;
 
-            debug_assert!(package_deb.assets.unresolved.is_empty());
-            for asset in &package_deb.assets.resolved {
-                let mut log_line = format!("{} {}-> {}",
-                    asset.processed_from.as_ref().and_then(|p| p.original_path.as_deref())
-                        .or(asset.source.path())
-                        .unwrap_or_else(|| Path::new("-")).display(),
-                    asset.processed_from.as_ref().map(|p| p.action).unwrap_or_default(),
-                    asset.c.target_path.display()
-                );
-                if let Some(len) = asset.source.file_size() {
-                    let (size, unit) = human_size(len);
-                    use std::fmt::Write;
-                    let _ = write!(&mut log_line, " ({size}{unit})");
-                }
-                listener.info(log_line);
-
-                if let AssetSource::Symlink(source_path) = &asset.source {
-                    let link_name = fs::read_link(source_path)
-                        .map_err(|e| CargoDebError::IoFile("symlink asset", e, source_path.clone()))?;
-                    self.symlink(&asset.c.target_path, &link_name)?;
-                } else {
-                    let out_data = asset.source.data()?;
-                    if rsyncable {
-                        if archive_data_added > 1_000_000 || prev_is_built != asset.c.is_built() {
-                            self.flush()?;
-                            archive_data_added = 0;
-                        }
-                        // puts synchronization point between non-code and code assets
-                        prev_is_built = asset.c.is_built();
-                        archive_data_added += out_data.len();
-                    }
-                    self.file(&asset.c.target_path, &out_data, asset.c.chmod)?;
-                    send.send((asset.c.target_path.clone(), out_data)).unwrap();
-                }
+        debug_assert!(package_deb.assets.unresolved.is_empty());
+        for asset in &package_deb.assets.resolved {
+            let mut log_line = format!("{} {}-> {}",
+                asset.processed_from.as_ref().and_then(|p| p.original_path.as_deref())
+                    .or(asset.source.path())
+                    .unwrap_or_else(|| Path::new("-")).display(),
+                asset.processed_from.as_ref().map(|p| p.action).unwrap_or_default(),
+                asset.c.target_path.display()
+            );
+            if let Some(len) = asset.source.file_size() {
+                let (size, unit) = human_size(len);
+                use std::fmt::Write;
+                let _ = write!(&mut log_line, " ({size}{unit})");
             }
-            drop(send);
-            Ok(hash_thread.join().unwrap())
-        })?;
+            listener.info(log_line);
 
-        let tar = self.tar.into_inner()?;
-        Ok((tar, hashes))
+            if let AssetSource::Symlink(source_path) = &asset.source {
+                let link_name = fs::read_link(source_path)
+                    .map_err(|e| CargoDebError::IoFile("symlink asset", e, source_path.clone()))?;
+                self.symlink(&asset.c.target_path, &link_name)?;
+            } else {
+                let out_data = asset.source.data()?;
+                if rsyncable {
+                    if archive_data_added > 1_000_000 || prev_is_built != asset.c.is_built() {
+                        self.flush()?;
+                        archive_data_added = 0;
+                    }
+                    // puts synchronization point between non-code and code assets
+                    prev_is_built = asset.c.is_built();
+                    archive_data_added += out_data.len();
+                }
+                self.file(&asset.c.target_path, &out_data, asset.c.chmod)?;
+            }
+        }
+
+        Ok(self.tar.into_inner()?)
     }
 
     fn directory(&mut self, path: &Path) -> io::Result<()> {

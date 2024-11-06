@@ -22,7 +22,7 @@ impl<'l, W: Write> ControlArchiveBuilder<'l, W> {
         }
     }
 
-    /// Generates an uncompressed tar archive with `control`, `sha256sums`, and others
+    /// Generates an uncompressed tar archive with `control`, and others
     pub fn generate_archive(&mut self, config: &Config, package_deb: &PackageConfig) -> CDResult<()> {
         self.add_control(&package_deb.generate_control(config)?)?;
 
@@ -118,12 +118,6 @@ impl<'l, W: Write> ControlArchiveBuilder<'l, W> {
     fn add_file_with_log(&mut self, name: &Path, contents: &[u8], permissions: u32, source_path: Option<&str>) -> CDResult<()> {
         self.listener.info(format!("{} -> {}", source_path.unwrap_or("-"), name.display()));
         self.archive.file(name, contents, permissions)
-    }
-
-    pub fn add_sha256sums(&mut self, sha256sums: &[u8]) -> CDResult<()> {
-        // Write the data to the archive
-        self.archive.file("./sha256sums", sha256sums, 0o644)?;
-        Ok(())
     }
 
     // Add the control file to the tar archive.

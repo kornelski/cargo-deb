@@ -15,7 +15,7 @@ use crate::util::pathbytes::AsUnixPathBytes;
 use crate::util::wordsplit::WordSplit;
 use rayon::prelude::*;
 use std::borrow::Cow;
-use std::collections::{HashMap, HashSet};
+use std::collections::HashSet;
 use std::env::consts::{DLL_PREFIX, DLL_SUFFIX, EXE_SUFFIX};
 use std::io::Write;
 use std::path::{Path, PathBuf};
@@ -762,25 +762,6 @@ impl PackageConfig {
             .then(a.c.target_path.extension().cmp(&b.c.target_path.extension()))
             .then(a.c.target_path.cmp(&b.c.target_path))
         });
-    }
-
-    /// Creates the sha256sums file which contains a list of all contained files and the sha256sums of each.
-    pub fn generate_sha256sums(&self, asset_hashes: &HashMap<PathBuf, [u8; 32]>) -> CDResult<Vec<u8>> {
-        let mut sha256sums: Vec<u8> = Vec::with_capacity(self.assets.resolved.len() * 80);
-
-        // Collect sha256sums from each asset in the archive (excludes symlinks).
-        for asset in &self.assets.resolved {
-            if let Some(value) = asset_hashes.get(&asset.c.target_path) {
-                for &b in value {
-                    write!(sha256sums, "{b:02x}")?;
-                }
-                sha256sums.write_all(b"  ")?;
-
-                sha256sums.write_all(&asset.c.target_path.as_path().as_unix_path())?;
-                sha256sums.write_all(b"\n")?;
-            }
-        }
-        Ok(sha256sums)
     }
 
     fn extended_description(&self, config: &Config) -> CDResult<Option<Cow<'_, str>>> {

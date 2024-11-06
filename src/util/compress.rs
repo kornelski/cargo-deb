@@ -136,7 +136,7 @@ pub struct Compressed {
 
 impl Compressed {
     #[must_use]
-    pub const fn extension(&self) -> &'static str {
+    pub fn extension(&self) -> &'static str {
         self.compress_format.extension()
     }
 }

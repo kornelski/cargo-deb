@@ -1,8 +1,14 @@
 For more details see https://github.com/kornelski/cargo-deb/commits/main/
 
-# Unreleased
+# 2.8.0
 
-* Don't add Vcs-* to the binary control file.
+* Don't add Vcs-* to the binary control file, since lintian doesn't like it.
+* Don't generate sha256sums files, since lintian doesn't like it either.
+
+# 2.7.0
+
+* `assets` entries in `Cargo.toml` can use a verbose syntax `{ source = "path", dest = "path", mode = "644" }`
+* Improved handling of symlinked assets
 
 # 2.6.0
 
