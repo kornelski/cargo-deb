@@ -196,7 +196,7 @@ impl MergeByKey {
 
     /// Folds the parent asset into a merge-map preparing to prepare for a merge,
     ///
-    fn prep_parent_item<'a>(&'a self, mut parent: MergeMap<'a>, RawAsset { source_path: src,target_path: dest, chmod: perm }: &'a RawAsset) -> MergeMap<'_> {
+    fn prep_parent_item<'a>(&'a self, mut parent: MergeMap<'a>, RawAsset { source_path: src,target_path: dest, chmod: perm }: &'a RawAsset) -> MergeMap<'a> {
         match &self {
             Self::Src(_) => {
                 parent.insert(src, (dest, *perm));
