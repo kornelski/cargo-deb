@@ -24,12 +24,18 @@ pub struct StdErrListener {
 }
 impl Listener for StdErrListener {
     fn warning(&self, s: String) {
-        let _ = writeln!(std::io::stdout(), "warning: {s}");
+        let mut out = std::io::stderr().lock();
+        for (i, line) in s.lines().enumerate() {
+            let _ = writeln!(out, "{}{line}", if i == 0 { "warning: " } else { "         " });
+        }
     }
 
     fn info(&self, s: String) {
         if self.verbose {
-            let _ = writeln!(std::io::stdout(), "info: {s}");
+            let mut out = std::io::stderr().lock();
+            for (i, line) in s.lines().enumerate() {
+                let _ = writeln!(out, "{}{line}", if i == 0 { "info: " } else { "      " });
+            }
         }
     }
 }

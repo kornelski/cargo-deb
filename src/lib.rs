@@ -81,7 +81,7 @@ impl CargoDeb {
 
     pub fn process(mut self, listener: &dyn Listener) -> CDResult<()> {
         if self.options.install || self.options.target.is_none() {
-            warn_if_not_linux(); // compiling natively for non-linux = nope
+            warn_if_not_linux(listener); // compiling natively for non-linux = nope
         }
 
         if self.options.system_xz {
@@ -417,10 +417,10 @@ fn ensure_all_rust_targets_map_to_debian_targets() {
 }
 
 #[cfg(target_os = "linux")]
-fn warn_if_not_linux() {
+fn warn_if_not_linux(_: &dyn Listener) {
 }
 
 #[cfg(not(target_os = "linux"))]
-fn warn_if_not_linux() {
-    eprintln!("warning: You're creating a package only for {}, and not for Linux.\nUse --target if you want to cross-compile.", std::env::consts::OS);
+fn warn_if_not_linux(listener: &dyn Listener) {
+    listener.warning(format!("You're creating a package only for {}, and not for Linux.\nUse --target if you want to cross-compile.", std::env::consts::OS));
 }
