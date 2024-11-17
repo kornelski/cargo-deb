@@ -333,8 +333,11 @@ fn debian_triple_from_rust_triple(rust_target_triple: &str) -> String {
             ("arm", if abi.ends_with("hf") {"gnueabihf"} else {"gnueabi"})
         },
         ("mipsel", _) => ("mipsel", "gnu"),
-        ("loongarch64", _) => ("loong64", "gnu"),
+        (mips @ ("mips64" | "mips64el"), "musl" | "muslabi64") => (mips, "gnuabi64"),
+        ("loongarch64", _) => ("loongarch64", "gnu"), // architecture is loong64, tuple is loongarch64!
         (risc, _) if risc.starts_with("riscv64") => ("riscv64", "gnu"),
+        (arch, "muslspe") => (arch, "gnuspe"),
+        (arch, "musl" | "uclibc") => (arch, "gnu"),
         (arch, abi) => (arch, abi),
     };
     format!("{darch}-linux-{dabi}")
@@ -349,16 +352,16 @@ pub(crate) fn debian_architecture_from_rust_triple(target: &str) -> &str {
         // https://wiki.debian.org/Multiarch/Tuples
         // rustc --print target-list
         // https://doc.rust-lang.org/std/env/consts/constant.ARCH.html
-        ("aarch64", _) => "arm64",
-        ("mips64", "gnuabin32") => "mipsn32",
-        ("mips64el", "gnuabin32") => "mipsn32el",
+        ("aarch64" | "aarch64_be", _) => "arm64",
+        ("mips64", "gnuabi32") => "mipsn32",
+        ("mips64el", "gnuabi32") => "mipsn32el",
         ("mipsisa32r6", _) => "mipsr6",
         ("mipsisa32r6el", _) => "mipsr6el",
         ("mipsisa64r6", "gnuabi64") => "mips64r6",
-        ("mipsisa64r6", "gnuabin32") => "mipsn32r6",
+        ("mipsisa64r6", "gnuabi32") => "mipsn32r6",
         ("mipsisa64r6el", "gnuabi64") => "mips64r6el",
-        ("mipsisa64r6el", "gnuabin32") => "mipsn32r6el",
-        ("powerpc", "gnuspe") => "powerpcspe",
+        ("mipsisa64r6el", "gnuabi32") => "mipsn32r6el",
+        ("powerpc", "gnuspe" | "muslspe") => "powerpcspe",
         ("powerpc64", _) => "ppc64",
         ("powerpc64le", _) => "ppc64el",
         ("riscv64gc", _) => "riscv64",
@@ -367,8 +370,44 @@ pub(crate) fn debian_architecture_from_rust_triple(target: &str) -> &str {
         ("x86_64", _) => "amd64",
         ("loongarch64", _) => "loong64",
         (arm, gnueabi) if arm.starts_with("arm") && gnueabi.ends_with("hf") => "armhf",
-        (arm, _) if arm.starts_with("arm") => "armel",
+        (arm, _) if arm.starts_with("arm") || arm.starts_with("thumb") => "armel",
         (other_arch, _) => other_arch,
+    }
+}
+
+#[test]
+fn ensure_all_rust_targets_map_to_debian_targets() {
+    const DEB_ARCHS: &[&str] = &["alpha", "amd64", "arc", "arm", "arm64", "arm64ilp32", "armel",
+    "armhf", "hppa", "hurd-i386", "hurd-amd64", "i386", "ia64", "kfreebsd-amd64",
+    "kfreebsd-i386", "loong64", "m68k", "mips", "mipsel", "mips64", "mips64el",
+    "mipsn32", "mipsn32el", "mipsr6", "mipsr6el", "mips64r6", "mips64r6el", "mipsn32r6",
+    "mipsn32r6el", "powerpc", "powerpcspe", "ppc64", "ppc64el", "riscv64", "s390",
+    "s390x", "sh4", "sparc", "sparc64", "uefi-amd6437", "uefi-arm6437", "uefi-armhf37",
+    "uefi-i38637", "x32"];
+
+    const DEB_TUPLES: &[&str] = &["aarch64-linux-gnu", "aarch64-linux-gnu_ilp32", "aarch64-uefi",
+    "aarch64_be-linux-gnu", "aarch64_be-linux-gnu_ilp32", "alpha-linux-gnu", "arc-linux-gnu",
+    "arm-linux-gnu", "arm-linux-gnueabi", "arm-linux-gnueabihf", "arm-uefi", "armeb-linux-gnueabi",
+    "armeb-linux-gnueabihf", "hppa-linux-gnu", "i386-gnu", "i386-kfreebsd-gnu",
+    "i386-linux-gnu", "i386-uefi", "ia64-linux-gnu", "loongarch64-linux-gnu",
+    "m68k-linux-gnu", "mips-linux-gnu", "mips64-linux-gnuabi64", "mips64-linux-gnuabin32",
+    "mips64el-linux-gnuabi64", "mips64el-linux-gnuabin32", "mipsel-linux-gnu",
+    "mipsisa32r6-linux-gnu", "mipsisa32r6el-linux-gnu", "mipsisa64r6-linux-gnuabi64",
+    "mipsisa64r6-linux-gnuabin32", "mipsisa64r6el-linux-gnuabi64", "mipsisa64r6el-linux-gnuabin32",
+    "powerpc-linux-gnu", "powerpc-linux-gnuspe", "powerpc64-linux-gnu", "powerpc64le-linux-gnu",
+    "riscv64-linux-gnu", "s390-linux-gnu", "s390x-linux-gnu", "sh4-linux-gnu",
+    "sparc-linux-gnu", "sparc64-linux-gnu", "x86_64-gnu", "x86_64-kfreebsd-gnu",
+    "x86_64-linux-gnu", "x86_64-linux-gnux32", "x86_64-uefi"];
+
+    let list = std::process::Command::new("rustc").arg("--print=target-list").output().unwrap().stdout;
+    for rust_target in std::str::from_utf8(&list).unwrap().lines().filter(|a| a.contains("linux")) {
+        if ["csky", "hexagon", "riscv32gc"].contains(&rust_target.split_once('-').unwrap().0) {
+            continue; // Rust supports more than Debian!
+        }
+        let deb_arch = debian_architecture_from_rust_triple(rust_target);
+        assert!(DEB_ARCHS.contains(&deb_arch), "{rust_target} => {deb_arch}");
+        let deb_tuple = debian_triple_from_rust_triple(rust_target);
+        assert!(DEB_TUPLES.contains(&deb_tuple.as_str()), "{rust_target} => {deb_tuple}");
     }
 }
 
@@ -575,6 +614,5 @@ fn warn_if_not_linux() {
 
 #[cfg(not(target_os = "linux"))]
 fn warn_if_not_linux() {
-    const DEFAULT_TARGET: &str = env!("CARGO_DEB_DEFAULT_TARGET");
-    eprintln!("warning: You're creating a package for your current operating system only ({DEFAULT_TARGET}), and not for Linux.\nUse --target if you want to cross-compile.");
+    eprintln!("warning: You're creating a package only for {}, and not for Linux.\nUse --target if you want to cross-compile.", std::env::consts::OS);
 }
