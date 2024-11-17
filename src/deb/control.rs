@@ -206,6 +206,7 @@ mod tests {
     }
 
     #[track_caller]
+    #[cfg(test)]
     fn prepare<'l, W: Write>(dest: W, package_name: Option<&str>, mock_listener: &'l mut MockListener) -> (Config, PackageConfig, ControlArchiveBuilder<'l, W>) {
         mock_listener.expect_info().return_const(());
 
@@ -223,7 +224,7 @@ mod tests {
             mock_listener,
         )
         .unwrap();
-        config.prepare_assets_before_build(&mut package_deb).unwrap();
+        config.prepare_assets_before_build(&mut package_deb, mock_listener).unwrap();
 
         // make the absolute manifest dir relative to our crate root dir
         // as the static paths we receive from the caller cannot be set

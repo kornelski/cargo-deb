@@ -341,12 +341,32 @@ impl Config {
         Ok((config, package_deb))
     }
 
-    pub fn prepare_assets_before_build(&self, package_deb: &mut PackageConfig) -> CDResult<()> {
+    pub fn prepare_assets_before_build(&self, package_deb: &mut PackageConfig, listener: &dyn Listener) -> CDResult<()> {
         package_deb.assets = if let Some(raw_assets) = package_deb.raw_assets.take() {
             self.explicit_assets(raw_assets, package_deb)?
         } else {
             self.implicit_assets(package_deb)?
         };
+
+        // https://wiki.debian.org/Multiarch/Implementation
+        if package_deb.multiarch != Multiarch::None {
+            let mut has_bin = None;
+            let mut has_lib = None;
+            let multiarch_lib_dir_prefix = package_deb.lib_dir(self.rust_target_triple());
+            for c in package_deb.assets.iter() {
+                let p = c.target_path.as_path();
+                if has_bin.is_none() && (p.starts_with("bin") || p.starts_with("usr/bin") || p.starts_with("usr/sbin")) {
+                    has_bin = Some(p);
+                } else if has_lib.is_none() && p.starts_with(&multiarch_lib_dir_prefix) {
+                    has_lib = Some(p);
+                }
+                if let Some((lib, bin)) = has_lib.zip(has_bin) {
+                    listener.warning(format!("Multiarch packages are not allowed to contain both libs and binaries.\n'{}' and '{}' can't be in the same package.", lib.display(), bin.display()));
+                    break;
+                }
+            }
+        }
+
         self.add_copyright_asset(package_deb)?;
         self.add_changelog_asset(package_deb)?;
         self.add_systemd_assets(package_deb)?;
@@ -1159,7 +1179,7 @@ mod tests {
         let _g = add_test_fs_paths(&[to_canon_static_str("cargo-deb.service")]);
 
         let (config, mut package_deb) = Config::from_manifest(Some(Path::new("Cargo.toml")), None, None, None, None, DebConfigOverrides::default(), None, None, None, CargoLockingFlags::default(), &mock_listener).unwrap();
-        config.prepare_assets_before_build(&mut package_deb).unwrap();
+        config.prepare_assets_before_build(&mut package_deb, &mock_listener).unwrap();
 
         let num_unit_assets = package_deb.assets.resolved.iter()
             .filter(|a| a.c.target_path.starts_with("lib/systemd/system/"))
@@ -1177,7 +1197,7 @@ mod tests {
         let _g = add_test_fs_paths(&[to_canon_static_str("cargo-deb.service")]);
 
         let (config, mut package_deb) = Config::from_manifest(Some(Path::new("Cargo.toml")), None, None, None, None, DebConfigOverrides::default(), None, None, None, CargoLockingFlags::default(), &mock_listener).unwrap();
-        config.prepare_assets_before_build(&mut package_deb).unwrap();
+        config.prepare_assets_before_build(&mut package_deb, &mock_listener).unwrap();
 
         package_deb.systemd_units.get_or_insert(vec![SystemdUnitsConfig::default()]);
         package_deb.maintainer_scripts_rel_path.get_or_insert(PathBuf::new());

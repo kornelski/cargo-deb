@@ -119,6 +119,10 @@ impl Assets {
             resolved: vec![],
         }
     }
+
+    pub(crate) fn iter(&self) -> impl Iterator<Item = &AssetCommon> {
+        self.resolved.iter().map(|u| &u.c).chain(self.unresolved.iter().map(|r| &r.c))
+    }
 }
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
@@ -423,7 +427,7 @@ mod tests {
         let _g = add_test_fs_paths(&[to_canon_static_str("cargo-deb.service")]);
 
         let (config, mut package_deb) = Config::from_manifest(Some(Path::new("Cargo.toml")), None, None, None, None, DebConfigOverrides::default(), None, None, None, CargoLockingFlags::default(), &mock_listener).unwrap();
-        config.prepare_assets_before_build(&mut package_deb).unwrap();
+        config.prepare_assets_before_build(&mut package_deb, &mock_listener).unwrap();
 
         let num_unit_assets = package_deb.assets.resolved.iter()
             .filter(|a| a.c.target_path.starts_with("lib/systemd/system/"))
@@ -445,7 +449,7 @@ mod tests {
         package_deb.systemd_units.get_or_insert(vec![SystemdUnitsConfig::default()]);
         package_deb.maintainer_scripts_rel_path.get_or_insert(PathBuf::new());
 
-        config.prepare_assets_before_build(&mut package_deb).unwrap();
+        config.prepare_assets_before_build(&mut package_deb, &mock_listener).unwrap();
 
         let num_unit_assets = package_deb.assets.resolved
             .iter()

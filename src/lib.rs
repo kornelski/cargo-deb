@@ -117,7 +117,7 @@ impl CargoDeb {
             listener,
         )?;
         package_deb.set_multiarch(self.options.multiarch);
-        config.prepare_assets_before_build(&mut package_deb)?;
+        config.prepare_assets_before_build(&mut package_deb, listener)?;
 
         if !self.options.no_build {
             config.set_cargo_build_flags_for_package(&package_deb, &mut self.options.cargo_build_flags);
