@@ -56,7 +56,7 @@ Everything is optional:
 - **priority**: Defines if the package is `required` or `optional`.
 - **assets**: Files to be included in the package and the permissions to assign them. If assets are not specified, then defaults are taken from binaries listed in `[[bin]]` (copied to `/usr/bin/`) and package `readme` (copied to `usr/share/doc/…`).
     1. `source`: the first argument of each asset is the location of that asset in the Rust project. Glob patterns are allowed. You can use `target/release/` in asset paths, even if Cargo is configured to cross-compile or use custom `CARGO_TARGET_DIR`. The target dir paths will be automatically corrected.
-    2. `dest`: the second argument is where the file will be copied.
+    2. `dest`: the second argument is where the file will be copied. If it starts with `usr/lib`, it will be changed to `usr/lib/$tuple` when multiarch option is enabled.
         - If is argument ends with `/` it will be inferred that the target is the directory where the file will be copied.
         - Otherwise, it will be inferred that the source argument will be renamed when copied.
     3. `mode`: the third argument is the permissions (octal string) to assign that file.

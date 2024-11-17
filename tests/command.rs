@@ -24,6 +24,11 @@ fn build_workspaces() {
     assert!(ddir.path().join("usr/bin/renamed2").exists());
     assert!(ddir.path().join(format!("usr/lib/{DLL_PREFIX}test2lib{DLL_SUFFIX}")).exists());
     assert!(ddir.path().join("usr/share/doc/test2/a-read-me").exists());
+
+    let (_, ddir) = extract_built_package_from_manifest("tests/test-workspace/test-ws2/Cargo.toml", DEFAULT_COMPRESSION_EXT, &["--no-strip", "--multiarch=same"]);
+    assert!(ddir.path().join("usr/bin/renamed2").exists());
+    assert!(ddir.path().join(format!("usr/lib/{}-linux-gnu/{DLL_PREFIX}test2lib{DLL_SUFFIX}", std::env::consts::ARCH)).exists());
+    assert!(ddir.path().join("usr/share/doc/test2/a-read-me").exists());
 }
 
 #[test]

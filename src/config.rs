@@ -343,7 +343,7 @@ impl Config {
 
     pub fn prepare_assets_before_build(&self, package_deb: &mut PackageConfig) -> CDResult<()> {
         package_deb.assets = if let Some(raw_assets) = package_deb.raw_assets.take() {
-            self.explicit_assets(raw_assets)?
+            self.explicit_assets(raw_assets, package_deb)?
         } else {
             self.implicit_assets(package_deb)?
         };
@@ -987,10 +987,10 @@ fn debian_package_name(crate_name: &str) -> String {
 }
 
 impl Config {
-    fn explicit_assets(&self, assets: Vec<RawAsset>) -> CDResult<Assets> {
+    fn explicit_assets(&self, assets: Vec<RawAsset>, package_deb: &PackageConfig) -> CDResult<Assets> {
         let custom_profile_target_dir = self.build_profile_override.as_deref().map(|profile| format!("target/{profile}"));
         // Treat all explicit assets as unresolved until after the build step
-        let unresolved_assets = assets.into_iter().map(|RawAsset { source_path, target_path, chmod }| {
+        let unresolved_assets = assets.into_iter().map(|RawAsset { source_path, mut target_path, chmod }| {
             // target/release is treated as a magic prefix that resolves to any profile
             let target_artifact_rel_path = source_path.strip_prefix("target/release").ok()
                 .or_else(|| source_path.strip_prefix(custom_profile_target_dir.as_ref()?).ok());
@@ -1001,6 +1001,15 @@ impl Config {
             } else {
                 (IsBuilt::No, self.path_in_package(&source_path), false)
             };
+
+            if package_deb.multiarch != Multiarch::None {
+                if let Ok(lib_file_name) = target_path.strip_prefix("usr/lib") {
+                    let lib_dir = package_deb.lib_dir(self.rust_target_triple());
+                    if !target_path.starts_with(&lib_dir) {
+                        target_path = lib_dir.join(lib_file_name);
+                    }
+                }
+            }
             Ok(UnresolvedAsset::new(source_path, target_path, chmod, is_built, is_example))
         }).collect::<CDResult<Vec<_>>>()?;
         Ok(Assets::with_unresolved_assets(unresolved_assets))
