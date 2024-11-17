@@ -1,7 +1,6 @@
 use crate::assets::is_dynamic_library_filename;
 use crate::assets::{Asset, AssetSource, Assets, IsBuilt, UnresolvedAsset, RawAsset};
 use crate::util::compress::gzipped;
-use crate::{debian_architecture_from_rust_triple, CargoLockingFlags};
 use crate::dependencies::resolve;
 use crate::dh::dh_installsystemd;
 use crate::error::{CDResult, CargoDebError};
@@ -13,6 +12,7 @@ use crate::parse::manifest::{DependencyList, SystemUnitsSingleOrMultiple, System
 use crate::util::ok_or::OkOrThen;
 use crate::util::pathbytes::AsUnixPathBytes;
 use crate::util::wordsplit::WordSplit;
+use crate::{debian_architecture_from_rust_triple, debian_triple_from_rust_triple, CargoLockingFlags, DEFAULT_TARGET};
 use rayon::prelude::*;
 use std::borrow::Cow;
 use std::collections::HashSet;
@@ -93,7 +93,7 @@ pub struct Config {
     /// User-configured output path for *.deb
     pub deb_output_path: Option<String>,
     /// Triple. `None` means current machine architecture.
-    pub target: Option<String>,
+    pub rust_target_triple: Option<String>,
     /// `CARGO_TARGET_DIR`
     pub target_dir: PathBuf,
     /// List of Cargo features to use during build
@@ -186,6 +186,8 @@ pub struct PackageConfig {
 
     /// The Debian architecture of the target system.
     pub architecture: String,
+    /// Support Debian's multiarch, which puts libs in `/usr/lib/$tuple/`
+    pub multiarch: Multiarch,
     /// A list of configuration files installed by the package.
     /// Automatically includes all files in `/etc`
     pub conf_files: Vec<String>,
@@ -224,6 +226,16 @@ pub struct DebConfigOverrides {
     pub deb_version: Option<String>,
     pub deb_revision: Option<String>,
     pub maintainer: Option<String>,
+}
+
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+pub enum Multiarch {
+    /// Not supported
+    None,
+    /// Architecture-dependent, but more than one arch can be installed at the same time
+    Same,
+    /// For architecture-independent tools
+    Foreign,
 }
 
 impl Config {
@@ -314,7 +326,7 @@ impl Config {
         let config = Self {
             package_manifest_dir: manifest_dir,
             deb_output_path,
-            target: target.map(|t| t.to_string()),
+            rust_target_triple: target.map(|t| t.to_string()),
             target_dir,
             features: deb.features.take().unwrap_or_default(),
             default_features: deb.default_features.unwrap_or(true),
@@ -324,7 +336,7 @@ impl Config {
             cargo_locking_flags,
         };
 
-        let package_deb = PackageConfig::new(deb, cargo_package, listener, default_timestamp, overrides, target)?;
+        let package_deb = PackageConfig::new(deb, cargo_package, listener, default_timestamp, overrides, config.rust_target_triple())?;
 
         Ok((config, package_deb))
     }
@@ -333,7 +345,7 @@ impl Config {
         package_deb.assets = if let Some(raw_assets) = package_deb.raw_assets.take() {
             self.explicit_assets(raw_assets)?
         } else {
-            self.implicit_assets(&package_deb.deb_name, package_deb.readme_rel_path.as_deref())?
+            self.implicit_assets(package_deb)?
         };
         self.add_copyright_asset(package_deb)?;
         self.add_changelog_asset(package_deb)?;
@@ -573,10 +585,14 @@ impl Config {
         }
         fs::create_dir_all(deb_temp_dir)
     }
+
+    pub fn rust_target_triple(&self) -> &str{
+        self.rust_target_triple.as_deref().unwrap_or(DEFAULT_TARGET)
+    }
 }
 
 impl PackageConfig {
-    pub(crate) fn new(mut deb: CargoDeb, cargo_package: &mut cargo_toml::Package<CargoPackageMetadata>, listener: &dyn Listener, default_timestamp: u64, overrides: DebConfigOverrides, target: Option<&str>) -> Result<Self, CargoDebError> {
+    pub(crate) fn new(mut deb: CargoDeb, cargo_package: &mut cargo_toml::Package<CargoPackageMetadata>, listener: &dyn Listener, default_timestamp: u64, overrides: DebConfigOverrides, target: &str) -> Result<Self, CargoDebError> {
         let (license_file_rel_path, license_file_skip_lines) = parse_license_file(cargo_package, deb.license_file.as_ref())?;
         let mut license = cargo_package.license.take().map(|v| v.unwrap());
 
@@ -652,7 +668,7 @@ impl PackageConfig {
             provides: deb.provides.take(),
             section: deb.section.take(),
             priority: deb.priority.take().unwrap_or_else(|| "optional".to_owned()),
-            architecture: debian_architecture_from_rust_triple(target.unwrap_or(crate::DEFAULT_TARGET)).to_owned(),
+            architecture: debian_architecture_from_rust_triple(target).to_owned(),
             conf_files: deb.conf_files.take().unwrap_or_default(),
             assets: Assets::new(),
             triggers_file_rel_path: deb.triggers_file.take().map(PathBuf::from),
@@ -664,7 +680,21 @@ impl PackageConfig {
                 Some(SystemUnitsSingleOrMultiple::Single(s)) => Some(vec![s]),
                 Some(SystemUnitsSingleOrMultiple::Multi(v)) => Some(v),
             },
+            multiarch: Multiarch::None,
         })
+    }
+
+    /// Use `/usr/lib/arch-linux-gnu` dir for libraries
+    pub fn set_multiarch(&mut self, enable: Multiarch) {
+        self.multiarch = enable;
+    }
+
+    pub(crate) fn lib_dir(&self, rust_target_triple: &str) -> Cow<'static, Path> {
+        if self.multiarch == Multiarch::None {
+            Path::new("usr/lib").into()
+        } else {
+            PathBuf::from(format!("usr/lib/{}", debian_triple_from_rust_triple(rust_target_triple))).into()
+        }
     }
 
     pub fn resolve_assets(&mut self) -> CDResult<()> {
@@ -785,6 +815,14 @@ impl PackageConfig {
         writeln!(&mut control, "Package: {}", self.deb_name)?;
         writeln!(&mut control, "Version: {}", self.deb_version)?;
         writeln!(&mut control, "Architecture: {}", self.architecture)?;
+        let ma = match self.multiarch {
+            Multiarch::None => "",
+            Multiarch::Same => "same",
+            Multiarch::Foreign => "foreign",
+        };
+        if !ma.is_empty() {
+            writeln!(&mut control, "Multi-Arch: {ma}")?;
+        }
         if let Some(homepage) = self.homepage.as_deref().or(self.documentation.as_deref()).or(self.repository.as_deref()) {
             writeln!(&mut control, "Homepage: {homepage}")?;
         }
@@ -968,7 +1006,7 @@ impl Config {
         Ok(Assets::with_unresolved_assets(unresolved_assets))
     }
 
-    fn implicit_assets(&self, deb_package_name: &str, readme_rel_path: Option<&Path>) -> CDResult<Assets> {
+    fn implicit_assets(&self, package_deb: &PackageConfig) -> CDResult<Assets> {
         let mut implied_assets: Vec<_> = self.build_targets.iter()
             .filter_map(|t| {
                 if t.crate_types.iter().any(|ty| ty == "bin") && t.kind.iter().any(|k| k == "bin") {
@@ -980,11 +1018,12 @@ impl Config {
                         false,
                     ))
                 } else if t.crate_types.iter().any(|ty| ty == "cdylib") && t.kind.iter().any(|k| k == "cdylib") {
-                    // FIXME: std has constants for the host arch, but not for cross-compilation
-                    let lib_name = format!("{DLL_PREFIX}{}{DLL_SUFFIX}", t.name);
+                    let (prefix, suffix) = if self.rust_target_triple.is_none() { (DLL_PREFIX, DLL_SUFFIX) } else { ("lib", ".so") };
+                    let lib_name = format!("{prefix}{}{suffix}", t.name);
+                    let lib_dir = package_deb.lib_dir(self.rust_target_triple());
                     Some(Asset::new(
                         AssetSource::Path(self.path_in_build(&lib_name)),
-                        Path::new("usr/lib").join(lib_name),
+                        lib_dir.join(lib_name),
                         0o644,
                         self.is_built_file_in_package(t),
                         false,
@@ -997,10 +1036,10 @@ impl Config {
         if implied_assets.is_empty() {
             return Err("No binaries or cdylibs found. The package is empty. Please specify some assets to package in Cargo.toml".into());
         }
-        if let Some(readme_rel_path) = readme_rel_path {
+        if let Some(readme_rel_path) = package_deb.readme_rel_path.as_deref() {
             let path = self.path_in_package(readme_rel_path);
             let target_path = Path::new("usr/share/doc")
-                .join(deb_package_name)
+                .join(&package_deb.deb_name)
                 .join(path.file_name().ok_or("bad README path")?);
             implied_assets.push(Asset::new(AssetSource::Path(path), target_path, 0o644, IsBuilt::No, false));
         }

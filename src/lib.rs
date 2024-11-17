@@ -57,7 +57,7 @@ use crate::assets::{compress_assets, Asset, AssetSource, IsBuilt, ProcessedFrom}
 use crate::deb::control::ControlArchiveBuilder;
 use crate::deb::tar::Tarball;
 use crate::listener::Listener;
-use config::DebConfigOverrides;
+use config::{DebConfigOverrides, Multiarch};
 use rayon::prelude::*;
 use std::path::{Path, PathBuf};
 use std::process::{Command, ExitStatus};
@@ -115,6 +115,7 @@ impl CargoDeb {
             self.options.cargo_locking_flags,
             listener,
         )?;
+        package_deb.set_multiarch(self.options.multiarch);
         config.prepare_assets_before_build(&mut package_deb)?;
 
         if !self.options.no_build {
@@ -123,7 +124,7 @@ impl CargoDeb {
         }
 
         package_deb.resolve_assets()?;
-        package_deb.resolve_binary_dependencies(config.target.as_deref(), listener)?;
+        package_deb.resolve_binary_dependencies(config.rust_target_triple.as_deref(), listener)?;
 
         compress_assets(&mut package_deb, listener)?;
 
@@ -176,6 +177,8 @@ pub struct CargoDebOptions {
     pub rsyncable: bool,
     pub profile: Option<String>,
     pub cargo_locking_flags: CargoLockingFlags,
+    /// Use Debian's multiarch lib dirs
+    pub multiarch: Multiarch,
 }
 
 #[derive(Copy, Clone, Default, Debug)]
@@ -223,6 +226,7 @@ impl Default for CargoDebOptions {
             rsyncable: false,
             profile: None,
             cargo_locking_flags: CargoLockingFlags::default(),
+            multiarch: Multiarch::None,
         }
     }
 }

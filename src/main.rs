@@ -1,4 +1,5 @@
 use cargo_deb::compress::Format;
+use cargo_deb::config::Multiarch;
 use cargo_deb::{listener, CargoDeb, CargoDebError, CargoDebOptions, CargoLockingFlags};
 use std::env;
 use std::process::ExitCode;
@@ -29,6 +30,7 @@ fn main() -> ExitCode {
     cli_opts.optflag("", "frozen", "Passed to Cargo");
     cli_opts.optopt("", "variant", "Alternative Cargo.toml configuration section to use", "name");
     cli_opts.optopt("", "target", "Rust target for cross-compilation", "triple");
+    cli_opts.optopt("", "multiarch", "Put libs in /usr/lib/$arch-linux-gnu/", "none|same|foreign");
     cli_opts.optopt("", "profile", "Select which Cargo build profile to use", "release|<custom>");
     cli_opts.optflag("", "no-build", "Assume the project is already built");
     cli_opts.optopt("", "cargo-build", "Override cargo build subcommand", "subcommand");
@@ -94,6 +96,16 @@ fn main() -> ExitCode {
         },
     };
 
+    let multiarch = match matches.opt_str("multiarch").as_deref().unwrap_or("none") {
+        "none" => Multiarch::None,
+        "same" => Multiarch::Same,
+        "foreign" => Multiarch::Foreign,
+        _ => {
+            print_error(&CargoDebError::Str("multiarch must be 'none', 'same', or 'foreign'. https://wiki.debian.org/Multiarch/HOWTO"));
+            return ExitCode::FAILURE;
+        },
+    };
+
     // `cargo deb` invocation passes the `deb` arg through.
     if matches.free.first().is_some_and(|arg| arg == "deb") {
         matches.free.remove(0);
@@ -130,6 +142,7 @@ fn main() -> ExitCode {
         fast: install || matches.opt_present("fast"),
         variant: matches.opt_str("variant"),
         target: matches.opt_str("target"),
+        multiarch,
         output_path: matches.opt_str("output"),
         selected_package_name: matches.opt_str("package"),
         manifest_path: matches.opt_str("manifest-path"),
