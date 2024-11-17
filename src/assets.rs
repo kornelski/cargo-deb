@@ -257,16 +257,16 @@ impl AssetCommon {
     /// Returns the target path for the debug symbol file, which will be
     /// /usr/lib/debug/<path-to-executable>.debug
     #[must_use]
-    pub(crate) fn default_debug_target_path(&self) -> PathBuf {
+    pub(crate) fn default_debug_target_path(&self, lib_dir_base: &Path) -> PathBuf {
         // Turn an absolute path into one relative to "/"
         let relative = self.target_path.strip_prefix(Path::new("/"))
             .unwrap_or(self.target_path.as_path());
 
-        // Prepend the debug location
-        let debug_path = Path::new("/usr/lib/debug").join(relative);
-
-        // Add `.debug` to the end of the filename
-        debug_filename(&debug_path)
+        // Prepend the debug location and add .debug
+        let mut path = Path::new("/").join(lib_dir_base);
+        path.push("debug");
+        path.push(debug_filename(relative));
+        path
     }
 
     pub(crate) fn is_same_package(&self) -> bool {
@@ -388,7 +388,7 @@ mod tests {
             IsBuilt::SamePackage,
             false,
         );
-        let debug_target = a.c.default_debug_target_path();
+        let debug_target = a.c.default_debug_target_path("usr/lib".as_ref());
         assert_eq!(debug_target, Path::new("/usr/lib/debug/usr/bin/baz/bar.debug"));
     }
 
@@ -403,7 +403,7 @@ mod tests {
             IsBuilt::Workspace,
             false,
         );
-        let debug_target = a.c.default_debug_target_path();
+        let debug_target = a.c.default_debug_target_path("usr/lib".as_ref());
         assert_eq!(debug_target, Path::new("/usr/lib/debug/baz/bar.debug"));
     }
 

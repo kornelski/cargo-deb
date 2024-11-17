@@ -454,6 +454,7 @@ pub fn strip_binaries(config: &mut Config, package_deb: &mut PackageConfig, targ
         DebugSymbols::Separate { compress } => (true, compress),
     };
 
+    let lib_dir_base = package_deb.lib_dir(config.rust_target_triple());
     let added_debug_assets = package_deb.built_binaries_mut().into_par_iter().enumerate()
         .filter(|(_, asset)| !asset.source.archive_as_symlink_only()) // data won't be included, so nothing to strip
         .map(|(i, asset)| {
@@ -492,7 +493,7 @@ pub fn strip_binaries(config: &mut Config, package_deb: &mut PackageConfig, targ
                 log::debug!("extracting debug info with {} from {}", objcopy_cmd.display(), path.display());
 
                 // parse the ELF and use debug-id-based path if available
-                let debug_target_path = get_target_debug_path(asset, path)?;
+                let debug_target_path = get_target_debug_path(asset, path, &lib_dir_base)?;
 
                 // --add-gnu-debuglink reads the file path given, so it can't get to-be-installed target path
                 // and the recommended fallback solution is to give it relative path in the same dir
@@ -562,19 +563,19 @@ pub fn strip_binaries(config: &mut Config, package_deb: &mut PackageConfig, targ
     Ok(())
 }
 
-fn get_target_debug_path(asset: &Asset, asset_path: &Path) -> Result<PathBuf, CargoDebError> {
-    let target_debug_path = match elf_gnu_debug_id(asset_path) {
+fn get_target_debug_path(asset: &Asset, asset_path: &Path, lib_dir_base: &Path) -> Result<PathBuf, CargoDebError> {
+    let target_debug_path = match elf_gnu_debug_id(asset_path, lib_dir_base) {
         Ok(Some(path)) => {
             log::debug!("got gnu debug-id: {} for {}", path.display(), asset_path.display());
             path
         },
         Ok(None) => {
             log::debug!("debug-id not found in {}", asset_path.display());
-            asset.c.default_debug_target_path()
+            asset.c.default_debug_target_path(lib_dir_base)
         },
         Err(e) => {
             log::debug!("elf: {e} in {}", asset_path.display());
-            asset.c.default_debug_target_path()
+            asset.c.default_debug_target_path(lib_dir_base)
         },
     };
     Ok(target_debug_path)
@@ -586,7 +587,7 @@ fn elf_gnu_debug_id(_: &Path) -> io::Result<Option<PathBuf>> {
 }
 
 #[cfg(feature = "debug-id")]
-fn elf_gnu_debug_id(elf_file_path: &Path) -> Result<Option<PathBuf>, elf::ParseError> {
+fn elf_gnu_debug_id(elf_file_path: &Path, lib_dir_base: &Path) -> Result<Option<PathBuf>, elf::ParseError> {
     use elf::endian::AnyEndian;
     use elf::note::Note;
     use elf::ElfStream;
@@ -599,13 +600,13 @@ fn elf_gnu_debug_id(elf_file_path: &Path) -> Result<Option<PathBuf>, elf::ParseE
     for note in stream.section_data_as_notes(&abi_shdr)? {
         if let Note::GnuBuildId(note) = note {
             if let Some((byte, rest)) = note.0.split_first() {
-                let mut s = format!("usr/lib/debug/.build-id/{byte:02x}/");
+                let mut s = format!("debug/.build-id/{byte:02x}/");
                 for b in rest {
                     use std::fmt::Write;
                     write!(&mut s, "{b:02x}").unwrap();
                 }
                 s.push_str(".debug");
-                return Ok(Some(s.into()));
+                return Ok(Some(lib_dir_base.join(s)));
             }
         }
     }
