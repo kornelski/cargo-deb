@@ -283,7 +283,7 @@ pub fn write_deb(config: &Config, package_deb: &PackageConfig, &compress::Compre
 /// Builds a binary with `cargo build`
 pub fn cargo_build(config: &Config, rust_target_triple: Option<&str>, build_command: &str, build_flags: &[String], verbose: bool) -> CDResult<()> {
     let mut cmd = Command::new("cargo");
-    cmd.current_dir(&config.package_manifest_dir);
+    cmd.current_dir(&config.cargo_run_current_dir);
     cmd.args(build_command.split(' ')
         .filter(|cmd| if !cmd.starts_with('-') { true } else {
             log::error!("unexpected flag in build command name: {cmd}");

@@ -90,6 +90,8 @@ fn match_architecture(spec: ArchSpec, target_arch: &str) -> CDResult<bool> {
 pub struct Config {
     /// Directory where `Cargo.toml` is located. It's a subdirectory in workspaces.
     pub package_manifest_dir: PathBuf,
+    /// Run `cargo` commands from this dir, or things may subtly break
+    pub cargo_run_current_dir: PathBuf,
     /// User-configured output path for *.deb
     pub deb_output_path: Option<String>,
     /// Triple. `None` means current machine architecture.
@@ -264,6 +266,7 @@ impl Config {
             mut manifest_path,
             mut target_dir,
             mut manifest,
+            cargo_run_current_dir,
         } = cargo_metadata(root_manifest_path, selected_package_name, cargo_locking_flags)?;
 
         let default_timestamp = if let Ok(source_date_epoch) = std::env::var("SOURCE_DATE_EPOCH") {
@@ -334,6 +337,7 @@ impl Config {
             build_profile_override,
             build_targets,
             cargo_locking_flags,
+            cargo_run_current_dir,
         };
 
         let package_deb = PackageConfig::new(deb, cargo_package, listener, default_timestamp, overrides, config.rust_target_triple())?;
