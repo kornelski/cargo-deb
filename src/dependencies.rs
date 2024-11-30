@@ -4,7 +4,7 @@ use std::path::Path;
 use std::process::Command;
 
 /// Resolves the dependencies based on the output of dpkg-shlibdeps on the binary.
-pub(crate) fn resolve(path: &Path, target: Option<&str>) -> CDResult<Vec<String>> {
+pub(crate) fn resolve(path: &Path, rust_target_triple: Option<&str>) -> CDResult<Vec<String>> {
     let temp_folder = tempfile::tempdir()?;
     let debian_folder = temp_folder.path().join("debian");
     let control_file_path = debian_folder.join("control");
@@ -17,8 +17,8 @@ pub(crate) fn resolve(path: &Path, target: Option<&str>) -> CDResult<Vec<String>
     let mut args = vec!["-O"];
     let libpath_arg;
     // determine library search path from target
-    if let Some(target) = target {
-        libpath_arg = format!("-l/usr/lib/{}", debian_triple_from_rust_triple(target));
+    if let Some(rust_target_triple) = rust_target_triple {
+        libpath_arg = format!("-l/usr/lib/{}", debian_triple_from_rust_triple(rust_target_triple));
         args.push(&libpath_arg);
     }
     const DPKG_SHLIBDEPS_COMMAND: &str = "dpkg-shlibdeps";

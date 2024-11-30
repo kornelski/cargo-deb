@@ -24,7 +24,7 @@ use crate::listener::Listener;
 use crate::util::{fname_from_path, MyJoin};
 use crate::CDResult;
 
-/// From man 1 dh_installsystemd on Ubuntu 20.04 LTS. See:
+/// From `man 1 dh_installsystemd` on Ubuntu 20.04 LTS. See:
 ///   <http://manpages.ubuntu.com/manpages/focal/en/man1/dh_installsystemd.1.html>
 /// FILES
 ///        debian/package.mount, debian/package.path, debian/package@.path,
@@ -35,7 +35,7 @@ use crate::CDResult;
 ///            lib/systemd/system/ in the package build directory.
 ///        debian/package.tmpfile
 ///            Only used in compat 12 or earlier.  In compat 13+, this file is
-///            handled by dh_installtmpfiles(1) instead.
+///            handled by `dh_installtmpfiles(1)` instead.
 ///            If this exists, it is installed into usr/lib/tmpfiles.d/ in the
 ///            package build directory. Note that the "tmpfiles.d" mechanism is
 ///            currently only used by systemd.
@@ -64,7 +64,7 @@ pub struct InstallRecipe {
 
 pub type PackageUnitFiles = HashMap<PathBuf, InstallRecipe>;
 
-/// From man 1 dh_installsystemd on Ubuntu 20.04 LTS. See:
+/// From `man 1 dh_installsystemd` on Ubuntu 20.04 LTS. See:
 ///   <http://manpages.ubuntu.com/manpages/focal/en/man1/dh_installsystemd.1.html>
 /// > --no-enable
 /// > Disable the service(s) on purge, but do not enable them on install.
@@ -198,7 +198,7 @@ fn unquote(s: &str) -> &str {
     }
 }
 
-/// This function implements the primary logic of the Debian dh_installsystemd
+/// This function implements the primary logic of the Debian `dh_installsystemd`
 /// Perl script, which is to say it identifies systemd units being installed,
 /// inspects them and decides, based on the unit file and the configuration
 /// options provided, which `DebHelper` autoscripts to use to correctly install

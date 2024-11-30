@@ -246,8 +246,8 @@ impl Config {
         root_manifest_path: Option<&Path>,
         selected_package_name: Option<&str>,
         deb_output_path: Option<String>,
-        target: Option<&str>,
-        variant: Option<&str>,
+        rust_target_triple: Option<&str>,
+        config_variant: Option<&str>,
         overrides: DebConfigOverrides,
         build_profile_override: Option<String>,
         separate_debug_symbols: Option<bool>,
@@ -279,8 +279,8 @@ impl Config {
         let manifest_dir = manifest_path;
 
         // Cargo cross-compiles to a dir
-        if let Some(target) = target {
-            target_dir.push(target);
+        if let Some(rust_target_triple) = rust_target_triple {
+            target_dir.push(rust_target_triple);
         };
 
         let selected_profile = build_profile_override.as_deref().unwrap_or("release");
@@ -292,7 +292,7 @@ impl Config {
         let cargo_package = manifest.package.as_mut().ok_or("bad package")?;
 
         // If we build against a variant use that config and change the package name
-        let mut deb = if let Some(variant) = variant {
+        let mut deb = if let Some(variant) = config_variant {
             // Use dash as underscore is not allowed in package names
             cargo_package.name = format!("{}-{variant}", cargo_package.name);
             let mut deb = cargo_package.metadata.take()
@@ -326,7 +326,7 @@ impl Config {
         let config = Self {
             package_manifest_dir: manifest_dir,
             deb_output_path,
-            rust_target_triple: target.map(|t| t.to_string()),
+            rust_target_triple: rust_target_triple.map(|t| t.to_string()),
             target_dir,
             features: deb.features.take().unwrap_or_default(),
             default_features: deb.default_features.unwrap_or(true),
@@ -352,7 +352,7 @@ impl Config {
         if package_deb.multiarch != Multiarch::None {
             let mut has_bin = None;
             let mut has_lib = None;
-            let multiarch_lib_dir_prefix = package_deb.lib_dir(self.rust_target_triple());
+            let multiarch_lib_dir_prefix = package_deb.platform_specific_lib_dir(self.rust_target_triple());
             for c in package_deb.assets.iter() {
                 let p = c.target_path.as_path();
                 if has_bin.is_none() && (p.starts_with("bin") || p.starts_with("usr/bin") || p.starts_with("usr/sbin")) {
@@ -606,6 +606,7 @@ impl Config {
         fs::create_dir_all(deb_temp_dir)
     }
 
+    #[must_use]
     pub fn rust_target_triple(&self) -> &str{
         self.rust_target_triple.as_deref().unwrap_or(DEFAULT_TARGET)
     }
@@ -709,7 +710,7 @@ impl PackageConfig {
         self.multiarch = enable;
     }
 
-    pub(crate) fn lib_dir(&self, rust_target_triple: &str) -> Cow<'static, Path> {
+    pub(crate) fn platform_specific_lib_dir(&self, rust_target_triple: &str) -> Cow<'static, Path> {
         if self.multiarch == Multiarch::None {
             Path::new("usr/lib").into()
         } else {
@@ -747,7 +748,7 @@ impl PackageConfig {
     }
 
     /// run dpkg/ldd to check deps of libs
-    pub fn resolve_binary_dependencies(&mut self, target: Option<&str>, listener: &dyn Listener) -> CDResult<()> {
+    pub fn resolve_binary_dependencies(&mut self, rust_target_triple: Option<&str>, listener: &dyn Listener) -> CDResult<()> {
         let mut deps = HashSet::new();
         for word in self.wildcard_depends.split(',') {
             let word = word.trim();
@@ -755,13 +756,15 @@ impl PackageConfig {
                 let bin = self.all_binaries();
                 let resolved = bin.par_iter()
                     .filter(|bin| !bin.archive_as_symlink_only())
-                    .filter_map(|p| p.path())
-                    .filter_map(|bname| match resolve(bname, target) {
-                        Ok(bindeps) => Some(bindeps),
-                        Err(err) => {
-                            listener.warning(format!("{} (no auto deps for {})", err, bname.display()));
-                            None
-                        },
+                    .filter_map(|&p| {
+                        let bname = p.path()?;
+                        match resolve(bname, rust_target_triple) {
+                            Ok(bindeps) => Some(bindeps),
+                            Err(err) => {
+                                listener.warning(format!("{err} (no auto deps for {})", bname.display()));
+                                None
+                            },
+                        }
                     })
                     .collect::<Vec<_>>();
                 for dep in resolved.into_iter().flat_map(|s| s.into_iter()) {
@@ -1024,7 +1027,7 @@ impl Config {
 
             if package_deb.multiarch != Multiarch::None {
                 if let Ok(lib_file_name) = target_path.strip_prefix("usr/lib") {
-                    let lib_dir = package_deb.lib_dir(self.rust_target_triple());
+                    let lib_dir = package_deb.platform_specific_lib_dir(self.rust_target_triple());
                     if !target_path.starts_with(&lib_dir) {
                         target_path = lib_dir.join(lib_file_name);
                     }
@@ -1049,7 +1052,7 @@ impl Config {
                 } else if t.crate_types.iter().any(|ty| ty == "cdylib") && t.kind.iter().any(|k| k == "cdylib") {
                     let (prefix, suffix) = if self.rust_target_triple.is_none() { (DLL_PREFIX, DLL_SUFFIX) } else { ("lib", ".so") };
                     let lib_name = format!("{prefix}{}{suffix}", t.name);
-                    let lib_dir = package_deb.lib_dir(self.rust_target_triple());
+                    let lib_dir = package_deb.platform_specific_lib_dir(self.rust_target_triple());
                     Some(Asset::new(
                         AssetSource::Path(self.path_in_build(&lib_name)),
                         lib_dir.join(lib_name),

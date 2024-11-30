@@ -281,7 +281,7 @@ pub fn write_deb(config: &Config, package_deb: &PackageConfig, &compress::Compre
 }
 
 /// Builds a binary with `cargo build`
-pub fn cargo_build(config: &Config, target: Option<&str>, build_command: &str, build_flags: &[String], verbose: bool) -> CDResult<()> {
+pub fn cargo_build(config: &Config, rust_target_triple: Option<&str>, build_command: &str, build_flags: &[String], verbose: bool) -> CDResult<()> {
     let mut cmd = Command::new("cargo");
     cmd.current_dir(&config.package_manifest_dir);
     cmd.args(build_command.split(' ')
@@ -295,11 +295,11 @@ pub fn cargo_build(config: &Config, target: Option<&str>, build_command: &str, b
     if verbose {
         cmd.arg("--verbose");
     }
-    if let Some(target) = target {
-        cmd.args(["--target", target]);
+    if let Some(rust_target_triple) = rust_target_triple {
+        cmd.args(["--target", rust_target_triple]);
         // Set helpful defaults for cross-compiling
         if env::var_os("PKG_CONFIG_ALLOW_CROSS").is_none() && env::var_os("PKG_CONFIG_PATH").is_none() {
-            let pkg_config_path = format!("/usr/lib/{}/pkgconfig", debian_triple_from_rust_triple(target));
+            let pkg_config_path = format!("/usr/lib/{}/pkgconfig", debian_triple_from_rust_triple(rust_target_triple));
             if Path::new(&pkg_config_path).exists() {
                 cmd.env("PKG_CONFIG_ALLOW_CROSS", "1");
                 cmd.env("PKG_CONFIG_PATH", pkg_config_path);
@@ -349,8 +349,8 @@ fn debian_triple_from_rust_triple(rust_target_triple: &str) -> String {
 }
 
 /// Debianizes the architecture name. Weirdly, architecture and multiarch use different naming conventions in Debian!
-pub(crate) fn debian_architecture_from_rust_triple(target: &str) -> &str {
-    let mut parts = target.split('-');
+pub(crate) fn debian_architecture_from_rust_triple(rust_target_triple: &str) -> &str {
+    let mut parts = rust_target_triple.split('-');
     let arch = parts.next().unwrap();
     let abi = parts.last().unwrap_or("");
     match (arch, abi) {

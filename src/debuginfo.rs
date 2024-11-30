@@ -16,24 +16,24 @@ fn ensure_success(status: ExitStatus) -> io::Result<()> {
 }
 
 /// Strips the binary that was created with cargo
-pub fn strip_binaries(config: &mut Config, package_deb: &mut PackageConfig, target: Option<&str>, listener: &dyn Listener) -> CDResult<()> {
+pub fn strip_binaries(config: &mut Config, package_deb: &mut PackageConfig, rust_target_triple: Option<&str>, listener: &dyn Listener) -> CDResult<()> {
     let mut cargo_config = None;
     let objcopy_tmp;
     let strip_tmp;
     let mut objcopy_cmd = Path::new("objcopy");
     let mut strip_cmd = Path::new("strip");
 
-    if let Some(target) = target {
+    if let Some(rust_target_triple) = rust_target_triple {
         cargo_config = config.cargo_config()?;
         if let Some(ref conf) = cargo_config {
-            if let Some(cmd) = conf.objcopy_command(target) {
-                listener.info(format!("Using '{}' for '{target}'", cmd.display()));
+            if let Some(cmd) = conf.objcopy_command(rust_target_triple) {
+                listener.info(format!("Using '{}' for '{rust_target_triple}'", cmd.display()));
                 objcopy_tmp = cmd;
                 objcopy_cmd = &objcopy_tmp;
             }
 
-            if let Some(cmd) = conf.strip_command(target) {
-                listener.info(format!("Using '{}' for '{target}'", cmd.display()));
+            if let Some(cmd) = conf.strip_command(rust_target_triple) {
+                listener.info(format!("Using '{}' for '{rust_target_triple}'", cmd.display()));
                 strip_tmp = cmd;
                 strip_cmd = &strip_tmp;
             }
@@ -46,7 +46,7 @@ pub fn strip_binaries(config: &mut Config, package_deb: &mut PackageConfig, targ
         DebugSymbols::Separate { compress } => (true, compress),
     };
 
-    let lib_dir_base = package_deb.lib_dir(config.rust_target_triple());
+    let lib_dir_base = package_deb.platform_specific_lib_dir(config.rust_target_triple());
     let added_debug_assets = package_deb.built_binaries_mut().into_par_iter().enumerate()
         .filter(|(_, asset)| !asset.source.archive_as_symlink_only()) // data won't be included, so nothing to strip
         .map(|(i, asset)| {
@@ -70,7 +70,7 @@ pub fn strip_binaries(config: &mut Config, package_deb: &mut PackageConfig, targ
                .status()
                .and_then(ensure_success)
                .map_err(|err| {
-                    if let Some(target) = target {
+                    if let Some(target) = rust_target_triple {
                         CargoDebError::StripFailed(path.to_owned(), format!("{}: {}.\nhint: Target-specific strip commands are configured in [target.{}] strip = {{ path = \"{}\" }} in {}", strip_cmd.display(), err, target, strip_cmd.display(), conf_path.display()))
                     } else {
                         CargoDebError::CommandFailed(err, "strip")
@@ -103,7 +103,7 @@ pub fn strip_binaries(config: &mut Config, package_deb: &mut PackageConfig, targ
                     .status()
                     .and_then(ensure_success)
                     .map_err(|err| {
-                        if let Some(target) = target {
+                        if let Some(target) = rust_target_triple {
                             CargoDebError::StripFailed(path.to_owned(), format!("{}: {}.\nhint: Target-specific strip commands are configured in [target.{}] objcopy = {{ path =\"{}\" }} in {}", objcopy_cmd.display(), err, target, objcopy_cmd.display(), conf_path.display()))
                         } else {
                             CargoDebError::CommandFailed(err, "objcopy")

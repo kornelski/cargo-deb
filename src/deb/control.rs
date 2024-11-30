@@ -47,7 +47,7 @@ impl<'l, W: Write> ControlArchiveBuilder<'l, W> {
     ///
     /// Additionally, when `systemd_units` is configured, shell script fragments
     /// "for enabling, disabling, starting, stopping and restarting systemd unit
-    /// files" (quoting man 1 dh_installsystemd) will replace the `#DEBHELPER#`
+    /// files" (quoting `man 1 dh_installsystemd`) will replace the `#DEBHELPER#`
     /// token in the provided maintainer scripts.
     ///
     /// If a shell fragment cannot be inserted because the target script is missing

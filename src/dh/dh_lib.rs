@@ -610,7 +610,7 @@ mod tests {
         let mut scripts = ScriptFragments::new();
 
         match debhelper_script_subst(Path::new(""), &mut scripts, "mypkg", "myscript", None, &mock_listener) {
-            Ok(_) => (),
+            Ok(()) => (),
             Err(CargoDebError::DebHelperReplaceFailed(_)) => panic!("Test failed as expected"),
             Err(err) => panic!("Unexpected error {err:?}"),
         }

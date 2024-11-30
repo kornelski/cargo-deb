@@ -13,7 +13,6 @@ impl CargoConfig {
         Self::new_(project_path.as_ref())
     }
 
-    #[allow(deprecated)]
     fn new_(project_path: &Path) -> CDResult<Option<Self>> {
         let mut project_path = project_path;
         loop {
@@ -31,6 +30,7 @@ impl CargoConfig {
                 return Ok(Some(conf));
             }
         }
+        #[allow(deprecated)]
         if let Some(home) = env::home_dir() {
             if let Some(conf) = Self::try_parse(&home.join(".cargo"))? {
                 return Ok(Some(conf));
