@@ -125,7 +125,10 @@ impl CargoDeb {
         }
 
         package_deb.resolve_assets()?;
-        package_deb.resolve_binary_dependencies(config.rust_target_triple.as_deref(), listener)?;
+
+        // When cross-compiling, resolve dependencies using libs for the target platform (where multiarch is supported)
+        let lib_search_path = config.rust_target_triple.as_deref().map(|triple| package_deb.multiarch_lib_dir(triple));
+        package_deb.resolve_binary_dependencies(lib_search_path.as_deref(), listener)?;
 
         compress_assets(&mut package_deb, listener)?;
 

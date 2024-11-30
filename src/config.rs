@@ -1,7 +1,7 @@
 use crate::assets::is_dynamic_library_filename;
 use crate::assets::{Asset, AssetSource, Assets, IsBuilt, UnresolvedAsset, RawAsset};
 use crate::util::compress::gzipped;
-use crate::dependencies::resolve;
+use crate::dependencies::resolve_with_dpkg;
 use crate::dh::dh_installsystemd;
 use crate::error::{CDResult, CargoDebError};
 use crate::listener::Listener;
@@ -15,7 +15,7 @@ use crate::util::wordsplit::WordSplit;
 use crate::{debian_architecture_from_rust_triple, debian_triple_from_rust_triple, CargoLockingFlags, DEFAULT_TARGET};
 use rayon::prelude::*;
 use std::borrow::Cow;
-use std::collections::HashSet;
+use std::collections::{BTreeSet, HashSet};
 use std::env::consts::{DLL_PREFIX, DLL_SUFFIX, EXE_SUFFIX};
 use std::io::Write;
 use std::path::{Path, PathBuf};
@@ -356,7 +356,7 @@ impl Config {
         if package_deb.multiarch != Multiarch::None {
             let mut has_bin = None;
             let mut has_lib = None;
-            let multiarch_lib_dir_prefix = package_deb.platform_specific_lib_dir(self.rust_target_triple());
+            let multiarch_lib_dir_prefix = package_deb.multiarch_lib_dir(self.rust_target_triple());
             for c in package_deb.assets.iter() {
                 let p = c.target_path.as_path();
                 if has_bin.is_none() && (p.starts_with("bin") || p.starts_with("usr/bin") || p.starts_with("usr/sbin")) {
@@ -714,12 +714,16 @@ impl PackageConfig {
         self.multiarch = enable;
     }
 
-    pub(crate) fn platform_specific_lib_dir(&self, rust_target_triple: &str) -> Cow<'static, Path> {
+    pub(crate) fn library_install_dir(&self, rust_target_triple: &str) -> Cow<'static, Path> {
         if self.multiarch == Multiarch::None {
             Path::new("usr/lib").into()
         } else {
-            PathBuf::from(format!("usr/lib/{}", debian_triple_from_rust_triple(rust_target_triple))).into()
+            self.multiarch_lib_dir(rust_target_triple).into()
         }
+    }
+
+    pub(crate) fn multiarch_lib_dir(&self, rust_target_triple: &str) -> PathBuf {
+        PathBuf::from(format!("usr/lib/{}", debian_triple_from_rust_triple(rust_target_triple)))
     }
 
     pub fn resolve_assets(&mut self) -> CDResult<()> {
@@ -752,8 +756,8 @@ impl PackageConfig {
     }
 
     /// run dpkg/ldd to check deps of libs
-    pub fn resolve_binary_dependencies(&mut self, rust_target_triple: Option<&str>, listener: &dyn Listener) -> CDResult<()> {
-        let mut deps = HashSet::new();
+    pub fn resolve_binary_dependencies(&mut self, lib_dir_search_path: Option<&Path>, listener: &dyn Listener) -> CDResult<()> {
+        let mut deps = BTreeSet::new();
         for word in self.wildcard_depends.split(',') {
             let word = word.trim();
             if word == "$auto" {
@@ -762,10 +766,10 @@ impl PackageConfig {
                     .filter(|bin| !bin.archive_as_symlink_only())
                     .filter_map(|&p| {
                         let bname = p.path()?;
-                        match resolve(bname, rust_target_triple) {
+                        match resolve_with_dpkg(bname, lib_dir_search_path) {
                             Ok(bindeps) => Some(bindeps),
                             Err(err) => {
-                                listener.warning(format!("{err} (no auto deps for {})", bname.display()));
+                                listener.warning(format!("{err}\nNo $auto deps for {}", bname.display()));
                                 None
                             },
                         }
@@ -785,7 +789,7 @@ impl PackageConfig {
                 }
             }
         }
-        self.resolved_depends = Some(deps.into_iter().collect::<Vec<_>>().join(", "));
+        self.resolved_depends = Some(itertools::Itertools::join(&mut deps.into_iter(), ", "));
         Ok(())
     }
 
@@ -1031,7 +1035,7 @@ impl Config {
 
             if package_deb.multiarch != Multiarch::None {
                 if let Ok(lib_file_name) = target_path.strip_prefix("usr/lib") {
-                    let lib_dir = package_deb.platform_specific_lib_dir(self.rust_target_triple());
+                    let lib_dir = package_deb.library_install_dir(self.rust_target_triple());
                     if !target_path.starts_with(&lib_dir) {
                         target_path = lib_dir.join(lib_file_name);
                     }
@@ -1056,7 +1060,7 @@ impl Config {
                 } else if t.crate_types.iter().any(|ty| ty == "cdylib") && t.kind.iter().any(|k| k == "cdylib") {
                     let (prefix, suffix) = if self.rust_target_triple.is_none() { (DLL_PREFIX, DLL_SUFFIX) } else { ("lib", ".so") };
                     let lib_name = format!("{prefix}{}{suffix}", t.name);
-                    let lib_dir = package_deb.platform_specific_lib_dir(self.rust_target_triple());
+                    let lib_dir = package_deb.library_install_dir(self.rust_target_triple());
                     Some(Asset::new(
                         AssetSource::Path(self.path_in_build(&lib_name)),
                         lib_dir.join(lib_name),

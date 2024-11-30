@@ -46,7 +46,7 @@ pub fn strip_binaries(config: &mut Config, package_deb: &mut PackageConfig, rust
         DebugSymbols::Separate { compress } => (true, compress),
     };
 
-    let lib_dir_base = package_deb.platform_specific_lib_dir(config.rust_target_triple());
+    let lib_dir_base = package_deb.library_install_dir(config.rust_target_triple());
     let added_debug_assets = package_deb.built_binaries_mut().into_par_iter().enumerate()
         .filter(|(_, asset)| !asset.source.archive_as_symlink_only()) // data won't be included, so nothing to strip
         .map(|(i, asset)| {
