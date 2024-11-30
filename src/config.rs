@@ -347,7 +347,7 @@ impl Config {
 
     pub fn prepare_assets_before_build(&self, package_deb: &mut PackageConfig, listener: &dyn Listener) -> CDResult<()> {
         package_deb.assets = if let Some(raw_assets) = package_deb.raw_assets.take() {
-            self.explicit_assets(raw_assets, package_deb)?
+            self.explicit_assets(raw_assets, package_deb, listener)?
         } else {
             self.implicit_assets(package_deb)?
         };
@@ -1018,7 +1018,7 @@ fn debian_package_name(crate_name: &str) -> String {
 }
 
 impl Config {
-    fn explicit_assets(&self, assets: Vec<RawAsset>, package_deb: &PackageConfig) -> CDResult<Assets> {
+    fn explicit_assets(&self, assets: Vec<RawAsset>, package_deb: &PackageConfig, listener: &dyn Listener) -> CDResult<Assets> {
         let custom_profile_target_dir = self.build_profile_override.as_deref().map(|profile| format!("target/{profile}"));
         // Treat all explicit assets as unresolved until after the build step
         let unresolved_assets = assets.into_iter().map(|RawAsset { source_path, mut target_path, chmod }| {
@@ -1027,9 +1027,11 @@ impl Config {
                 .or_else(|| source_path.strip_prefix(custom_profile_target_dir.as_ref()?).ok());
             let (is_built, source_path, is_example) = if let Some(rel_path) = target_artifact_rel_path {
                 let is_example = rel_path.starts_with("examples");
-
                 (self.find_is_built_file_in_package(rel_path, if is_example { "example" } else { "bin" }), self.path_in_build(rel_path), is_example)
             } else {
+                if source_path.to_str().is_some_and(|s| s.starts_with(['/','.']) && s.contains("/target/")) {
+                    listener.warning(format!("Only source paths starting with exactly 'target/release/' are detected as Cargo target dir. '{}' does not match the pattern, and will not be built", source_path.display()));
+                }
                 (IsBuilt::No, self.path_in_package(&source_path), false)
             };
 

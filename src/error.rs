@@ -38,30 +38,30 @@ quick_error! {
             display("Version '{}' is invalid: {}", ver, msg)
         }
         InstallFailed {
-            display("installation failed, because dpkg -i returned error")
+            display("Installation failed, because dpkg -i returned error")
         }
         BuildFailed {
-            display("build failed")
+            display("Build failed")
         }
         DebHelperReplaceFailed(name: PathBuf) {
-            display("unable to replace #DEBHELPER# token in maintainer script '{}'", name.display())
+            display("Unable to replace #DEBHELPER# token in maintainer script '{}'", name.display())
         }
         StripFailed(name: PathBuf, reason: String) {
-            display("unable to strip binary '{}': {}", name.display(), reason)
+            display("Unable to strip binary '{}': {}", name.display(), reason)
         }
         SystemTime(err: time::SystemTimeError) {
             from()
-            display("unable to get system time")
+            display("Unable to get system time")
             source(err)
         }
         ParseTOML(err: toml::de::Error) {
             from()
-            display("unable to parse Cargo.toml")
+            display("Unable to parse Cargo.toml")
             source(err)
         }
         ParseJSON(err: serde_json::Error) {
             from()
-            display("unable to parse `cargo metadata` output")
+            display("Unable to parse `cargo metadata` output")
             source(err)
         }
         ParseUTF8(err: std::str::Utf8Error) {
@@ -69,7 +69,7 @@ quick_error! {
             from(err: std::string::FromUtf8Error) -> (err.utf8_error())
         }
         PackageNotFound(path: String, reason: Vec<u8>) {
-            display("path '{}' does not belong to a package: {}", path, String::from_utf8_lossy(reason))
+            display("Path '{}' does not belong to a package: {}", path, String::from_utf8_lossy(reason))
         }
         PackageNotFoundInWorkspace(name: String, available: String) {
             display("The workspace doesn't have a package named {}. Available packages are: {}", name, available)
@@ -82,20 +82,20 @@ quick_error! {
         }
         GlobPatternError(err: glob::PatternError) {
             from()
-            display("unable to parse glob pattern")
+            display("Unable to parse glob pattern")
             source(err)
         }
         AssetFileNotFound(path: PathBuf) {
-            display("Asset file path does not match any files: {}", path.display())
+            display("Static file asset path or glob pattern did not match any existing files: {}", path.display())
         }
         AssetGlobError(err: glob::GlobError) {
             from()
-            display("unable to iterate asset glob result")
+            display("Unable to iterate asset glob result")
             source(err)
         }
         #[cfg(feature = "lzma")]
         LzmaCompressionError(err: xz2::stream::Error) {
-            display("lzma compression error: {:?}", err)
+            display("Lzma compression error: {:?}", err)
         }
     }
 }
