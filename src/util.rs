@@ -10,10 +10,15 @@ pub mod compress;
 /// Get the filename from a path.
 /// Note: Due to the way the Path type works the final component is returned
 /// even if it looks like a directory, e.g. "/some/dir/" will return "dir"...
-pub(crate) fn fname_from_path(path: &Path) -> String {
-    path.file_name().unwrap().to_string_lossy().into()
+pub(crate) fn fname_from_path(path: &Path) -> Option<String> {
+    if path.to_bytes().ends_with(&[b'/']) {
+        return None;
+    }
+    let path = path.file_name()?.to_string_lossy();
+    Some(path.into_owned())
 }
 
+use pathbytes::AsUnixPathBytes;
 #[cfg(test)]
 pub(crate) use tests::is_path_file;
 
@@ -252,26 +257,19 @@ pub(crate) mod tests {
 
     #[test]
     fn fname_from_path_returns_file_name_even_if_file_does_not_exist() {
-        assert_eq!("some_name", fname_from_path(Path::new("some_name")));
-        assert_eq!("some_name", fname_from_path(Path::new("/some_name")));
-        assert_eq!("some_name", fname_from_path(Path::new("/a/b/some_name")));
+        assert_eq!("some_name", fname_from_path(Path::new("some_name")).unwrap());
+        assert_eq!("some_name", fname_from_path(Path::new("/some_name")).unwrap());
+        assert_eq!("some_name", fname_from_path(Path::new("/a/b/some_name")).unwrap());
     }
 
     #[test]
-    fn fname_from_path_returns_file_name_even_if_it_looks_like_a_directory() {
-        assert_eq!("some_name", fname_from_path(Path::new("some_name/")));
+    fn fname_from_path_fails_when_path_is_empty() {
+        assert_eq!(None, fname_from_path(Path::new("")));
     }
 
     #[test]
-    #[should_panic]
-    fn fname_from_path_panics_when_path_is_empty() {
-        assert_eq!("", fname_from_path(Path::new("")));
-    }
-
-    #[test]
-    #[should_panic]
-    fn fname_from_path_panics_when_path_has_no_filename() {
-        assert_eq!("", fname_from_path(Path::new("/a/")));
+    fn fname_from_path_fails_when_path_has_no_filename() {
+        assert_eq!(None, fname_from_path(Path::new("/a/")));
     }
 
     #[test]

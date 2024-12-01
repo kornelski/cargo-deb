@@ -22,7 +22,7 @@ use crate::assets::Asset;
 use crate::dh::dh_lib::{autoscript, pkgfile, ScriptFragments};
 use crate::listener::Listener;
 use crate::util::{fname_from_path, MyJoin};
-use crate::CDResult;
+use crate::{CDResult, CargoDebError};
 
 /// From `man 1 dh_installsystemd` on Ubuntu 20.04 LTS. See:
 ///   <http://manpages.ubuntu.com/manpages/focal/en/man1/dh_installsystemd.1.html>
@@ -227,8 +227,8 @@ pub fn generate(package: &str, assets: &[Asset], options: &Options, listener: &d
     let tmp_file_names = assets
         .iter()
         .filter(|a| a.c.target_path.starts_with(USR_LIB_TMPFILES_D_DIR))
-        .map(|v| fname_from_path(v.source.path().unwrap()))
-        .collect::<Vec<String>>()
+        .map(|v| v.source.path().and_then(fname_from_path).ok_or(CargoDebError::Str("dh_installsystemd: invalid source path")))
+        .collect::<CDResult<Vec<String>>>()?
         .join(" ");
 
     if !tmp_file_names.is_empty() {
@@ -248,7 +248,7 @@ pub fn generate(package: &str, assets: &[Asset], options: &Options, listener: &d
         assets
             .iter()
             .filter(|a| a.c.target_path.parent() == Some(LIB_SYSTEMD_SYSTEM_DIR.as_ref()))
-            .map(|a| fname_from_path(a.c.target_path.as_path()))
+            .filter_map(|a| fname_from_path(a.c.target_path.as_path()))
             .filter(|fname| !fname.contains('@')),
     );
 
@@ -565,8 +565,7 @@ mod tests {
     }
 
     #[test]
-    #[should_panic(expected = "unwrap")]
-    fn generate_with_invalid_tmp_file_asset_panics() {
+    fn generate_with_invalid_tmp_file_asset_fails() {
         let mut mock_listener = crate::listener::MockListener::new();
         mock_listener.expect_info().times(0).return_const(());
 
@@ -578,13 +577,11 @@ mod tests {
             false,
         )];
 
-        let fragments = generate("mypkg", &assets, &Options::default(), &mock_listener).unwrap();
-        assert!(fragments.is_empty());
+        assert!(generate("mypkg", &assets, &Options::default(), &mock_listener).is_err());
     }
 
     #[test]
-    #[should_panic(expected = "unwrap")]
-    fn generate_with_data_tmp_file_asset_panics() {
+    fn generate_with_data_tmp_file_asset_fails() {
         let mut mock_listener = crate::listener::MockListener::new();
         mock_listener.expect_info().times(0).return_const(());
 
@@ -596,8 +593,7 @@ mod tests {
             false,
         )];
 
-        let fragments = generate("mypkg", &assets, &Options::default(), &mock_listener).unwrap();
-        assert!(fragments.is_empty());
+        assert!(generate("mypkg", &assets, &Options::default(), &mock_listener).is_err());
     }
 
     #[test]
@@ -874,18 +870,15 @@ WantedBy=multi-user.target");
                     autoscript_fragments_to_check_for.insert("postinst.service");
                     autoscript_fragments_to_check_for.insert("postrm.debhelper");
                 }
-                match options.restart_after_upgrade {
-                    true => {
-                        match options.no_start {
-                            true => assert_eq!(1, get_read_count("postinst-systemd-restartnostart")),
-                            false => assert_eq!(1, get_read_count("postinst-systemd-restart")),
-                        };
-                        autoscript_fragments_to_check_for.insert("postinst.service");
-                    },
-                    false => if !options.no_start {
-                        assert_eq!(1, get_read_count("postinst-systemd-start"));
-                        autoscript_fragments_to_check_for.insert("postinst.service");
-                    },
+                if options.restart_after_upgrade {
+                    match options.no_start {
+                        true => assert_eq!(1, get_read_count("postinst-systemd-restartnostart")),
+                        false => assert_eq!(1, get_read_count("postinst-systemd-restart")),
+                    };
+                    autoscript_fragments_to_check_for.insert("postinst.service");
+                } else if !options.no_start {
+                    assert_eq!(1, get_read_count("postinst-systemd-start"));
+                    autoscript_fragments_to_check_for.insert("postinst.service");
                 }
                 if options.restart_after_upgrade || options.no_stop_on_upgrade {
                     assert_eq!(1, get_read_count("prerm-systemd-restart"));
