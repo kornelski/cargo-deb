@@ -1,5 +1,10 @@
 For more details see https://github.com/kornelski/cargo-deb/commits/main/
 
+# 2.9.3
+
+* Support for multiarch lib dir
+* Support for Rust edition 2024
+
 # 2.8.0
 
 * Don't add Vcs-* to the binary control file, since lintian doesn't like it.
