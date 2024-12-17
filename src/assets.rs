@@ -274,7 +274,7 @@ impl AssetCommon {
     }
 
     pub(crate) fn is_same_package(&self) -> bool {
-        self.is_built != IsBuilt::SamePackage
+        self.is_built == IsBuilt::SamePackage
     }
 }
 
