@@ -124,7 +124,7 @@ pub enum ExtendedDescription {
 #[non_exhaustive]
 pub struct PackageConfig {
     /// The name of the project to build
-    pub name: String,
+    pub cargo_crate_name: String,
     /// The name to give the Debian package; usually the same as the Cargo project name
     pub deb_name: String,
     /// The version to give the Debian package; usually the same as the Cargo version
@@ -524,7 +524,7 @@ impl Config {
                     .or(package_deb.maintainer_scripts_rel_path.as_ref());
                 if let Some(unit_dir) = units_dir_option {
                     let search_path = self.path_in_package(unit_dir);
-                    let package = &package_deb.name;
+                    let package = &package_deb.deb_name;
                     let unit_name = config.unit_name.as_deref();
 
                     let units = dh_installsystemd::find_units(&search_path, package, unit_name);
@@ -568,7 +568,7 @@ impl Config {
 
     /// Store intermediate files here
     pub(crate) fn deb_temp_dir(&self, package_deb: &PackageConfig) -> PathBuf {
-        self.target_dir.join("debian").join(&package_deb.name)
+        self.target_dir.join("debian").join(&package_deb.cargo_crate_name)
     }
 
     /// Save final .deb here
@@ -639,7 +639,7 @@ impl PackageConfig {
             deb_version,
             default_timestamp,
             raw_assets: deb.assets.take(),
-            name: cargo_package.name.clone(),
+            cargo_crate_name: cargo_package.name.clone(),
             deb_name: deb.name.take().unwrap_or_else(|| debian_package_name(&cargo_package.name)),
             license,
             license_file_rel_path,
@@ -936,7 +936,7 @@ impl PackageConfig {
 
     pub(crate) fn append_copyright_metadata(&self, copyright: &mut Vec<u8>) -> Result<(), CargoDebError> {
         writeln!(copyright, "Format: https://www.debian.org/doc/packaging-manuals/copyright-format/1.0/")?;
-        writeln!(copyright, "Upstream-Name: {}", self.name)?;
+        writeln!(copyright, "Upstream-Name: {}", self.cargo_crate_name)?;
         if let Some(source) = self.repository.as_deref().or(self.homepage.as_deref()) {
             writeln!(copyright, "Source: {source}")?;
         }

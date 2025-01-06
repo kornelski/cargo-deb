@@ -68,7 +68,7 @@ impl<'l, W: Write> ControlArchiveBuilder<'l, W> {
                     // Select and populate autoscript templates relevant to the unit
                     // file(s) in this package and the configuration settings chosen.
                     scripts = dh_installsystemd::generate(
-                        &package_deb.name,
+                        &package_deb.deb_name,
                         &package_deb.assets.resolved,
                         &dh_installsystemd::Options::from(systemd_units_config),
                         self.listener,
@@ -82,7 +82,7 @@ impl<'l, W: Write> ControlArchiveBuilder<'l, W> {
                     dh_lib::apply(
                         &maintainer_scripts_dir,
                         &mut scripts,
-                        &package_deb.name,
+                        &package_deb.deb_name,
                         unit_name,
                         self.listener,
                     )?;
