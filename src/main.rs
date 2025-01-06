@@ -141,7 +141,7 @@ fn main() -> ExitCode {
         // when installing locally it won't be transferred anywhere, so allow faster compression
         fast: install || matches.opt_present("fast"),
         variant: matches.opt_str("variant"),
-        target: matches.opt_str("target"),
+        target: matches.opt_str("target").or_else(|| std::env::var("CARGO_BUILD_TARGET").ok()),
         multiarch,
         output_path: matches.opt_str("output"),
         selected_package_name: matches.opt_str("package"),
