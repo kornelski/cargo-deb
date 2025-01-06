@@ -228,6 +228,7 @@ pub struct DebConfigOverrides {
     pub deb_version: Option<String>,
     pub deb_revision: Option<String>,
     pub maintainer: Option<String>,
+    pub section: Option<String>,
 }
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
@@ -691,7 +692,7 @@ impl PackageConfig {
             breaks: deb.breaks.take().map(DependencyList::into_depends_string),
             replaces: deb.replaces.take().map(DependencyList::into_depends_string),
             provides: deb.provides.take().map(DependencyList::into_depends_string),
-            section: deb.section.take(),
+            section: overrides.section.or_else(|| deb.section.take()),
             priority: deb.priority.take().unwrap_or_else(|| "optional".to_owned()),
             architecture: debian_architecture_from_rust_triple(target).to_owned(),
             conf_files: deb.conf_files.take().unwrap_or_default(),
