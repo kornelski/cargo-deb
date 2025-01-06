@@ -37,6 +37,7 @@ fn main() -> ExitCode {
     cli_opts.optflag("", "fast", "Use faster compression, which makes a larger deb file");
     cli_opts.optopt("Z", "compress-type", "Compress with the given compression format", "gz|xz");
     cli_opts.optflag("", "compress-system", "Use the corresponding command-line tool for compression");
+    cli_opts.optopt("", "section", "Set the application category for this package", "section");
     cli_opts.optflag("", "system-xz", "Compress using command-line xz command instead of built-in. Deprecated, use --compress-system instead");
     cli_opts.optflag("", "rsyncable", "Use worse compression, but reduce differences between versions of packages");
     cli_opts.optflag("h", "help", "Print this help menu");
@@ -150,6 +151,7 @@ fn main() -> ExitCode {
             deb_version,
             deb_revision,
             maintainer: matches.opt_str("maintainer"),
+            section: matches.opt_str("section"),
         },
         compress_type,
         compress_system: matches.opt_present("compress-system"),
