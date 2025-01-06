@@ -223,11 +223,17 @@ pub fn generate(package: &str, assets: &[Asset], options: &Options, listener: &d
     let mut scripts = ScriptFragments::new();
 
     // add postinst code blocks to handle tmpfiles
-    // see: https://salsa.debian.org/debian/debhelper/-/blob/master/dh_installsystemd#L305
+    // see: <https://salsa.debian.org/debian/debhelper/-/blob/master/dh_installsystemd#L305>
+    // tmpfiles are installed with .conf as extension
+    // <https://www.freedesktop.org/software/systemd/man/tmpfiles.d.html>
     let tmp_file_names = assets
         .iter()
         .filter(|a| a.c.target_path.starts_with(USR_LIB_TMPFILES_D_DIR))
-        .map(|v| v.source.path().and_then(fname_from_path).ok_or(CargoDebError::Str("dh_installsystemd: invalid source path")))
+        .map(|v| {
+            v.source.path()
+                .and_then(|p| fname_from_path(&p.with_extension("conf")))
+                .ok_or(CargoDebError::Str("dh_installsystemd: invalid source path"))
+        })
         .collect::<CDResult<Vec<String>>>()?
         .join(" ");
 
@@ -600,7 +606,7 @@ mod tests {
     fn generate_with_empty_tmp_file_asset() {
         use crate::dh::dh_lib::get_embedded_autoscript;
 
-        const TMP_FILE_NAME: &str = "my_tmp_file";
+        const TMP_FILE_NAME: &str = "my_tmp_file.tmpfile";
         let tmp_file_path = PathBuf::from(format!("debian/{TMP_FILE_NAME}"));
 
         let mut mock_listener = crate::listener::MockListener::new();
@@ -640,7 +646,7 @@ mod tests {
 
         // Check that the autoscript fragment lines were properly copied
         // into the created script complete with expected substitutions
-        let expected_autoscript_text = autoscript_text.replace("#TMPFILES#", TMP_FILE_NAME);
+        let expected_autoscript_text = autoscript_text.replace("#TMPFILES#", TMP_FILE_NAME.replace(".tmpfile", ".conf").as_str());
         let expected_autoscript_text = expected_autoscript_text.trim_end();
         let start1 = 1;
         let end1 = start1 + autoscript_line_count;
