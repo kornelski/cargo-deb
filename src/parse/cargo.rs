@@ -1,5 +1,4 @@
 use crate::error::CDResult;
-use std::borrow::Cow;
 use std::path::{Path, PathBuf};
 use std::{env, fs};
 
@@ -59,65 +58,21 @@ impl CargoConfig {
     }
 
     fn target_conf(&self, target_triple: &str) -> Option<&toml::value::Table> {
-        if let Some(target) = self.config.get("target").and_then(|t| t.as_table()) {
-            return target.get(target_triple).and_then(|t| t.as_table());
-        }
-        None
+        let target = self.config.get("target")?.as_table()?;
+        target.get(target_triple)?.as_table()
     }
 
-    pub fn strip_command(&self, target_triple: &str) -> Option<Cow<'_, Path>> {
-        self.target_specific_command("strip", target_triple)
-    }
-
-    fn target_specific_command(&self, command_name: &str, target_triple: &str) -> Option<Cow<'_, Path>> {
-        if let Some(target) = self.target_conf(target_triple) {
-            let strip_config = target.get(command_name).and_then(|top| {
-                let as_obj = top.get("path").and_then(|s| s.as_str());
-                top.as_str().or(as_obj)
-            });
-            if let Some(strip) = strip_config {
-                return Some(Cow::Borrowed(Path::new(strip)));
-            }
-        }
-
-        let debian_target_triple = crate::debian_triple_from_rust_triple(target_triple);
-        if let Some(linker) = self.linker_command(target_triple) {
-            if linker.parent().is_some() {
-                let linker_file_name = linker.file_name().unwrap().to_str().unwrap();
-                // checks whether it's `/usr/bin/triple-ld` or `/custom-toolchain/ld`
-                let strip_path = if linker_file_name.starts_with(&debian_target_triple) {
-                    linker.with_file_name(format!("{debian_target_triple}-{command_name}"))
-                } else {
-                    linker.with_file_name(command_name)
-                };
-                if strip_path.exists() {
-                    return Some(strip_path.into());
-                }
-            }
-        }
-        let path = PathBuf::from(format!("/usr/bin/{debian_target_triple}-{command_name}"));
-        if path.exists() {
-            return Some(path.into());
-        }
-        None
+    pub fn explicit_target_specific_command(&self, command_name: &str, target_triple: &str) -> Option<&Path> {
+        let top = self.target_conf(target_triple)?.get(command_name)?;
+        top.as_str().or_else(|| top.get("path")?.as_str()).map(Path::new)
     }
 
     pub fn path(&self) -> &Path {
         &self.path
     }
 
-    fn linker_command(&self, target_triple: &str) -> Option<&Path> {
-        if let Some(target) = self.target_conf(target_triple) {
-            return target.get("linker").and_then(|l| l.as_str()).map(Path::new);
-        }
-        None
-    }
-
-    pub fn objcopy_command(&self, target_triple: &str) -> Option<Cow<'_, Path>> {
-        if let Some(cmd) = self.target_specific_command("objcopy", target_triple) {
-            return Some(cmd);
-        }
-        None
+    pub fn explicit_linker_command(&self, target_triple: &str) -> Option<&Path> {
+        self.target_conf(target_triple)?.get("linker")?.as_str().map(Path::new)
     }
 }
 
@@ -132,9 +87,9 @@ strip = "magic-strip"
 strip = { path = "strip2" }
 "#, ".".into()).unwrap();
 
-    assert_eq!("magic-strip", c.strip_command("i686-unknown-dragonfly").unwrap().as_os_str());
-    assert_eq!("strip2", c.strip_command("foo").unwrap().as_os_str());
-    assert_eq!(None, c.strip_command("bar"));
+    assert_eq!("magic-strip", c.explicit_target_specific_command("strip", "i686-unknown-dragonfly").unwrap().as_os_str());
+    assert_eq!("strip2", c.explicit_target_specific_command("strip", "foo").unwrap().as_os_str());
+    assert_eq!(None, c.explicit_target_specific_command("strip", "bar"));
 }
 
 #[test]
@@ -148,7 +103,7 @@ objcopy = "magic-objcopy"
 objcopy = { path = "objcopy2" }
 "#, ".".into()).unwrap();
 
-    assert_eq!("magic-objcopy", c.objcopy_command("i686-unknown-dragonfly").unwrap().as_os_str());
-    assert_eq!("objcopy2", c.objcopy_command("foo").unwrap().as_os_str());
-    assert_eq!(None, c.objcopy_command("bar"));
+    assert_eq!("magic-objcopy", c.explicit_target_specific_command("objcopy", "i686-unknown-dragonfly").unwrap().as_os_str());
+    assert_eq!("objcopy2", c.explicit_target_specific_command("objcopy", "foo").unwrap().as_os_str());
+    assert_eq!(None, c.explicit_target_specific_command("objcopy", "bar"));
 }

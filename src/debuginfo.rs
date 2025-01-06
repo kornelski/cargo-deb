@@ -2,7 +2,9 @@ use crate::assets::{Asset, AssetSource, IsBuilt, ProcessedFrom};
 use crate::config::{Config, DebugSymbols, PackageConfig};
 use crate::error::{CDResult, CargoDebError};
 use crate::listener::Listener;
+use crate::parse::cargo::CargoConfig;
 use rayon::prelude::*;
+use std::borrow::Cow;
 use std::path::{Path, PathBuf};
 use std::process::{Command, ExitStatus};
 use std::{fs, io};
@@ -24,19 +26,17 @@ pub fn strip_binaries(config: &mut Config, package_deb: &mut PackageConfig, rust
     let mut strip_cmd = Path::new("strip");
 
     if let Some(rust_target_triple) = rust_target_triple {
-        cargo_config = config.cargo_config()?;
-        if let Some(ref conf) = cargo_config {
-            if let Some(cmd) = conf.objcopy_command(rust_target_triple) {
-                listener.info(format!("Using '{}' for '{rust_target_triple}'", cmd.display()));
-                objcopy_tmp = cmd;
-                objcopy_cmd = &objcopy_tmp;
-            }
+        cargo_config = config.cargo_config().ok().flatten();
+        if let Some(cmd) = target_specific_command(cargo_config.as_ref(), "objcopy", rust_target_triple) {
+            listener.info(format!("Using '{}' for '{rust_target_triple}'", cmd.display()));
+            objcopy_tmp = cmd;
+            objcopy_cmd = &objcopy_tmp;
+        }
 
-            if let Some(cmd) = conf.strip_command(rust_target_triple) {
-                listener.info(format!("Using '{}' for '{rust_target_triple}'", cmd.display()));
-                strip_tmp = cmd;
-                strip_cmd = &strip_tmp;
-            }
+        if let Some(cmd) = target_specific_command(cargo_config.as_ref(), "strip", rust_target_triple) {
+            listener.info(format!("Using '{}' for '{rust_target_triple}'", cmd.display()));
+            strip_tmp = cmd;
+            strip_cmd = &strip_tmp;
         }
     }
 
@@ -153,6 +153,33 @@ pub fn strip_binaries(config: &mut Config, package_deb: &mut PackageConfig, rust
         .extend(added_debug_assets.into_iter().flatten());
 
     Ok(())
+}
+
+fn target_specific_command<'a>(cargo_config: Option<&'a CargoConfig>, command_name: &str, target_triple: &str) -> Option<Cow<'a, Path>> {
+    if let Some(cmd) = cargo_config.and_then(|c| c.explicit_target_specific_command(command_name, target_triple)) {
+        return Some(cmd.into());
+    }
+
+    let debian_target_triple = crate::debian_triple_from_rust_triple(target_triple);
+    if let Some(linker) = cargo_config.and_then(|c| c.explicit_linker_command(target_triple)) {
+        if linker.parent().is_some() {
+            let linker_file_name = linker.file_name()?.to_str()?;
+            // checks whether it's `/usr/bin/triple-ld` or `/custom-toolchain/ld`
+            let strip_path = if linker_file_name.starts_with(&debian_target_triple) {
+                linker.with_file_name(format!("{debian_target_triple}-{command_name}"))
+            } else {
+                linker.with_file_name(command_name)
+            };
+            if strip_path.exists() {
+                return Some(strip_path.into());
+            }
+        }
+    }
+    let path = PathBuf::from(format!("/usr/bin/{debian_target_triple}-{command_name}"));
+    if path.exists() {
+        return Some(path.into());
+    }
+    None
 }
 
 fn get_target_debug_path(asset: &Asset, asset_path: &Path, lib_dir_base: &Path) -> Result<PathBuf, CargoDebError> {
