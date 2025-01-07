@@ -63,6 +63,7 @@ use config::{DebConfigOverrides, Multiarch};
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::{env, fs};
+use itertools::Itertools;
 
 const TAR_REJECTS_CUR_DIR: bool = true;
 
@@ -121,7 +122,7 @@ impl CargoDeb {
 
         if !self.options.no_build {
             config.set_cargo_build_flags_for_package(&package_deb, &mut self.options.cargo_build_flags);
-            cargo_build(&config, self.options.target.as_deref(), &self.options.cargo_build_cmd, &self.options.cargo_build_flags, self.options.verbose)?;
+            cargo_build(&config, self.options.target.as_deref(), &self.options.cargo_build_cmd, &self.options.cargo_build_flags, self.options.verbose, listener)?;
         }
 
         package_deb.resolve_assets()?;
@@ -284,7 +285,7 @@ pub fn write_deb(config: &Config, package_deb: &PackageConfig, &compress::Compre
 }
 
 /// Builds a binary with `cargo build`
-pub fn cargo_build(config: &Config, rust_target_triple: Option<&str>, build_command: &str, build_flags: &[String], verbose: bool) -> CDResult<()> {
+pub fn cargo_build(config: &Config, rust_target_triple: Option<&str>, build_command: &str, build_flags: &[String], verbose: bool, listener: &dyn Listener) -> CDResult<()> {
     let mut cmd = Command::new("cargo");
     cmd.current_dir(&config.cargo_run_current_dir);
     cmd.args(build_command.split(' ')
@@ -295,9 +296,6 @@ pub fn cargo_build(config: &Config, rust_target_triple: Option<&str>, build_comm
 
     cmd.args(build_flags);
 
-    if verbose {
-        cmd.arg("--verbose");
-    }
     if let Some(rust_target_triple) = rust_target_triple {
         cmd.args(["--target", rust_target_triple]);
         // Set helpful defaults for cross-compiling
@@ -321,7 +319,19 @@ pub fn cargo_build(config: &Config, rust_target_triple: Option<&str>, build_comm
         }
     }
 
-    log::debug!("cargo build {:?}", cmd.get_args());
+    if verbose {
+        cmd.arg("--verbose");
+        listener.info(format!("cargo {}", cmd.get_args().map(|arg| {
+            let arg = arg.to_string_lossy();
+            if arg.as_bytes().iter().any(|b| b.is_ascii_whitespace()) {
+                format!("'{}'", arg.escape_default()).into()
+            } else {
+                arg
+            }
+        }).join(" ")));
+    } else {
+        log::debug!("cargo {:?}", cmd.get_args());
+    }
 
     let status = cmd.status()
         .map_err(|e| CargoDebError::CommandFailed(e, "cargo"))?;
