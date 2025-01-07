@@ -309,12 +309,16 @@ pub fn cargo_build(config: &Config, rust_target_triple: Option<&str>, build_comm
             }
         }
     }
-    if !config.default_features {
-        cmd.arg("--no-default-features");
-    }
-    let features = &config.features;
-    if !features.is_empty() {
-        cmd.args(["--features", &features.join(",")]);
+
+    if config.all_features {
+        cmd.arg("--all-features");
+    } else {
+        if !config.default_features {
+            cmd.arg("--no-default-features");
+        }
+        if !config.features.is_empty() {
+            cmd.args(["--features", &config.features.join(",")]);
+        }
     }
 
     log::debug!("cargo build {:?}", cmd.get_args());

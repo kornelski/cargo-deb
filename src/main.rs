@@ -43,6 +43,9 @@ fn main() -> ExitCode {
         .arg(Arg::new("offline").long("offline").help("Passed to Cargo").action(ArgAction::SetTrue))
         .arg(Arg::new("locked").long("locked").help("Passed to Cargo").action(ArgAction::SetTrue))
         .arg(Arg::new("frozen").long("frozen").help("Passed to Cargo").action(ArgAction::SetTrue))
+        .arg(Arg::new("features").short('F').long("features").num_args(1).value_name("list").help("Can also be set in Cargo.toml package.metadata.deb"))
+        .arg(Arg::new("all-features").long("all-features").help("Passed to Cargo").action(ArgAction::SetTrue))
+        .arg(Arg::new("no-default-features").long("no-default-features").help("Can also be set in Cargo.toml package.metadata.deb").action(ArgAction::SetTrue))
         .arg(Arg::new("-- other cargo arguments").help("Free arguments passed to cargo build").num_args(0..))
         .get_matches();
 
@@ -113,6 +116,9 @@ fn main() -> ExitCode {
             deb_revision,
             maintainer: matches.get_one::<String>("maintainer").cloned(),
             section: matches.get_one::<String>("section").cloned(),
+            features: matches.get_many::<String>("features").unwrap_or_default().into_iter().cloned().collect(),
+            no_default_features: matches.get_flag("no-default-features"),
+            all_features: matches.get_flag("all-features"),
         },
         compress_type,
         compress_system: matches.get_flag("compress-system"),

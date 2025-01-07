@@ -101,6 +101,7 @@ pub struct Config {
     /// List of Cargo features to use during build
     pub features: Vec<String>,
     pub default_features: bool,
+    pub all_features: bool,
     /// Should the binary be stripped from debug symbols?
     pub debug_symbols: DebugSymbols,
 
@@ -229,6 +230,9 @@ pub struct DebConfigOverrides {
     pub deb_revision: Option<String>,
     pub maintainer: Option<String>,
     pub section: Option<String>,
+    pub features: Vec<String>,
+    pub no_default_features: bool,
+    pub all_features: bool,
 }
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
@@ -327,13 +331,17 @@ impl Config {
             DebugSymbols::Strip
         };
 
+        let mut features = deb.features.take().unwrap_or_default();
+        features.extend(overrides.features.iter().cloned());
+
         let config = Self {
             package_manifest_dir: manifest_dir,
             deb_output_path,
             rust_target_triple: rust_target_triple.map(|t| t.to_string()),
             target_dir,
-            features: deb.features.take().unwrap_or_default(),
-            default_features: deb.default_features.unwrap_or(true),
+            features,
+            all_features: overrides.all_features,
+            default_features: if overrides.no_default_features { false } else { deb.default_features.unwrap_or(true) },
             debug_symbols,
             build_profile_override,
             build_targets,
