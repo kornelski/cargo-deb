@@ -1,5 +1,13 @@
 For more details see https://github.com/kornelski/cargo-deb/commits/main/
 
+# 2.10.0
+
+* Support for `CARGO_BUILD_TARGET` in addition to `--target`.
+* Consistent syntax for all package interrelationship fields in Cargo manifest.
+* Systemd uses deb package name instead of Cargo crate name, when they're different.
+* tmpfiles are forced to have a .conf extension, like systemd requires.
+* Fixed detection of objcopy and strip in cross-compilation when `config.toml` is absent.
+
 # 2.9.3
 
 * Support for multiarch lib dir

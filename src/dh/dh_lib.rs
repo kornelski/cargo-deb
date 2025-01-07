@@ -27,7 +27,6 @@ use crate::CDResult;
 ///   <https://git.launchpad.net/ubuntu/+source/debhelper/tree/autoscripts?h=applied/12.10ubuntu1>
 /// To understand which scripts are invoked when, consult:
 ///   <https://www.debian.org/doc/debian-policy/ap-flowcharts.htm>
-
 static AUTOSCRIPTS: [(&str, &[u8]); 10] = [
     ("postinst-init-tmpfiles", include_bytes!("../../autoscripts/postinst-init-tmpfiles")),
     ("postinst-systemd-dont-enable", include_bytes!("../../autoscripts/postinst-systemd-dont-enable")),

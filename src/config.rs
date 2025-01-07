@@ -407,7 +407,7 @@ impl Config {
                 log::debug!("building workspace because {} is from another package", source_path.unwrap_or(&asset_target.target_path).display());
                 same_package = false;
             }
-            if asset_target.is_dynamic_library() || source_path.map_or(false, is_dynamic_library_filename) {
+            if asset_target.is_dynamic_library() || source_path.is_some_and(is_dynamic_library_filename) {
                 log::debug!("building libs for {}", source_path.unwrap_or(&asset_target.target_path).display());
                 build_libs = true;
             } else if asset_target.is_executable() {
@@ -612,7 +612,7 @@ impl Config {
     }
 
     #[must_use]
-    pub fn rust_target_triple(&self) -> &str{
+    pub fn rust_target_triple(&self) -> &str {
         self.rust_target_triple.as_deref().unwrap_or(DEFAULT_TARGET)
     }
 }

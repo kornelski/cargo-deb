@@ -11,7 +11,7 @@ pub mod compress;
 /// Note: Due to the way the Path type works the final component is returned
 /// even if it looks like a directory, e.g. "/some/dir/" will return "dir"...
 pub(crate) fn fname_from_path(path: &Path) -> Option<String> {
-    if path.to_bytes().ends_with(&[b'/']) {
+    if path.to_bytes().ends_with(b"/") {
         return None;
     }
     let path = path.file_name()?.to_string_lossy();

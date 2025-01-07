@@ -49,7 +49,7 @@ fn main() -> ExitCode {
     let install = matches.get_flag("install");
 
     let compress_type = match matches.get_one::<String>("compress-type").map(|s| s.as_str()) {
-        Some("gz") | Some("gzip") => Format::Gzip,
+        Some("gz" | "gzip") => Format::Gzip,
         Some("xz") | None => Format::Xz,
         _ => {
             print_error(&CargoDebError::Str("unrecognized compression format. Supported: gzip, xz"));
@@ -57,7 +57,7 @@ fn main() -> ExitCode {
         },
     };
 
-    let multiarch = match matches.get_one::<String>("multiarch").map(|s| s.as_str()).unwrap_or("none") {
+    let multiarch = match matches.get_one::<String>("multiarch").map_or("none", |s| s.as_str()) {
         "none" => Multiarch::None,
         "same" => Multiarch::Same,
         "foreign" => Multiarch::Foreign,
@@ -89,7 +89,7 @@ fn main() -> ExitCode {
     let deb_version = matches.get_one::<String>("deb-version").cloned();
     let deb_revision = matches.get_one::<String>("deb-revision").cloned();
 
-    if deb_version.is_some() && deb_revision.as_deref().map_or(false, |r| !r.is_empty()) {
+    if deb_version.is_some() && deb_revision.as_deref().is_some_and(|r| !r.is_empty()) {
         listener.warning(format!("--deb-version takes precedence over --deb-revision. Revision '{}' will be ignored", deb_revision.as_deref().unwrap_or_default()));
     }
 
@@ -119,7 +119,7 @@ fn main() -> ExitCode {
         system_xz: false,
         rsyncable: matches.get_flag("rsyncable"),
         profile: matches.get_one::<String>("profile").cloned(),
-        cargo_build_cmd: matches.get_one::<String>("cargo-build").unwrap_or(&"build".to_string()).to_string(),
+        cargo_build_cmd: matches.get_one::<String>("cargo-build").map_or("build", |s| s.as_str()).into(),
         cargo_locking_flags: CargoLockingFlags {
             offline: matches.get_flag("offline"),
             frozen: matches.get_flag("frozen"),

@@ -350,7 +350,7 @@ fn parse_metadata(mut metadata: CargoMetadata, selected_package_name: Option<&st
             .filter(|_| metadata.workspace_default_members.len() == 1)
             .or(metadata.resolve.root.as_ref())
             .and_then(|root_id| metadata.packages.iter().position(move |p| &p.id == root_id))
-        .ok_or_else(|| CargoDebError::NoRootFoundInWorkspace(available_package_names()))
+            .ok_or_else(|| CargoDebError::NoRootFoundInWorkspace(available_package_names()))
     }?;
     Ok((metadata.packages.swap_remove(target_package_pos), metadata.target_directory.into(), metadata.workspace_root.into()))
 }

@@ -55,8 +55,7 @@ pub fn strip_binaries(config: &mut Config, package_deb: &mut PackageConfig, rust
                 return Err(CargoDebError::StripFailed(path.to_owned(), "The file doesn't exist".into()));
             }
 
-            let conf_path = cargo_config.as_ref().map(|c| c.path())
-                .unwrap_or_else(|| Path::new(".cargo/config"));
+            let conf_path = cargo_config.as_ref().map_or(Path::new(".cargo/config"), |c| c.path());
             let file_name = path.file_stem().ok_or(CargoDebError::Str("bad path"))?.to_string_lossy();
             let stripped_temp_path = stripped_binaries_output_dir.join(format!("{file_name}.tmp{i}-stripped"));
             let _ = fs::remove_file(&stripped_temp_path);

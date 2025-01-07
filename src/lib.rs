@@ -50,9 +50,9 @@ use crate::util::compress::{CompressConfig, Format};
 
 pub mod assets;
 pub mod config;
+mod debuginfo;
 mod dependencies;
 mod error;
-mod debuginfo;
 pub use debuginfo::strip_binaries;
 
 use crate::assets::compress_assets;

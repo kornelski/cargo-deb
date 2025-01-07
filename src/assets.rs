@@ -289,7 +289,7 @@ fn debug_filename(path: &Path) -> PathBuf {
 pub(crate) fn is_dynamic_library_filename(path: &Path) -> bool {
     path.file_name()
         .and_then(|f| f.to_str())
-        .map_or(false, |f| f.ends_with(DLL_SUFFIX))
+        .is_some_and(|f| f.ends_with(DLL_SUFFIX))
 }
 
 /// Compress man pages and other assets per Debian Policy.
