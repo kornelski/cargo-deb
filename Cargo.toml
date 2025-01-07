@@ -9,7 +9,7 @@ homepage = "https://lib.rs/crates/cargo-deb"
 keywords = ["debian", "ubuntu", "deploy", "cargo-subcommand"]
 repository = "https://github.com/kornelski/cargo-deb"
 readme = "README.md"
-version = "2.9.4"
+version = "2.10.0"
 edition = "2021"
 rust-version = "1.71"
 
@@ -40,10 +40,11 @@ path = "src/main.rs"
 doc = false
 
 [dependencies]
+clap = "4.4.18"
 elf = { version = "0.7.4", default-features = false, features = ["std"], optional = true }
 flate2 = "1.0.31"
 zopfli = { version = "0.8", default-features = false, features = ["std", "gzip"] }
-getopts = "0.2.21"
+itertools = "0.14"
 quick-error = "2.0.1"
 xz2 = { version = "0.1.7", optional = true }
 serde = { version = "1.0.205", features = ["derive"] }
@@ -55,7 +56,6 @@ ar = "0.9.0"
 cargo_toml = "0.21"
 rayon = "1.10.0"
 regex = { version = "1.10.6", default-features = false, features = ["std"] }
-itertools = "0.13"
 tempfile = "3.12.0"
 env_logger = { version = "0.11", default-features = false, features = ["auto-color", "regex"] }
 log = "0.4.22"
@@ -84,7 +84,7 @@ debug = false
 
 [dev-dependencies]
 mockall = "0.13.0"
-rstest = { version = "0.23", default-features = false }
+rstest = { version = "0.24", default-features = false }
 lazy_static = "1.5.0"
 
 [workspace]

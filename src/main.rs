@@ -3,93 +3,53 @@ use cargo_deb::config::Multiarch;
 use cargo_deb::{listener, CargoDeb, CargoDebError, CargoDebOptions, CargoLockingFlags};
 use std::env;
 use std::process::ExitCode;
+use clap::{Arg, ArgAction, Command};
 
 fn main() -> ExitCode {
     env_logger::init();
 
-    let args: Vec<String> = env::args().collect();
+    let matches = Command::new("cargo-deb")
+        .version(env!("CARGO_PKG_VERSION"))
+        .about("Create Debian packages from Cargo projects\nhttps://lib.rs/cargo-deb")
+        .arg(Arg::new("output").short('o').long("output").help("Write .deb to this file or directory").num_args(1).value_name("path"))
+        .arg(Arg::new("package").short('p').long("package").help("Select which Cargo workspace package to use").num_args(1).value_name("name"))
+        .arg(Arg::new("manifest-path").long("manifest-path").help("Select package by the path to Cargo.toml project file").num_args(1).value_name("./Cargo.toml"))
+        .arg(Arg::new("target").long("target").help("Rust target platform for cross-compilation").num_args(1).value_name("triple"))
+        .arg(Arg::new("multiarch").long("multiarch").value_parser(["none", "same", "foreign"]).help("Put libs in /usr/lib/$arch-linux-gnu/").num_args(1).value_name("foreign"))
+        .arg(Arg::new("profile").long("profile").help("Select which Cargo build profile to use").num_args(1).value_name("release|<custom>"))
+        .arg(Arg::new("install").long("install").help("Immediately install the created deb package").action(ArgAction::SetTrue))
+        .arg(Arg::new("cargo-build").long("cargo-build").help("Override cargo build subcommand").num_args(1).value_name("subcommand"))
+        .arg(Arg::new("no-build").long("no-build").help("Assume the project is already built").action(ArgAction::SetTrue))
+        .arg(Arg::new("quiet").short('q').long("quiet").help("Don't print warnings").action(ArgAction::SetTrue))
+        .arg(Arg::new("verbose").short('v').long("verbose").help("Print progress").action(ArgAction::SetTrue))
+        .next_help_heading("Debug info")
+        .arg(Arg::new("strip").long("strip").help("Always try to strip debug symbols").action(ArgAction::SetTrue))
+        .arg(Arg::new("no-strip").long("no-strip").help("Do not strip debug symbols from the binary").action(ArgAction::SetTrue))
+        .arg(Arg::new("separate-debug-symbols").long("separate-debug-symbols").help("Strip debug symbols into a separate .debug file").action(ArgAction::SetTrue))
+        .arg(Arg::new("no-separate-debug-symbols").long("no-separate-debug-symbols").help("Do not strip debug symbols into a separate .debug file").action(ArgAction::SetTrue))
+        .arg(Arg::new("compress-debug-symbols").long("compress-debug-symbols").help("Apply `objcopy --compress-debug-sections`").action(ArgAction::SetTrue))
+        .next_help_heading("Metadata overrides")
+        .arg(Arg::new("variant").long("variant").help("Alternative Cargo.toml configuration section to use").num_args(1).value_name("name"))
+        .arg(Arg::new("deb-version").long("deb-version").help("Override version string for the package").num_args(1).value_name("version"))
+        .arg(Arg::new("deb-revision").long("deb-revision").help("Override revision suffix string for the package").num_args(1).value_name("num"))
+        .arg(Arg::new("maintainer").long("maintainer").help("Override Maintainer field").num_args(1).value_name("name"))
+        .arg(Arg::new("section").long("section").help("Set the application category for this package").num_args(1).value_name("section"))
+        .next_help_heading("Deb compression")
+        .arg(Arg::new("fast").long("fast").help("Use faster compression, which makes a larger deb file").action(ArgAction::SetTrue))
+        .arg(Arg::new("compress-type").short('Z').long("compress-type").help("Compress with the given compression format").num_args(1).value_name("gz|xz"))
+        .arg(Arg::new("compress-system").long("compress-system").alias("system-xz").help("Use the corresponding command-line tool for compression").action(ArgAction::SetTrue))
+        .arg(Arg::new("rsyncable").long("rsyncable").help("Use worse compression, but reduce differences between versions of packages").action(ArgAction::SetTrue))
+        .next_help_heading("Cargo")
+        .arg(Arg::new("offline").long("offline").help("Passed to Cargo").action(ArgAction::SetTrue))
+        .arg(Arg::new("locked").long("locked").help("Passed to Cargo").action(ArgAction::SetTrue))
+        .arg(Arg::new("frozen").long("frozen").help("Passed to Cargo").action(ArgAction::SetTrue))
+        .arg(Arg::new("-- other cargo arguments").help("Free arguments passed to cargo build").num_args(0..))
+        .get_matches();
 
-    let mut cli_opts = getopts::Options::new();
-    cli_opts.optflag("", "no-strip", "Do not strip debug symbols from the binary");
-    cli_opts.optflag("", "strip", "Always try to strip debug symbols");
-    cli_opts.optflag("", "no-separate-debug-symbols", "Do not strip debug symbols into a separate .debug file");
-    cli_opts.optflag("", "separate-debug-symbols", "Strip debug symbols into a separate .debug file");
-    cli_opts.optflag("", "compress-debug-symbols", "Apply objcopy --compress-debug-sections");
-    cli_opts.optopt("o", "output", "Write .deb to this file or directory", "path");
-    cli_opts.optopt("p", "package", "Select which Cargo workspace package to use", "name");
-    cli_opts.optflag("", "install", "Immediately install the created deb package");
-    cli_opts.optflag("q", "quiet", "Don't print warnings");
-    cli_opts.optflag("v", "verbose", "Print progress");
-    cli_opts.optflag("", "version", "Show version of the cargo-deb tool");
-    cli_opts.optopt("", "deb-version", "Override version string for the package", "version");
-    cli_opts.optopt("", "deb-revision", "Override revision suffix string for the package", "num");
-    cli_opts.optopt("", "maintainer", "Override Maintainer field", "name");
-    cli_opts.optopt("", "manifest-path", "Cargo project file location", "./Cargo.toml");
-    cli_opts.optflag("", "offline", "Passed to Cargo");
-    cli_opts.optflag("", "locked", "Passed to Cargo");
-    cli_opts.optflag("", "frozen", "Passed to Cargo");
-    cli_opts.optopt("", "variant", "Alternative Cargo.toml configuration section to use", "name");
-    cli_opts.optopt("", "target", "Rust target for cross-compilation", "triple");
-    cli_opts.optopt("", "multiarch", "Put libs in /usr/lib/$arch-linux-gnu/", "none|same|foreign");
-    cli_opts.optopt("", "profile", "Select which Cargo build profile to use", "release|<custom>");
-    cli_opts.optflag("", "no-build", "Assume the project is already built");
-    cli_opts.optopt("", "cargo-build", "Override cargo build subcommand", "subcommand");
-    cli_opts.optflag("", "fast", "Use faster compression, which makes a larger deb file");
-    cli_opts.optopt("Z", "compress-type", "Compress with the given compression format", "gz|xz");
-    cli_opts.optflag("", "compress-system", "Use the corresponding command-line tool for compression");
-    cli_opts.optopt("", "section", "Set the application category for this package", "section");
-    cli_opts.optflag("", "system-xz", "Compress using command-line xz command instead of built-in. Deprecated, use --compress-system instead");
-    cli_opts.optflag("", "rsyncable", "Use worse compression, but reduce differences between versions of packages");
-    cli_opts.optflag("h", "help", "Print this help menu");
+    let install = matches.get_flag("install");
 
-    let mut matches = match cli_opts.parse(&args[1..]) {
-        Ok(m) => m,
-        Err(err) => {
-            eprintln!("cargo-deb: Error parsing arguments. See --help for details.");
-
-            use getopts::Fail::*;
-            let error_arg = match &err {
-                ArgumentMissing(s) | UnrecognizedOption(s) | OptionMissing(s) |
-                OptionDuplicated(s) | UnexpectedArgument(s) => s,
-            };
-            let dym = cli_opts.usage_with_format(|opts| {
-                let mut out = String::new();
-                for o in opts.filter(|o| error_arg.split('-').filter(|e| !e.is_empty()).any(|e| o.contains(e))) {
-                    out.push_str(&o); out.push('\n');
-                }
-                out
-            });
-            if !dym.is_empty() {
-                eprintln!("Did you mean:\n{dym}");
-            }
-            print_error(&err);
-            return ExitCode::FAILURE;
-        },
-    };
-    if matches.opt_present("h") {
-        print!("{}", cli_opts.usage_with_format(|opts| {
-            let mut out = String::with_capacity(2000);
-            out.push_str("Usage: cargo deb [options] [-- <cargo build flags>]\nhttps://lib.rs/cargo-deb ");
-            out.push_str(env!("CARGO_PKG_VERSION"));
-            out.push_str("\n\n");
-            for opt in opts.filter(|opt| !opt.contains("--system-xz") && !opt.contains("--no-separate-debug-symbols")) {
-                out.push_str(&opt);
-                out.push('\n');
-            }
-            out
-        }));
-        return ExitCode::SUCCESS;
-    }
-
-    if matches.opt_present("version") {
-        println!("{}", env!("CARGO_PKG_VERSION"));
-        return ExitCode::SUCCESS;
-    }
-
-    let install = matches.opt_present("install");
-
-    let compress_type = match matches.opt_str("compress-type").as_deref() {
-        Some("gz" | "gzip") => Format::Gzip,
+    let compress_type = match matches.get_one::<String>("compress-type").map(|s| s.as_str()) {
+        Some("gz") | Some("gzip") => Format::Gzip,
         Some("xz") | None => Format::Xz,
         _ => {
             print_error(&CargoDebError::Str("unrecognized compression format. Supported: gzip, xz"));
@@ -97,7 +57,7 @@ fn main() -> ExitCode {
         },
     };
 
-    let multiarch = match matches.opt_str("multiarch").as_deref().unwrap_or("none") {
+    let multiarch = match matches.get_one::<String>("multiarch").map(|s| s.as_str()).unwrap_or("none") {
         "none" => Multiarch::None,
         "same" => Multiarch::Same,
         "foreign" => Multiarch::Foreign,
@@ -108,12 +68,13 @@ fn main() -> ExitCode {
     };
 
     // `cargo deb` invocation passes the `deb` arg through.
-    if matches.free.first().is_some_and(|arg| arg == "deb") {
-        matches.free.remove(0);
+    let mut free_args: Vec<String> = matches.get_many::<String>("-- other cargo arguments").unwrap_or_default().cloned().collect();
+    if free_args.first().is_some_and(|arg| arg == "deb") {
+        free_args.remove(0);
     }
 
-    let quiet = matches.opt_present("quiet");
-    let verbose = matches.opt_present("verbose") || env::var_os("RUST_LOG").is_some_and(|v| v == "debug");
+    let quiet = matches.get_flag("quiet");
+    let verbose = matches.get_flag("verbose") || env::var_os("RUST_LOG").is_some_and(|v| v == "debug");
 
     // Listener conditionally prints warnings
     let (listener_tmp1, listener_tmp2);
@@ -125,46 +86,46 @@ fn main() -> ExitCode {
         &listener_tmp2
     };
 
-    let deb_version = matches.opt_str("deb-version");
-    let deb_revision = matches.opt_str("deb-revision");
+    let deb_version = matches.get_one::<String>("deb-version").cloned();
+    let deb_revision = matches.get_one::<String>("deb-revision").cloned();
 
-    if deb_version.is_some() && deb_revision.as_deref().is_some_and(|r| !r.is_empty()) {
+    if deb_version.is_some() && deb_revision.as_deref().map_or(false, |r| !r.is_empty()) {
         listener.warning(format!("--deb-version takes precedence over --deb-revision. Revision '{}' will be ignored", deb_revision.as_deref().unwrap_or_default()));
     }
 
     match CargoDeb::new(CargoDebOptions {
-        no_build: matches.opt_present("no-build"),
-        strip_override: if matches.opt_present("strip") { Some(true) } else if matches.opt_present("no-strip") { Some(false) } else { None },
-        separate_debug_symbols: if matches.opt_present("separate-debug-symbols") { Some(true) } else if matches.opt_present("no-separate-debug-symbols") { Some(false) } else { None },
-        compress_debug_symbols: if matches.opt_present("compress-debug-symbols") { Some(true) } else { None },
+        no_build: matches.get_flag("no-build"),
+        strip_override: if matches.get_flag("strip") { Some(true) } else if matches.get_flag("no-strip") { Some(false) } else { None },
+        separate_debug_symbols: if matches.get_flag("separate-debug-symbols") { Some(true) } else if matches.get_flag("no-separate-debug-symbols") { Some(false) } else { None },
+        compress_debug_symbols: if matches.get_flag("compress-debug-symbols") { Some(true) } else { None },
         verbose,
         install,
         // when installing locally it won't be transferred anywhere, so allow faster compression
-        fast: install || matches.opt_present("fast"),
-        variant: matches.opt_str("variant"),
-        target: matches.opt_str("target").or_else(|| std::env::var("CARGO_BUILD_TARGET").ok()),
+        fast: install || matches.get_flag("fast"),
+        variant: matches.get_one::<String>("variant").cloned(),
+        target: matches.get_one::<String>("target").cloned().or_else(|| std::env::var("CARGO_BUILD_TARGET").ok()),
         multiarch,
-        output_path: matches.opt_str("output"),
-        selected_package_name: matches.opt_str("package"),
-        manifest_path: matches.opt_str("manifest-path"),
+        output_path: matches.get_one::<String>("output").cloned(),
+        selected_package_name: matches.get_one::<String>("package").cloned(),
+        manifest_path: matches.get_one::<String>("manifest-path").cloned(),
         overrides: cargo_deb::config::DebConfigOverrides {
             deb_version,
             deb_revision,
-            maintainer: matches.opt_str("maintainer"),
-            section: matches.opt_str("section"),
+            maintainer: matches.get_one::<String>("maintainer").cloned(),
+            section: matches.get_one::<String>("section").cloned(),
         },
         compress_type,
-        compress_system: matches.opt_present("compress-system"),
-        system_xz: matches.opt_present("system-xz"),
-        rsyncable: matches.opt_present("rsyncable"),
-        profile: matches.opt_str("profile"),
-        cargo_build_cmd: matches.opt_str("cargo-build").unwrap_or("build".to_string()),
+        compress_system: matches.get_flag("compress-system"),
+        system_xz: false,
+        rsyncable: matches.get_flag("rsyncable"),
+        profile: matches.get_one::<String>("profile").cloned(),
+        cargo_build_cmd: matches.get_one::<String>("cargo-build").unwrap_or(&"build".to_string()).to_string(),
         cargo_locking_flags: CargoLockingFlags {
-            offline: matches.opt_present("offline"),
-            frozen: matches.opt_present("frozen"),
-            locked: matches.opt_present("locked"),
+            offline: matches.get_flag("offline"),
+            frozen: matches.get_flag("frozen"),
+            locked: matches.get_flag("locked"),
         },
-        cargo_build_flags: matches.free,
+        cargo_build_flags: free_args,
     }).process(listener) {
         Ok(()) => ExitCode::SUCCESS,
         Err(err) => {
