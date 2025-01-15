@@ -128,7 +128,14 @@ impl CargoDeb {
         package_deb.resolve_assets()?;
 
         // When cross-compiling, resolve dependencies using libs for the target platform (where multiarch is supported)
-        let lib_search_path = config.rust_target_triple.as_deref().map(|triple| package_deb.multiarch_lib_dir(triple));
+        let mut lib_search_path = config.rust_target_triple.as_deref().map(|triple| package_deb.multiarch_lib_dir(triple));
+        if let Some(dir) = lib_search_path.as_deref() {
+            if !dir.exists() {
+                log::debug!("lib dir doesn't exist: {}", dir.display());
+                lib_search_path = None;
+            }
+        }
+
         package_deb.resolve_binary_dependencies(lib_search_path.as_deref(), listener)?;
 
         compress_assets(&mut package_deb, listener)?;
@@ -399,6 +406,8 @@ pub(crate) fn debian_architecture_from_rust_triple(rust_target_triple: &str) -> 
 
 #[test]
 fn ensure_all_rust_targets_map_to_debian_targets() {
+    assert_eq!(debian_triple_from_rust_triple("armv7-unknown-linux-gnueabihf"), "arm-linux-gnueabihf");
+
     const DEB_ARCHS: &[&str] = &["alpha", "amd64", "arc", "arm", "arm64", "arm64ilp32", "armel",
     "armhf", "hppa", "hurd-i386", "hurd-amd64", "i386", "ia64", "kfreebsd-amd64",
     "kfreebsd-i386", "loong64", "m68k", "mips", "mipsel", "mips64", "mips64el",

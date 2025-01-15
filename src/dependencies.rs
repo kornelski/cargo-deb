@@ -5,7 +5,7 @@ use std::process::Command;
 const DPKG_SHLIBDEPS_COMMAND: &str = "dpkg-shlibdeps";
 
 /// Resolves the dependencies based on the output of dpkg-shlibdeps on the binary.
-pub(crate) fn resolve_with_dpkg(path: &Path, mut lib_dir_search_path: Option<&Path>) -> CDResult<Vec<String>> {
+pub(crate) fn resolve_with_dpkg(path: &Path, lib_dir_search_path: Option<&Path>) -> CDResult<Vec<String>> {
     let temp_folder = tempfile::tempdir()?;
     let debian_folder = temp_folder.path().join("debian");
     let control_file_path = debian_folder.join("control");
@@ -19,12 +19,8 @@ pub(crate) fn resolve_with_dpkg(path: &Path, mut lib_dir_search_path: Option<&Pa
     cmd.arg("-O");
     // determine library search path from target
     if let Some(dir) = lib_dir_search_path {
-        if dir.is_dir() {
-            cmd.args(["-l".as_ref(), dir.as_os_str()]);
-        } else {
-            log::debug!("lib dir doesn't exist: {}", dir.display());
-            lib_dir_search_path = None;
-        }
+        debug_assert!(dir.exists());
+        cmd.args(["-l".as_ref(), dir.as_os_str()]);
     }
     let output = cmd
         .arg(path)
