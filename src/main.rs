@@ -11,11 +11,11 @@ fn main() -> ExitCode {
     let matches = Command::new("cargo-deb")
         .version(env!("CARGO_PKG_VERSION"))
         .about("Create Debian packages from Cargo projects\nhttps://lib.rs/cargo-deb")
-        .arg(Arg::new("output").short('o').long("output").help("Write .deb to this file or directory").num_args(1).value_name("path"))
+        .arg(Arg::new("output").short('o').long("output").help("Write .deb to this file or directory [default: target/debian]").num_args(1).value_name("path"))
         .arg(Arg::new("package").short('p').long("package").help("Select which Cargo workspace package to use").num_args(1).value_name("name"))
         .arg(Arg::new("manifest-path").long("manifest-path").help("Select package by the path to Cargo.toml project file").num_args(1).value_name("./Cargo.toml"))
         .arg(Arg::new("target").long("target").help("Rust target platform for cross-compilation").num_args(1).value_name("triple"))
-        .arg(Arg::new("multiarch").long("multiarch").value_parser(["none", "same", "foreign"]).help("Put libs in /usr/lib/$arch-linux-gnu/").num_args(1).value_name("foreign"))
+        .arg(Arg::new("multiarch").long("multiarch").value_parser(["none", "same", "foreign"]).help("Put libs in /usr/lib/$arch-linux-gnu/").num_args(1).default_value("none").value_name("foreign"))
         .arg(Arg::new("profile").long("profile").help("Select which Cargo build profile to use").num_args(1).value_name("release|<custom>"))
         .arg(Arg::new("install").long("install").help("Immediately install the created deb package").action(ArgAction::SetTrue))
         .arg(Arg::new("cargo-build").long("cargo-build").help("Override cargo build subcommand").num_args(1).value_name("subcommand"))
@@ -116,7 +116,7 @@ fn main() -> ExitCode {
             deb_revision,
             maintainer: matches.get_one::<String>("maintainer").cloned(),
             section: matches.get_one::<String>("section").cloned(),
-            features: matches.get_many::<String>("features").unwrap_or_default().into_iter().cloned().collect(),
+            features: matches.get_many::<String>("features").unwrap_or_default().cloned().collect(),
             no_default_features: matches.get_flag("no-default-features"),
             all_features: matches.get_flag("all-features"),
         },

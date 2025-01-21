@@ -5,7 +5,7 @@ use std::process::Command;
 const DPKG_SHLIBDEPS_COMMAND: &str = "dpkg-shlibdeps";
 
 /// Resolves the dependencies based on the output of dpkg-shlibdeps on the binary.
-pub(crate) fn resolve_with_dpkg(path: &Path, lib_dir_search_path: Option<&Path>) -> CDResult<Vec<String>> {
+pub(crate) fn resolve_with_dpkg(path: &Path, lib_dir_search_paths: &[&Path]) -> CDResult<Vec<String>> {
     let temp_folder = tempfile::tempdir()?;
     let debian_folder = temp_folder.path().join("debian");
     let control_file_path = debian_folder.join("control");
@@ -18,7 +18,7 @@ pub(crate) fn resolve_with_dpkg(path: &Path, lib_dir_search_path: Option<&Path>)
     // Print result to stdout instead of a file.
     cmd.arg("-O");
     // determine library search path from target
-    if let Some(dir) = lib_dir_search_path {
+    for dir in lib_dir_search_paths {
         debug_assert!(dir.exists());
         cmd.args(["-l".as_ref(), dir.as_os_str()]);
     }
@@ -30,7 +30,7 @@ pub(crate) fn resolve_with_dpkg(path: &Path, lib_dir_search_path: Option<&Path>)
     if !output.status.success() {
         use std::fmt::Write;
         let mut args = String::new();
-        if let Some(lib_dir_search_path) = lib_dir_search_path {
+        for lib_dir_search_path in lib_dir_search_paths {
             let _ = write!(&mut args, "-l {} ", lib_dir_search_path.display());
         }
         let _ = write!(&mut args, "{}", path.display());
@@ -61,7 +61,7 @@ pub(crate) fn resolve_with_dpkg(path: &Path, lib_dir_search_path: Option<&Path>)
 #[cfg(target_os = "linux")]
 fn resolve_test() {
     let exe = std::env::current_exe().unwrap();
-    let deps = resolve_with_dpkg(&exe, None).unwrap();
+    let deps = resolve_with_dpkg(&exe, &[]).unwrap();
     assert!(deps.iter().any(|d| d.starts_with("libc")));
     assert!(!deps.iter().any(|d| d.starts_with("libgcc")), "{deps:?}");
 }

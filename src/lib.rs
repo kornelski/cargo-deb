@@ -128,15 +128,21 @@ impl CargoDeb {
         package_deb.resolve_assets()?;
 
         // When cross-compiling, resolve dependencies using libs for the target platform (where multiarch is supported)
-        let mut lib_search_path = config.rust_target_triple.as_deref().map(|triple| package_deb.multiarch_lib_dir(triple));
-        if let Some(dir) = lib_search_path.as_deref() {
-            if !dir.exists() {
-                log::debug!("lib dir doesn't exist: {}", dir.display());
-                lib_search_path = None;
-            }
-        }
+        let lib_search_paths = config.rust_target_triple.as_deref().map(|triple| package_deb.multiarch_lib_dirs(triple));
+        let lib_search_paths: Vec<_> = lib_search_paths.iter().flatten().enumerate()
+            .filter_map(|(i, dir)| {
+                if dir.exists() {
+                    Some(dir.as_path())
+                } else {
+                    if i == 0 { // report only the preferred one
+                        log::debug!("lib dir doesn't exist: {}", dir.display());
+                    }
+                    None
+                }
+            })
+            .collect();
 
-        package_deb.resolve_binary_dependencies(lib_search_path.as_deref(), listener)?;
+        package_deb.resolve_binary_dependencies(&lib_search_paths, listener)?;
 
         compress_assets(&mut package_deb, listener)?;
 

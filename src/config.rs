@@ -365,12 +365,12 @@ impl Config {
         if package_deb.multiarch != Multiarch::None {
             let mut has_bin = None;
             let mut has_lib = None;
-            let multiarch_lib_dir_prefix = package_deb.multiarch_lib_dir(self.rust_target_triple());
+            let multiarch_lib_dir_prefix = &package_deb.multiarch_lib_dirs(self.rust_target_triple())[0];
             for c in package_deb.assets.iter() {
                 let p = c.target_path.as_path();
                 if has_bin.is_none() && (p.starts_with("bin") || p.starts_with("usr/bin") || p.starts_with("usr/sbin")) {
                     has_bin = Some(p);
-                } else if has_lib.is_none() && p.starts_with(&multiarch_lib_dir_prefix) {
+                } else if has_lib.is_none() && p.starts_with(multiarch_lib_dir_prefix) {
                     has_lib = Some(p);
                 }
                 if let Some((lib, bin)) = has_lib.zip(has_bin) {
@@ -727,12 +727,17 @@ impl PackageConfig {
         if self.multiarch == Multiarch::None {
             Path::new("usr/lib").into()
         } else {
-            self.multiarch_lib_dir(rust_target_triple).into()
+            let [p, _] = self.multiarch_lib_dirs(rust_target_triple);
+            p.into()
         }
     }
 
-    pub(crate) fn multiarch_lib_dir(&self, rust_target_triple: &str) -> PathBuf {
-        PathBuf::from(format!("usr/lib/{}", debian_triple_from_rust_triple(rust_target_triple)))
+    /// Apparently, Debian uses both! The first one is preferred?
+    pub(crate) fn multiarch_lib_dirs(&self, rust_target_triple: &str) -> [PathBuf; 2] {
+        let triple = debian_triple_from_rust_triple(rust_target_triple);
+        let debian_multiarch = PathBuf::from(format!("usr/lib/{triple}"));
+        let gcc_crossbuild = PathBuf::from(format!("usr/{triple}/lib"));
+        [debian_multiarch, gcc_crossbuild]
     }
 
     pub fn resolve_assets(&mut self) -> CDResult<()> {
@@ -765,7 +770,7 @@ impl PackageConfig {
     }
 
     /// run dpkg/ldd to check deps of libs
-    pub fn resolve_binary_dependencies(&mut self, lib_dir_search_path: Option<&Path>, listener: &dyn Listener) -> CDResult<()> {
+    pub fn resolve_binary_dependencies(&mut self, lib_dir_search_paths: &[&Path], listener: &dyn Listener) -> CDResult<()> {
         let mut deps = BTreeSet::new();
         for word in self.wildcard_depends.split(',') {
             let word = word.trim();
@@ -775,7 +780,7 @@ impl PackageConfig {
                     .filter(|bin| !bin.archive_as_symlink_only())
                     .filter_map(|&p| {
                         let bname = p.path()?;
-                        match resolve_with_dpkg(bname, lib_dir_search_path) {
+                        match resolve_with_dpkg(bname, lib_dir_search_paths) {
                             Ok(bindeps) => Some(bindeps),
                             Err(err) => {
                                 listener.warning(format!("{err}\nNo $auto deps for {}", bname.display()));
