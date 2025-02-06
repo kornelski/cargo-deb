@@ -293,7 +293,6 @@ impl CargoDeb {
 #[derive(Deserialize)]
 struct CargoMetadata {
     pub packages: Vec<CargoMetadataPackage>,
-    pub resolve: CargoMetadataResolve,
     #[serde(default)]
     pub workspace_members: Vec<String>,
     #[serde(default)]
@@ -301,11 +300,6 @@ struct CargoMetadata {
     pub target_directory: String,
     #[serde(default)]
     pub workspace_root: String,
-}
-
-#[derive(Deserialize)]
-struct CargoMetadataResolve {
-    pub root: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -349,8 +343,11 @@ fn parse_metadata(mut metadata: CargoMetadata, selected_package_name: Option<&st
     } else {
         metadata.workspace_default_members.first()
             .filter(|_| metadata.workspace_default_members.len() == 1)
-            .or(metadata.resolve.root.as_ref())
             .and_then(|root_id| metadata.packages.iter().position(move |p| &p.id == root_id))
+            .or_else(|| {
+                let root_manifest_path = Path::new(&metadata.workspace_root).join("Cargo.toml");
+                metadata.packages.iter().position(move |p| p.manifest_path == root_manifest_path)
+            })
             .ok_or_else(|| CargoDebError::NoRootFoundInWorkspace(available_package_names()))
     }?;
     Ok((metadata.packages.swap_remove(target_package_pos), metadata.target_directory.into(), metadata.workspace_root.into()))
@@ -384,7 +381,7 @@ pub(crate) fn cargo_metadata(root_manifest_path: Option<&Path>, selected_package
 /// and directory that paths may be relative to
 fn run_cargo_metadata(manifest_rel_path: Option<&Path>, cargo_locking_flags: CargoLockingFlags) -> CDResult<(CargoMetadata, PathBuf)> {
     let mut cmd = Command::new("cargo");
-    cmd.args(["metadata", "--format-version=1"]);
+    cmd.args(["metadata", "--format-version=1", "--no-deps"]);
     cmd.args(cargo_locking_flags.flags());
 
     let current_dir = if let Some(path) = manifest_rel_path {
