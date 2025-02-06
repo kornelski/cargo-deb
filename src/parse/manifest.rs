@@ -343,7 +343,8 @@ fn parse_metadata(mut metadata: CargoMetadata, selected_package_name: Option<&st
             .collect::<Vec<_>>().join(", ")
     };
     let target_package_pos = if let Some(name) = selected_package_name {
-        metadata.packages.iter().position(|p| p.name == name)
+        let name_no_ver = name.split('@').next().unwrap_or_default();
+        metadata.packages.iter().position(|p| p.name == name_no_ver)
             .ok_or_else(|| CargoDebError::PackageNotFoundInWorkspace(name.into(), available_package_names()))
     } else {
         metadata.workspace_default_members.first()
