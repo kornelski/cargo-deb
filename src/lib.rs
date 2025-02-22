@@ -60,10 +60,10 @@ use crate::deb::control::ControlArchiveBuilder;
 use crate::deb::tar::Tarball;
 use crate::listener::Listener;
 use config::{DebConfigOverrides, Multiarch};
+use itertools::Itertools;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::{env, fs};
-use itertools::Itertools;
 
 const TAR_REJECTS_CUR_DIR: bool = true;
 
@@ -154,12 +154,17 @@ impl CargoDeb {
 
         package_deb.sort_assets_by_type();
 
-        let generated = write_deb(&config, &package_deb, &CompressConfig {
-            fast: self.options.fast,
-            compress_type: self.options.compress_type,
-            compress_system: self.options.compress_system,
-            rsyncable: self.options.rsyncable,
-        }, listener)?;
+        let generated = write_deb(
+            &config,
+            &package_deb,
+            &CompressConfig {
+                fast: self.options.fast,
+                compress_type: self.options.compress_type,
+                compress_system: self.options.compress_system,
+                rsyncable: self.options.rsyncable,
+            },
+            listener,
+        )?;
 
         listener.generated_archive(&generated);
 
@@ -358,7 +363,7 @@ pub fn cargo_build(config: &Config, rust_target_triple: Option<&str>, build_comm
 fn debian_triple_from_rust_triple(rust_target_triple: &str) -> String {
     let mut p = rust_target_triple.split('-');
     let arch = p.next().unwrap();
-    let abi = p.last().unwrap_or("gnu");
+    let abi = p.next_back().unwrap_or("gnu");
 
     let (darch, dabi) = match (arch, abi) {
         ("i586" | "i686", _) => ("i386", "gnu"),
@@ -382,7 +387,7 @@ fn debian_triple_from_rust_triple(rust_target_triple: &str) -> String {
 pub(crate) fn debian_architecture_from_rust_triple(rust_target_triple: &str) -> &str {
     let mut parts = rust_target_triple.split('-');
     let arch = parts.next().unwrap();
-    let abi = parts.last().unwrap_or("");
+    let abi = parts.next_back().unwrap_or("");
     match (arch, abi) {
         // https://wiki.debian.org/Multiarch/Tuples
         // rustc --print target-list

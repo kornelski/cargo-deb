@@ -162,13 +162,10 @@ pub fn find_units(dir: &Path, main_package: &str, unit_name: Option<&str>) -> Pa
             // Save the combination of source path, target path and target file
             // mode for this unit file.
             // eprintln!("[INFO] Identified installable at {:?}", src_path);
-            installables.insert(
-                src_path,
-                InstallRecipe {
-                    path: install_path,
-                    mode: 0o644,
-                },
-            );
+            installables.insert(src_path, InstallRecipe {
+                path: install_path,
+                mode: 0o644,
+            });
         }
     }
 
@@ -261,7 +258,6 @@ pub fn generate(package: &str, assets: &[Asset], options: &Options, listener: &d
     // BTreeSets values iterate in sorted order irrespective of the order they
     // were inserted.
     // see: https://git.launchpad.net/ubuntu/+source/debhelper/tree/dh_installsystemd?h=applied/12.10ubuntu1#n385
-    let mut aliases = BTreeSet::new();
     let mut enable_units = BTreeSet::new();
     let mut start_units = BTreeSet::new();
     let mut seen = BTreeSet::new();
@@ -325,10 +321,10 @@ pub fn generate(package: &str, assets: &[Asset], options: &Options, listener: &d
                             }
                         },
                         "Alias" => {
-                            aliases.insert(other_unit);
+                            // TODO?
                         },
                         _ => (),
-                    };
+                    }
                 } else if line.starts_with("[Install]") {
                     enable_units.insert(unit.clone());
                 }
@@ -868,19 +864,21 @@ WantedBy=multi-user.target");
             "lss" => {
                 assert_eq!(1, get_read_count(unit_file_path));
                 if inst {
-                    match options.no_enable {
-                        true => assert_eq!(1, get_read_count("postinst-systemd-dont-enable")),
-                        false => assert_eq!(1, get_read_count("postinst-systemd-enable")),
-                    };
+                    if options.no_enable {
+                        assert_eq!(1, get_read_count("postinst-systemd-dont-enable"));
+                    } else {
+                        assert_eq!(1, get_read_count("postinst-systemd-enable"));
+                    }
                     assert_eq!(1, get_read_count("postrm-systemd"));
                     autoscript_fragments_to_check_for.insert("postinst.service");
                     autoscript_fragments_to_check_for.insert("postrm.debhelper");
                 }
                 if options.restart_after_upgrade {
-                    match options.no_start {
-                        true => assert_eq!(1, get_read_count("postinst-systemd-restartnostart")),
-                        false => assert_eq!(1, get_read_count("postinst-systemd-restart")),
-                    };
+                    if options.no_start {
+                        assert_eq!(1, get_read_count("postinst-systemd-restartnostart"));
+                    } else {
+                        assert_eq!(1, get_read_count("postinst-systemd-restart"));
+                    }
                     autoscript_fragments_to_check_for.insert("postinst.service");
                 } else if !options.no_start {
                     assert_eq!(1, get_read_count("postinst-systemd-start"));

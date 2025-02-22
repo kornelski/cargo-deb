@@ -289,7 +289,7 @@ impl Config {
         // Cargo cross-compiles to a dir
         if let Some(rust_target_triple) = rust_target_triple {
             target_dir.push(rust_target_triple);
-        };
+        }
 
         let selected_profile = build_profile_override.as_deref().unwrap_or("release");
 
@@ -991,7 +991,9 @@ impl TryFrom<CargoDebAssetArrayOrTable> for RawAsset {
         }
         let a = match toml {
             CargoDebAssetArrayOrTable::Table(a) => Self {
-                source_path: a.source.into(), target_path: a.dest.into(), chmod: parse_chmod(&a.mode)?
+                source_path: a.source.into(),
+                target_path: a.dest.into(),
+                chmod: parse_chmod(&a.mode)?,
             },
             CargoDebAssetArrayOrTable::Array(a) => {
                 let mut a = a.into_iter();

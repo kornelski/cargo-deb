@@ -1,9 +1,9 @@
 use cargo_deb::compress::Format;
 use cargo_deb::config::Multiarch;
 use cargo_deb::{listener, CargoDeb, CargoDebError, CargoDebOptions, CargoLockingFlags};
+use clap::{Arg, ArgAction, Command};
 use std::env;
 use std::process::ExitCode;
-use clap::{Arg, ArgAction, Command};
 
 fn main() -> ExitCode {
     env_logger::init();

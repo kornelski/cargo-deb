@@ -293,11 +293,9 @@ mod tests {
 
         // supply a maintainer script as if it were available on disk
         // provide file content that we can easily verify
-        let mut maintainer_script_contents = Vec::new();
         for script in maintainer_script_paths {
             let content = format!("some contents: {script}");
             set_test_fs_path_content(script, content.clone());
-            maintainer_script_contents.push(content);
         }
 
         // specify a path relative to the (root or workspace child) package
@@ -397,11 +395,9 @@ mod tests {
 
         // supply a maintainer script as if it were available on disk
         // provide file content that we can easily verify
-        let mut maintainer_script_contents = Vec::new();
         for &(script, content) in maintainer_scripts {
             if let Some(content) = content {
                 set_test_fs_path_content(script, content.to_string());
-                maintainer_script_contents.push(content);
             }
         }
 
