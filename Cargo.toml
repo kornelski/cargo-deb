@@ -9,7 +9,7 @@ homepage = "https://lib.rs/crates/cargo-deb"
 keywords = ["debian", "ubuntu", "deploy", "cargo-subcommand"]
 repository = "https://github.com/kornelski/cargo-deb"
 readme = "README.md"
-version = "2.11.2"
+version = "2.11.3"
 edition = "2021"
 rust-version = "1.71"
 
@@ -42,23 +42,23 @@ doc = false
 [dependencies]
 clap = "4.4.18"
 elf = { version = "0.7.4", default-features = false, features = ["std"], optional = true }
-flate2 = "1.0.31"
+flate2 = "1.1.0"
 zopfli = { version = "0.8", default-features = false, features = ["std", "gzip"] }
 itertools = "0.14"
 quick-error = "2.0.1"
 xz2 = { version = "0.1.7", optional = true }
-serde = { version = "1.0.205", features = ["derive"] }
-serde_json = "1.0.122"
-tar = { version = "0.4.41", default-features = false }
+serde = { version = "1.0.218", features = ["derive"] }
+serde_json = "1.0.140"
+tar = { version = "0.4.44", default-features = false }
 toml = { version = "0.8", default-features = false, features = ["parse"] }
-glob = "0.3.1"
+glob = "0.3.2"
 ar = "0.9.0"
-cargo_toml = "0.21"
+cargo_toml = "0.22"
 rayon = "1.10.0"
-regex = { version = "1.10.6", default-features = false, features = ["std"] }
-tempfile = "3.12.0"
+regex = { version = "1.11.1", default-features = false, features = ["std"] }
+tempfile = "3.18.0"
 env_logger = { version = "0.11", default-features = false, features = ["auto-color", "regex"] }
-log = "0.4.22"
+log = "0.4.26"
 
 [features]
 default = ["lzma", "debug-id"]
@@ -83,8 +83,8 @@ opt-level = 3
 debug = false
 
 [dev-dependencies]
-mockall = "0.13.0"
-rstest = { version = "0.24", default-features = false }
+mockall = "0.13.1"
+rstest = { version = "0.25", default-features = false }
 lazy_static = "1.5.0"
 
 [workspace]
