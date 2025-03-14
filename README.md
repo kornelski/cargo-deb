@@ -55,7 +55,7 @@ Everything is optional:
 - **section**: The [application category](https://packages.debian.org/bookworm/) that the software belongs to.
 - **priority**: Defines if the package is `required` or `optional`.
 - **assets**: Files to be included in the package and the permissions to assign them. If assets are not specified, then defaults are taken from binaries listed in `[[bin]]` (copied to `/usr/bin/`) and package `readme` (copied to `usr/share/doc/…`).
-    1. `source`: the first argument of each asset is the location of that asset in the Rust project. Glob patterns are allowed. You can use `target/release/` in asset paths, even if Cargo is configured to cross-compile or use custom `CARGO_TARGET_DIR`. The target dir paths will be automatically corrected.
+    1. `source`: the first argument of each asset is the location of that asset in the Rust project. Glob patterns are allowed. Always use `target/release/` path prefix for packaging binaries built by Cargo, *even if that's not the real path* to your target directory. Cargo-deb uses this prefix to detect what to compile, and will replace it with the actual target dir path, taking into account cross-compilation, build profiles, workspaces, `CARGO_TARGET_DIR`, custom configs, etc. If you try to "fix" the hardcoded `target/release` paths, you will break cargo-deb, and make it package stale files and mishandle debug info.
     2. `dest`: the second argument is where the file will be copied. If it starts with `usr/lib`, it will be changed to `usr/lib/$tuple` when multiarch option is enabled.
         - If is argument ends with `/` it will be inferred that the target is the directory where the file will be copied.
         - Otherwise, it will be inferred that the source argument will be renamed when copied.
@@ -86,8 +86,9 @@ depends = "$auto"
 section = "utility"
 priority = "optional"
 assets = [
-    # both syntaxes are equivalent:
+    # target/release path is special, and gets replaced by cargo-deb with the actual target dir path.
     ["target/release/cargo-deb", "usr/bin/", "755"],
+    # both array and object syntaxes are equivalent:
     { source = "README.md", dest = "usr/share/doc/cargo-deb/README", mode = "644"},
 ]
 ```

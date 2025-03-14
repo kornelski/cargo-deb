@@ -18,7 +18,7 @@ use std::borrow::Cow;
 use std::collections::{BTreeSet, HashSet};
 use std::env::consts::{DLL_PREFIX, DLL_SUFFIX, EXE_SUFFIX};
 use std::io::Write;
-use std::path::{Path, PathBuf};
+use std::path::{Component, Path, PathBuf};
 use std::process::Command;
 use std::time::SystemTime;
 use std::{fs, io};
@@ -1007,13 +1007,32 @@ impl TryFrom<CargoDebAssetArrayOrTable> for RawAsset {
                 return Err(format!("Expected assets array to contain either an array of 3 strings, or a `{{source, dest, mode}}` object, but found: {bad}"));
             },
         };
-        if a.source_path.starts_with("target/debug") {
-            return Err(format!("Packaging of development-only binaries is intentionally unsupported in cargo-deb.
-Please only use `target/release/` directory for built products, not `{}`.
-To add debug information or additional assertions use `[profile.release]` in `Cargo.toml` instead.", a.source_path.display()));
+        if let Some(msg) = is_trying_to_customize_target_path(&a.source_path) {
+            return Err(format!("Please only use `target/release` path prefix for built products, not `{}`.
+{msg}
+The `target/release` is treated as a special prefix, and will be replaced dynamically by cargo-deb with the actual target directory path used by the build.
+", a.source_path.display()));
         }
         Ok(a)
     }
+}
+
+fn is_trying_to_customize_target_path(p: &Path) -> Option<&'static str> {
+    let mut p = p.components().skip_while(|p| matches!(p, Component::ParentDir | Component::CurDir));
+    if p.next() != Some(Component::Normal("target".as_ref())) {
+        return None;
+    }
+    let Some(Component::Normal(subdir)) = p.next() else {
+        return None;
+    };
+    if subdir == "debug" {
+        return Some("Packaging of development-only binaries is intentionally unsupported in cargo-deb.\nTo add debug information or additional assertions use `[profile.release]` in `Cargo.toml` instead.")
+    }
+    if subdir.to_str().unwrap_or_default().contains("-")
+            && p.next() == Some(Component::Normal("release".as_ref())) {
+        return Some("Hardcoding of cross-compilation paths in the configuration is unnecessary, and counter-productive. cargo-deb understands cross-compilation natively and adjusts the path when you use --target.")
+    }
+    None
 }
 
 fn parse_license_file(package: &cargo_toml::Package<CargoPackageMetadata>, license_file: Option<&LicenseFile>) -> CDResult<(Option<PathBuf>, usize)> {
