@@ -150,11 +150,20 @@ impl UnresolvedAsset {
     /// Convert `source_path` (with glob or dir) to actual path
     pub fn resolve(self, preserve_symlinks: bool) -> CDResult<Vec<Asset>> {
         let Self { source_path, c: AssetCommon { target_path, chmod, is_built, is_example } } = self;
-        let source_prefix = is_glob_pattern(&source_path).then(|| {
-            source_path.iter()
-                .take_while(|&part| !is_glob_pattern(part.as_ref()))
-                .collect::<PathBuf>()
+
+        let source_prefix_len = is_glob_pattern(&source_path).then(|| {
+            let mut prefix_len = 0;
+            for part in source_path.iter() {
+                if is_glob_pattern(part.as_ref()) {
+                    prefix_len += 1;
+                    break
+                } else {
+                    prefix_len += 1
+                }
+            }
+            prefix_len
         });
+
         let matched_assets = glob::glob(source_path.to_str().ok_or("utf8 path")?)?
             // Remove dirs from globs without throwing away errors
             .map(|entry| {
@@ -163,8 +172,12 @@ impl UnresolvedAsset {
             })
             .filter_map(|res| {
                 Some(res.transpose()?.map(|source_file| {
-                    let target_file = if let Some(source_prefix) = &source_prefix {
-                        target_path.join(source_file.strip_prefix(source_prefix).unwrap())
+                    let target_file = if let Some(source_prefix_len) = source_prefix_len {
+                        target_path.join(
+                            source_file
+                            .iter()
+                            .skip(source_prefix_len)
+                            .collect::<PathBuf>())
                     } else {
                         target_path.clone()
                     };
@@ -176,7 +189,7 @@ impl UnresolvedAsset {
                         is_built,
                         is_example,
                     );
-                    if source_prefix.is_some() {
+                    if source_prefix_len.is_some() {
                         asset.processed("glob", None)
                     } else {
                         asset
@@ -371,6 +384,38 @@ mod tests {
         );
         assert_eq!("baz/quz", a.c.target_path.to_str().unwrap());
         assert!(a.c.is_built == IsBuilt::No);
+    }
+
+    #[test]
+    fn assets_glob_at_end_of_line() {
+        let asset = UnresolvedAsset {
+            source_path: PathBuf::from("test-resources/testroot/src/*"),
+            c: AssetCommon {
+                target_path: PathBuf::from("bar/"),
+                chmod: 0o644,
+                is_example: false,
+                is_built: IsBuilt::SamePackage,
+            },
+        };
+        let assets = asset.resolve(false).unwrap();
+        assert_eq!(assets.len(), 1);
+        assert_eq!(assets[0].c.target_path, PathBuf::from("bar/main.rs"));
+    }
+
+    #[test]
+    fn assets_glob_in_middle_of_line_single_file() {
+        let asset = UnresolvedAsset {
+            source_path: PathBuf::from("test-resources/testroot/*/main.rs"),
+            c: AssetCommon {
+                target_path: PathBuf::from("bar/"),
+                chmod: 0o644,
+                is_example: false,
+                is_built: IsBuilt::SamePackage,
+            },
+        };
+        let assets = asset.resolve(false).unwrap();
+        assert_eq!(assets.len(), 1);
+        assert_eq!(assets[0].c.target_path, PathBuf::from("bar/main.rs"));
     }
 
     /// Tests that getting the debug filename from a path returns the same path
