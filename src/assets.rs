@@ -151,17 +151,27 @@ impl UnresolvedAsset {
     pub fn resolve(self, preserve_symlinks: bool) -> CDResult<Vec<Asset>> {
         let Self { source_path, c: AssetCommon { target_path, chmod, is_built, is_example } } = self;
 
-        let source_prefix_len = is_glob_pattern(&source_path).then(|| {
-            let mut prefix_len = 0;
-            for part in source_path.iter() {
-                if is_glob_pattern(part.as_ref()) {
-                    prefix_len += 1;
-                    break
-                } else {
-                    prefix_len += 1
-                }
+        let source_prefix_len = is_glob_pattern(source_path.as_os_str()).then(|| {
+            let file_name_is_glob = source_path
+                .iter()
+                .last()
+                .map(is_glob_pattern)
+                .unwrap_or_default();
+
+            // skip the whole prefix
+            // /path/to/a/thing* => [thing1, thing2]
+            // /path/*/a/thing* => [thing1, thing2]
+            if file_name_is_glob {
+                source_path
+                .iter()
+                .count()
+            // /path/*/a/thing1 => [thing1]
+            }else {
+                source_path
+                .iter()
+                .count()
+                .saturating_sub(1)
             }
-            prefix_len
         });
 
         let matched_assets = glob::glob(source_path.to_str().ok_or("utf8 path")?)?
@@ -406,6 +416,22 @@ mod tests {
     fn assets_glob_in_middle_of_line_single_file() {
         let asset = UnresolvedAsset {
             source_path: PathBuf::from("test-resources/testroot/*/main.rs"),
+            c: AssetCommon {
+                target_path: PathBuf::from("bar/"),
+                chmod: 0o644,
+                is_example: false,
+                is_built: IsBuilt::SamePackage,
+            },
+        };
+        let assets = asset.resolve(false).unwrap();
+        assert_eq!(assets.len(), 1);
+        assert_eq!(assets[0].c.target_path, PathBuf::from("bar/main.rs"));
+    }
+
+    #[test]
+    fn assets_glob_in_middle_of_line_single_file_single_directory() {
+        let asset = UnresolvedAsset {
+            source_path: PathBuf::from("test-resources/*/src/main.rs"),
             c: AssetCommon {
                 target_path: PathBuf::from("bar/"),
                 chmod: 0o644,

@@ -17,14 +17,16 @@ use rayon::prelude::*;
 use std::borrow::Cow;
 use std::collections::{BTreeSet, HashSet};
 use std::env::consts::{DLL_PREFIX, DLL_SUFFIX, EXE_SUFFIX};
+use std::ffi::OsStr;
 use std::io::Write;
+use std::os::unix::ffi::OsStrExt;
 use std::path::{Component, Path, PathBuf};
 use std::process::Command;
 use std::time::SystemTime;
 use std::{fs, io};
 
-pub(crate) fn is_glob_pattern(s: &Path) -> bool {
-    s.to_bytes().iter().any(|&c| c == b'*' || c == b'[' || c == b']' || c == b'!')
+pub(crate) fn is_glob_pattern(s: impl AsRef<OsStr> + Sized) -> bool {
+    s.as_ref().as_bytes().iter().any(|&c| c == b'*' || c == b'[' || c == b']' || c == b'!')
 }
 
 /// Match the official `dh_installsystemd` defaults and rename the confusing
