@@ -1122,7 +1122,7 @@ impl Config {
             })
             .collect();
         if implied_assets.is_empty() {
-            return Err("No binaries or cdylibs found. The package is empty. Please specify some assets to package in Cargo.toml".into());
+            return Err(CargoDebError::BinariesNotFound(package_deb.cargo_crate_name.clone()));
         }
         if let Some(readme_rel_path) = package_deb.readme_rel_path.as_deref() {
             let path = self.path_in_package(readme_rel_path);

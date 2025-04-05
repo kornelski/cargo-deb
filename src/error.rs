@@ -71,11 +71,14 @@ quick_error! {
         PackageNotFound(path: String, reason: Vec<u8>) {
             display("Path '{}' does not belong to a package: {}", path, String::from_utf8_lossy(reason))
         }
+        BinariesNotFound(crate_name: String) {
+            display("No binaries or cdylibs found. The package `{crate_name}` empty. Please specify some assets to package in Cargo.toml")
+        }
         PackageNotFoundInWorkspace(name: String, available: String) {
-            display("The workspace doesn't have a package named {}. Available packages are: {}", name, available)
+            display("The workspace doesn't have a package named {name}.\nAvailable packages are: {available}")
         }
         NoRootFoundInWorkspace(available: String) {
-            display("This is a workspace with multiple packages, and there is no single package at the root. Please specify package name with -p. Available packages are: {}", available)
+            display("This is a workspace with multiple packages, and there is no single package at the root.\nPlease specify the package with `-p` or set one in the workspace's `default-members = []`.\nAvailable packages are: {available}")
         }
         VariantNotFound(variant: String) {
             display("[package.metadata.deb.variants.{}] not found in Cargo.toml", variant)
