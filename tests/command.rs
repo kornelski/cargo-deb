@@ -32,6 +32,17 @@ fn build_workspaces() {
 }
 
 #[test]
+fn default_selection() {
+    let (cdir, ddir) = extract_built_package_from_manifest("tests/ws-metadata/Cargo.toml", DEFAULT_COMPRESSION_EXT, &["--maintainer=x", "--no-strip"]);
+    assert!(ddir.path().join("usr/bin/c1").exists());
+    assert!(!ddir.path().join(format!("usr/lib/{DLL_PREFIX}c2{DLL_SUFFIX}")).exists());
+
+    let control = fs::read_to_string(cdir.path().join("control")).unwrap();
+    assert!(control.contains("Package: hello\n"), "{control}");
+    assert!(control.contains("Maintainer: x\n"));
+}
+
+#[test]
 fn build_with_explicit_compress_type_gz() {
     let _ = env_logger::builder().is_test(true).try_init();
 

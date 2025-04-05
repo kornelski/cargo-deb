@@ -1,0 +1,7 @@
+[package]
+name = "c1"
+version = "0.1.0"
+edition = "2024"
+
+[package.metadata.deb]
+name = "hello"

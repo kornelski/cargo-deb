@@ -308,6 +308,7 @@ struct CargoMetadataPackage {
     pub name: String,
     pub targets: Vec<CargoMetadataTarget>,
     pub manifest_path: PathBuf,
+    pub metadata: Option<toml::Value>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -341,16 +342,40 @@ fn parse_metadata(mut metadata: CargoMetadata, selected_package_name: Option<&st
         metadata.packages.iter().position(|p| p.name == name_no_ver)
             .ok_or_else(|| CargoDebError::PackageNotFoundInWorkspace(name.into(), available_package_names()))
     } else {
-        metadata.workspace_default_members.first()
-            .filter(|_| metadata.workspace_default_members.len() == 1)
-            .and_then(|root_id| metadata.packages.iter().position(move |p| &p.id == root_id))
-            .or_else(|| {
-                let root_manifest_path = Path::new(&metadata.workspace_root).join("Cargo.toml");
-                metadata.packages.iter().position(move |p| p.manifest_path == root_manifest_path)
-            })
+        pick_default_package_from_workspace(&metadata)
             .ok_or_else(|| CargoDebError::NoRootFoundInWorkspace(available_package_names()))
     }?;
     Ok((metadata.packages.swap_remove(target_package_pos), metadata.target_directory.into(), metadata.workspace_root.into()))
+}
+
+fn pick_default_package_from_workspace(metadata: &CargoMetadata) -> Option<usize> {
+    // ignore default_members if there are multiple due to ambiguity
+    if let [root_id] = metadata.workspace_default_members.as_slice() {
+        if let Some(pos) = metadata.packages.iter().position(move |p| &p.id == root_id) {
+            return Some(pos);
+        }
+    }
+
+    // if the root manifest is a package, use it
+    let root_manifest_path = Path::new(&metadata.workspace_root).join("Cargo.toml");
+    if let Some(pos) = metadata.packages.iter().position(move |p| p.manifest_path == root_manifest_path) {
+        return Some(pos);
+    }
+
+    // find (active) package with an explicit cargo-deb metadata
+    let default_members = if !metadata.workspace_default_members.is_empty() {
+        &metadata.workspace_default_members[..]
+    } else {
+        &metadata.workspace_members
+    };
+    let mut packages_with_deb_meta = metadata.packages.iter().enumerate().filter_map(|(i, package)| {
+        if !package.metadata.as_ref()?.as_table()?.contains_key("deb") {
+            return None;
+        }
+        default_members.contains(&package.id).then_some(i)
+    });
+    let expected_single_id = packages_with_deb_meta.next()?;
+    packages_with_deb_meta.next().is_none().then_some(expected_single_id)
 }
 
 pub(crate) fn cargo_metadata(root_manifest_path: Option<&Path>, selected_package_name: Option<&str>, cargo_locking_flags: CargoLockingFlags) -> Result<ManifestFound, CargoDebError> {
