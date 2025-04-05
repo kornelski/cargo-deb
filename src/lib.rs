@@ -443,7 +443,7 @@ fn ensure_all_rust_targets_map_to_debian_targets() {
 
     let list = std::process::Command::new("rustc").arg("--print=target-list").output().unwrap().stdout;
     for rust_target in std::str::from_utf8(&list).unwrap().lines().filter(|a| a.contains("linux")) {
-        if ["csky", "hexagon", "riscv32gc"].contains(&rust_target.split_once('-').unwrap().0) {
+        if ["csky", "hexagon", "riscv32gc", "wasm32"].contains(&rust_target.split_once('-').unwrap().0) {
             continue; // Rust supports more than Debian!
         }
         let deb_arch = debian_architecture_from_rust_triple(rust_target);
