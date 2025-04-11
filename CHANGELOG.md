@@ -1,6 +1,18 @@
 For more details see https://github.com/kornelski/cargo-deb/commits/main/
 
-# 2.10.0
+# 2.12
+
+* Improved auto-detection default packages in workspaces
+* Fixed handling of asset paths with `/*/` directory components
+
+# 2.11
+
+* Support for GCC-style and Debian-style multi-arch lib directories
+* Support naming systemd units
+* Pass through `--features` flag
+* Faster Cargo metadata parsing
+
+# 2.10
 
 * Support for `CARGO_BUILD_TARGET` in addition to `--target`.
 * Consistent syntax for all package interrelationship fields in Cargo manifest.

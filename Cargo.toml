@@ -9,7 +9,7 @@ homepage = "https://lib.rs/crates/cargo-deb"
 keywords = ["debian", "ubuntu", "deploy", "cargo-subcommand"]
 repository = "https://github.com/kornelski/cargo-deb"
 readme = "README.md"
-version = "2.12.0"
+version = "2.12.1"
 edition = "2021"
 rust-version = "1.71"
 
@@ -56,7 +56,7 @@ ar = "0.9.0"
 cargo_toml = "0.22"
 rayon = "1.10.0"
 regex = { version = "1.11.1", default-features = false, features = ["std"] }
-tempfile = "3.18.0"
+tempfile = "3.19.1"
 env_logger = { version = "0.11", default-features = false, features = ["auto-color", "regex"] }
 log = "0.4.26"
 
