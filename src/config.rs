@@ -448,15 +448,17 @@ impl Config {
     }
 
     fn add_copyright_asset(&self, package_deb: &mut PackageConfig) -> CDResult<()> {
-        let (source_path, copyright_file) = self.generate_copyright_asset(package_deb)?;
-        log::debug!("added copyright via {}", source_path.display());
-        package_deb.assets.resolved.push(Asset::new(
-            AssetSource::Data(copyright_file),
-            Path::new("usr/share/doc").join(&package_deb.deb_name).join("copyright"),
-            0o644,
-            IsBuilt::No,
-            false,
-        ).processed("generated", source_path));
+        if package_deb.copyright.is_some() {
+            let (source_path, copyright_file) = self.generate_copyright_asset(package_deb)?;
+            log::debug!("added copyright via {}", source_path.display());
+            package_deb.assets.resolved.push(Asset::new(
+                AssetSource::Data(copyright_file),
+                Path::new("usr/share/doc").join(&package_deb.deb_name).join("copyright"),
+                0o644,
+                IsBuilt::No,
+                false,
+            ).processed("generated", source_path));
+        }
         Ok(())
     }
 
@@ -676,7 +678,7 @@ impl PackageConfig {
                     // As a compromise if the maintainer is set on the command-line, assume they can't fix the metadata, and let it be missing.
                     None
                 },
-                _ => return Err("The package must have a copyright or authors property".into()),
+                _ => None,
             },
             homepage: cargo_package.homepage().map(From::from),
             documentation: cargo_package.documentation().map(From::from),
