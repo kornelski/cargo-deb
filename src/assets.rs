@@ -397,51 +397,31 @@ mod tests {
     }
 
     #[test]
-    fn assets_glob_at_end_of_line() {
-        let asset = UnresolvedAsset {
-            source_path: PathBuf::from("test-resources/testroot/src/*"),
-            c: AssetCommon {
-                target_path: PathBuf::from("bar/"),
-                chmod: 0o644,
-                is_example: false,
-                is_built: IsBuilt::SamePackage,
-            },
-        };
-        let assets = asset.resolve(false).unwrap();
-        assert_eq!(assets.len(), 1);
-        assert_eq!(assets[0].c.target_path, PathBuf::from("bar/main.rs"));
-    }
-
-    #[test]
-    fn assets_glob_in_middle_of_line_single_file() {
-        let asset = UnresolvedAsset {
-            source_path: PathBuf::from("test-resources/testroot/*/main.rs"),
-            c: AssetCommon {
-                target_path: PathBuf::from("bar/"),
-                chmod: 0o644,
-                is_example: false,
-                is_built: IsBuilt::SamePackage,
-            },
-        };
-        let assets = asset.resolve(false).unwrap();
-        assert_eq!(assets.len(), 1);
-        assert_eq!(assets[0].c.target_path, PathBuf::from("bar/main.rs"));
-    }
-
-    #[test]
-    fn assets_glob_in_middle_of_line_single_file_single_directory() {
-        let asset = UnresolvedAsset {
-            source_path: PathBuf::from("test-resources/*/src/main.rs"),
-            c: AssetCommon {
-                target_path: PathBuf::from("bar/"),
-                chmod: 0o644,
-                is_example: false,
-                is_built: IsBuilt::SamePackage,
-            },
-        };
-        let assets = asset.resolve(false).unwrap();
-        assert_eq!(assets.len(), 1);
-        assert_eq!(assets[0].c.target_path, PathBuf::from("bar/main.rs"));
+    fn assets_globs() {
+        for (glob, paths) in [
+            ("test-resources/testroot/src/*", &["bar/main.rs"][..]),
+            ("test-resources/testroot/*/main.rs", &["bar/main.rs"]),
+            ("test-resources/*/src/main.rs", &["bar/main.rs"]),
+        ] {
+            let asset = UnresolvedAsset {
+                source_path: PathBuf::from(glob),
+                c: AssetCommon {
+                    target_path: PathBuf::from("bar/"),
+                    chmod: 0o644,
+                    is_example: false,
+                    is_built: IsBuilt::SamePackage,
+                },
+            };
+            let assets = asset
+                .resolve(false)
+                .unwrap()
+                .into_iter()
+                .map(|asset| asset.c.target_path.to_string_lossy().to_string())
+                .collect::<Vec<_>>();
+            if assets != paths {
+                panic!("Glob: `{glob}`:\n  Expected: {paths:?}\n       Got: {assets:?}");
+            }
+        }
     }
 
     /// Tests that getting the debug filename from a path returns the same path
