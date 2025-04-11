@@ -153,24 +153,26 @@ impl UnresolvedAsset {
 
         let source_prefix_len = is_glob_pattern(source_path.as_os_str()).then(|| {
             let file_name_is_glob = source_path
-                .iter()
-                .last()
+                .file_name()
                 .map(is_glob_pattern)
-                .unwrap_or_default();
+                .unwrap_or(false);
 
-            // skip the whole prefix
-            // /path/to/a/thing* => [thing1, thing2]
-            // /path/*/a/thing* => [thing1, thing2]
             if file_name_is_glob {
+                // skip to the component before the glob
+                let glob_component_pos = source_path
+                    .parent()
+                    .and_then(|parent| parent.iter().position(is_glob_pattern));
+                glob_component_pos.unwrap_or_else(|| {
+                    source_path
+                        .iter()
+                        .count()
+                })
+            } else {
+                // extract the only file name component
                 source_path
-                .iter()
-                .count()
-            // /path/*/a/thing1 => [thing1]
-            }else {
-                source_path
-                .iter()
-                .count()
-                .saturating_sub(1)
+                    .iter()
+                    .count()
+                    .saturating_sub(1)
             }
         });
 
@@ -401,7 +403,12 @@ mod tests {
         for (glob, paths) in [
             ("test-resources/testroot/src/*", &["bar/main.rs"][..]),
             ("test-resources/testroot/*/main.rs", &["bar/main.rs"]),
+            ("test-resources/testroot/*/*", &["bar/src/main.rs", "bar/testchild/Cargo.toml"]),
+            ("test-resources/*/src/*", &["bar/testroot/src/main.rs"]),
             ("test-resources/*/src/main.rs", &["bar/main.rs"]),
+            ("test-resources/*/*/main.rs", &["bar/main.rs"]),
+            ("test-resources/testroot/**/src/*", &["bar/src/main.rs", "bar/testchild/src/main.rs"]),
+            ("test-resources/testroot/**/*.rs", &["bar/src/main.rs", "bar/testchild/src/main.rs"]),
         ] {
             let asset = UnresolvedAsset {
                 source_path: PathBuf::from(glob),
