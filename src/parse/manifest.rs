@@ -1,7 +1,7 @@
 use crate::assets::RawAsset;
 use crate::error::{CDResult, CargoDebError};
 use crate::CargoLockingFlags;
-use cargo_toml::DebugSetting;
+use cargo_toml::{DebugSetting, StripSetting};
 use log::debug;
 use serde::Deserialize;
 use std::borrow::Cow;
@@ -32,13 +32,29 @@ pub(crate) struct SystemdUnitsConfig {
     pub stop_on_upgrade: Option<bool>,
 }
 
-pub(crate) fn manifest_debug_flag(manifest: &cargo_toml::Manifest<CargoPackageMetadata>, selected_profile: &str) -> Option<bool> {
+#[derive(PartialEq, Copy, Clone)]
+pub(crate) enum ManifestDebugFlags {
+    /// Don't bother stripping again
+    FullyStrippedByCargo,
+    /// Explicitly doesn't want debug symbols
+    SymbolsDisabled,
+    SomeSymbolsAdded,
+    Default,
+}
+
+pub(crate) fn manifest_debug_flag(manifest: &cargo_toml::Manifest<CargoPackageMetadata>, selected_profile: &str) -> Option<ManifestDebugFlags> {
     let profile = if selected_profile == "release" {
         manifest.profile.release.as_ref()?
     } else {
         manifest.profile.custom.get(selected_profile)?
     };
-    Some(*profile.debug.as_ref()? != DebugSetting::None)
+    if profile.strip.as_ref() == Some(&StripSetting::Symbols) {
+        return Some(ManifestDebugFlags::FullyStrippedByCargo);
+    }
+    if *profile.debug.as_ref()? == DebugSetting::None {
+        return Some(ManifestDebugFlags::SymbolsDisabled);
+    }
+    Some(ManifestDebugFlags::SomeSymbolsAdded)
 }
 
 /// Debian-compatible version of the semver version

@@ -70,7 +70,7 @@ pub fn strip_binaries(config: &mut Config, package_deb: &mut PackageConfig, rust
                .and_then(ensure_success)
                .map_err(|err| {
                     if let Some(target) = rust_target_triple {
-                        CargoDebError::StripFailed(path.to_owned(), format!("{}: {}.\nhint: Target-specific strip commands are configured in [target.{}] strip = {{ path = \"{}\" }} in {}", strip_cmd.display(), err, target, strip_cmd.display(), conf_path.display()))
+                        CargoDebError::StripFailed(path.to_owned(), format!("{}: {}.\nTarget-specific strip commands are configured in [target.{}] strip = {{ path = \"{}\" }} in {}\nYou can also add strip=true to [profiles.release] or --no-strip", strip_cmd.display(), err, target, strip_cmd.display(), conf_path.display()))
                     } else {
                         CargoDebError::CommandFailed(err, "strip")
                     }
@@ -103,7 +103,7 @@ pub fn strip_binaries(config: &mut Config, package_deb: &mut PackageConfig, rust
                     .and_then(ensure_success)
                     .map_err(|err| {
                         if let Some(target) = rust_target_triple {
-                            CargoDebError::StripFailed(path.to_owned(), format!("{}: {}.\nhint: Target-specific strip commands are configured in [target.{}] objcopy = {{ path =\"{}\" }} in {}", objcopy_cmd.display(), err, target, objcopy_cmd.display(), conf_path.display()))
+                            CargoDebError::StripFailed(path.to_owned(), format!("{}: {}.\nTarget-specific strip commands are configured in [target.{}] objcopy = {{ path =\"{}\" }} in {}\nAvoid --separate-debug-symbols if you don't have objcopy", objcopy_cmd.display(), err, target, objcopy_cmd.display(), conf_path.display()))
                         } else {
                             CargoDebError::CommandFailed(err, "objcopy")
                         }

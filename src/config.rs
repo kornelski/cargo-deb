@@ -6,7 +6,7 @@ use crate::dh::dh_installsystemd;
 use crate::error::{CDResult, CargoDebError};
 use crate::listener::Listener;
 use crate::parse::cargo::CargoConfig;
-use crate::parse::manifest::{cargo_metadata, manifest_debug_flag, manifest_version_string, LicenseFile};
+use crate::parse::manifest::{cargo_metadata, manifest_debug_flag, manifest_version_string, LicenseFile, ManifestDebugFlags};
 use crate::parse::manifest::{CargoDeb, CargoDebAssetArrayOrTable, CargoMetadataTarget, CargoPackageMetadata, ManifestFound};
 use crate::parse::manifest::{DependencyList, SystemUnitsSingleOrMultiple, SystemdUnitsConfig};
 use crate::util::ok_or::OkOrThen;
@@ -214,6 +214,7 @@ pub struct PackageConfig {
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
 pub enum DebugSymbols {
+    /// No change (also used if Cargo already stripped the symbols
     Keep,
     Strip,
     /// Should the debug symbols be moved to a separate file included in the package? (implies `strip:true`)
@@ -293,9 +294,9 @@ impl Config {
 
         let selected_profile = build_profile_override.as_deref().unwrap_or("release");
 
-        let debug_enabled = manifest_debug_flag(&manifest, selected_profile)
+        let manifest_debug = manifest_debug_flag(&manifest, selected_profile)
             .or_else(move || manifest_debug_flag(root_manifest.as_ref()?, selected_profile))
-            .unwrap_or(false);
+            .unwrap_or(ManifestDebugFlags::Default);
 
         let cargo_package = manifest.package.as_mut().ok_or("bad package")?;
 
@@ -317,18 +318,29 @@ impl Config {
         let separate_debug_symbols = separate_debug_symbols.unwrap_or_else(|| deb.separate_debug_symbols.unwrap_or(false));
         let compress_debug_symbols = compress_debug_symbols.unwrap_or_else(|| deb.compress_debug_symbols.unwrap_or(false));
 
-        let debug_symbols = if separate_debug_symbols {
-            if !debug_enabled {
-                log::warn!("separate-debug-symbols implies strip");
-            }
-            DebugSymbols::Separate { compress: compress_debug_symbols }
-        } else if debug_enabled {
-            if compress_debug_symbols {
-                log::warn!("separate-debug-symbols required to compress");
-            }
-            DebugSymbols::Keep
-        } else {
-            DebugSymbols::Strip
+        if !separate_debug_symbols && compress_debug_symbols {
+            listener.warning("separate-debug-symbols required to compress".into());
+        }
+
+        let debug_symbols = match manifest_debug {
+            ManifestDebugFlags::FullyStrippedByCargo => {
+                if separate_debug_symbols || compress_debug_symbols {
+                    listener.warning("separate-debug-symbols won't have any effect when Cargo is configured to strip the symbols first".into());
+                }
+                DebugSymbols::Keep
+            },
+            ManifestDebugFlags::SymbolsDisabled => {
+                if separate_debug_symbols {
+                    listener.warning("separate-debug-symbols won't have any effect when debug symbols are disabled".into());
+                }
+                // Rust still adds debug bloat from the libstd
+                DebugSymbols::Strip
+            },
+            _ if separate_debug_symbols => {
+                DebugSymbols::Separate { compress: compress_debug_symbols }
+            },
+            ManifestDebugFlags::SomeSymbolsAdded => DebugSymbols::Keep,
+            ManifestDebugFlags::Default => DebugSymbols::Strip
         };
 
         let mut features = deb.features.take().unwrap_or_default();
