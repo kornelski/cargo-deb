@@ -15,7 +15,7 @@ use crate::util::wordsplit::WordSplit;
 use crate::{debian_architecture_from_rust_triple, debian_triple_from_rust_triple, CargoLockingFlags, DEFAULT_TARGET};
 use rayon::prelude::*;
 use std::borrow::Cow;
-use std::collections::{BTreeSet, HashSet};
+use std::collections::{BTreeSet, HashMap, HashSet};
 use std::env::consts::{DLL_PREFIX, DLL_SUFFIX, EXE_SUFFIX};
 use std::io::Write;
 use std::path::{Component, Path, PathBuf};
@@ -564,7 +564,7 @@ impl Config {
                             target.mode,
                             IsBuilt::No,
                             false,
-                        ));
+                        ).processed("systemd", unit_dir.to_path_buf()));
                     }
                 }
             }
@@ -759,11 +759,25 @@ impl PackageConfig {
         [debian_multiarch, gcc_crossbuild]
     }
 
-    pub fn resolve_assets(&mut self) -> CDResult<()> {
+    pub fn resolve_assets(&mut self, listener: &dyn Listener) -> CDResult<()> {
         for u in self.assets.unresolved.drain(..) {
             let matched = u.resolve(self.preserve_symlinks)?;
             self.assets.resolved.extend(matched);
         }
+
+        let mut target_paths = HashMap::new();
+        let mut indices_to_remove = Vec::new();
+        let cwd = std::env::current_dir().unwrap_or_default();
+        for (idx, asset) in self.assets.resolved.iter().enumerate() {
+            target_paths.entry(asset.c.target_path.as_path()).and_modify(|old_asset| {
+                listener.warning(format!("Duplicate assets: [{}] and [{}] have the same target path; first one wins", AssetFmt(*old_asset, &cwd), AssetFmt(asset, &cwd)));
+                indices_to_remove.push(idx);
+            }).or_insert(asset);
+        }
+        for idx in indices_to_remove.into_iter().rev() {
+            self.assets.resolved.swap_remove(idx);
+        }
+
         self.add_conf_files();
         Ok(())
     }
@@ -1134,7 +1148,7 @@ impl Config {
                         0o755,
                         self.is_built_file_in_package(t),
                         false,
-                    ))
+                    ).processed("$auto", t.src_path.clone()))
                 } else if t.crate_types.iter().any(|ty| ty == "cdylib") && t.kind.iter().any(|k| k == "cdylib") {
                     let (prefix, suffix) = if self.rust_target_triple.is_none() { (DLL_PREFIX, DLL_SUFFIX) } else { ("lib", ".so") };
                     let lib_name = format!("{prefix}{}{suffix}", t.name);
@@ -1145,7 +1159,7 @@ impl Config {
                         0o644,
                         self.is_built_file_in_package(t),
                         false,
-                    ))
+                    ).processed("$auto", t.src_path.clone()))
                 } else {
                     None
                 }
@@ -1159,7 +1173,8 @@ impl Config {
             let target_path = Path::new("usr/share/doc")
                 .join(&package_deb.deb_name)
                 .join(path.file_name().ok_or("bad README path")?);
-            implied_assets.push(Asset::new(AssetSource::Path(path), target_path, 0o644, IsBuilt::No, false));
+            implied_assets.push(Asset::new(AssetSource::Path(path), target_path, 0o644, IsBuilt::No, false)
+                .processed("$auto", readme_rel_path.to_path_buf()));
         }
         Ok(implied_assets)
     }

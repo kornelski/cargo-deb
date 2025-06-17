@@ -125,7 +125,7 @@ impl CargoDeb {
             cargo_build(&config, self.options.target.as_deref(), &self.options.cargo_build_cmd, &self.options.cargo_build_flags, self.options.verbose, listener)?;
         }
 
-        package_deb.resolve_assets()?;
+        package_deb.resolve_assets(listener)?;
 
         // When cross-compiling, resolve dependencies using libs for the target platform (where multiarch is supported)
         let lib_search_paths = config.rust_target_triple.as_deref().map(|triple| package_deb.multiarch_lib_dirs(triple));

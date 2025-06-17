@@ -399,8 +399,8 @@ pub fn compress_assets(package_deb: &mut PackageConfig, listener: &dyn Listener)
         }
     }
 
-    for idx in indices_to_remove.iter().rev() {
-        package_deb.assets.resolved.swap_remove(*idx);
+    for idx in indices_to_remove.into_iter().rev() {
+        package_deb.assets.resolved.swap_remove(idx);
     }
 
     package_deb.assets.resolved.append(&mut new_assets);
