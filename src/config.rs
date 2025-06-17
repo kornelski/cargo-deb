@@ -310,7 +310,7 @@ impl Config {
                 .as_mut()
                 .and_then(|v| v.remove(variant))
                 .ok_or_else(|| CargoDebError::VariantNotFound(variant.to_string()))?;
-            variant.inherit_from(deb)
+            variant.inherit_from(deb, listener)
         } else {
             cargo_package.metadata.take().and_then(|m| m.deb).unwrap_or_default()
         };

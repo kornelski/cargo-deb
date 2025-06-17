@@ -1,5 +1,6 @@
 use crate::assets::RawAsset;
 use crate::error::{CDResult, CargoDebError};
+use crate::listener::Listener;
 use crate::CargoLockingFlags;
 use cargo_toml::{DebugSetting, StripSetting};
 use log::debug;
@@ -201,54 +202,60 @@ impl MergeByKey {
     /// Merges w/ a parent asset list
     ///
     fn merge(self, parent: &RawAssetList) -> RawAssetList {
-        let merge_map = {
-            parent.iter().fold(BTreeMap::new(), |parent, asset| {
-                self.prep_parent_item(parent, asset)
-            })
-        };
+        let mut merge_map = MergeMap::default();
+        for asset in parent {
+            self.prep_parent_item(&mut merge_map, asset)
+        }
 
         self.merge_with(merge_map)
     }
 
     /// Folds the parent asset into a merge-map preparing to prepare for a merge,
     ///
-    fn prep_parent_item<'a>(&'a self, mut parent: MergeMap<'a>, RawAsset { source_path: src,target_path: dest, chmod: perm }: &'a RawAsset) -> MergeMap<'a> {
+    fn prep_parent_item<'a>(&'a self, merge_map: &mut MergeMap<'a>, RawAsset { source_path: src,target_path: dest, chmod: perm }: &'a RawAsset) {
         match &self {
             Self::Src(_) => {
-                parent.insert(src, (dest, *perm));
+                merge_map.insert(src, (dest, *perm));
             },
             Self::Dest(_) => {
-                parent.insert(dest, (src, *perm));
+                merge_map.insert(dest, (src, *perm));
             },
         }
-        parent
     }
 
     /// Merges w/ a parent merge map and returns the resulting asset list,
     ///
-    fn merge_with(&self, parent: MergeMap<'_>) -> RawAssetList {
-        match self {
-            Self::Src(assets) => assets.iter()
-                .fold(parent, |mut acc, RawAsset { source_path: src,target_path: dest, chmod: perm }| {
-                    if let Some((replaced_dest, replaced_perm)) = acc.insert(src, (dest, *perm)) {
+    fn merge_with<'a>(&'a self, mut merge_map: MergeMap<'a>) -> RawAssetList {
+        let (assets, merge_fn, combine_fn): (_, fn(&mut MergeMap<'a>, &'a RawAsset), fn(_) -> RawAsset) = match self {
+            Self::Src(assets) => (
+                assets,
+                |parent, RawAsset { source_path: src, target_path: dest, chmod: perm }| {
+                    if let Some((replaced_dest, replaced_perm)) = parent.insert(src, (dest, *perm)) {
                         debug!("Replacing {:?} w/ {:?}", (replaced_dest, replaced_perm), (dest, perm));
                     }
-                    acc
-                })
-                .into_iter()
-                .map(|(src, (dest, perm))| RawAsset { source_path: src.clone(), target_path: dest.clone(), chmod: perm })
-                .collect(),
-            Self::Dest(assets) => assets.iter()
-                .fold(parent, |mut acc, RawAsset { source_path: src, target_path: dest, chmod: perm }| {
-                    if let Some((replaced_src, replaced_perm)) = acc.insert(dest, (src, *perm)) {
+                },
+                |(src, (dest, perm))| RawAsset { source_path: src, target_path: dest, chmod: perm },
+            ),
+            Self::Dest(assets) => (
+                assets,
+                |parent, RawAsset { source_path: src, target_path: dest, chmod: perm }| {
+                    if let Some((replaced_src, replaced_perm)) = parent.insert(dest, (src, *perm)) {
                         debug!("Replacing {:?} w/ {:?}", (replaced_src, replaced_perm), (src, perm));
                     }
-                    acc
-                })
-                .into_iter()
-                .map(|(dest, (src, perm))| RawAsset { source_path: src.clone(), target_path: dest.clone(), chmod: perm })
-                .collect(),
+                },
+                |(dest, (src, perm))| RawAsset { source_path: src, target_path: dest, chmod: perm },
+            ),
+        };
+
+        for asset in assets {
+            merge_fn(&mut merge_map, asset);
         }
+
+        merge_map
+            .into_iter()
+            .map(|(path1, (path2, perm))| (path1.clone(), (path2.clone(), perm)))
+            .map(combine_fn)
+            .collect()
     }
 }
 
@@ -257,10 +264,14 @@ impl CargoDeb {
     ///
     /// **Note**: For backwards compat, if `merge_assets` is set, this will apply **after** the variant has overridden the assets.
     ///
-    pub(crate) fn inherit_from(self, parent: Self) -> Self {
+    pub(crate) fn inherit_from(self, parent: Self, listener: &dyn Listener) -> Self {
         let mut assets = self.assets.or(parent.assets);
 
-        if let (Some(merge_assets), Some(old_assets)) = (self.merge_assets, assets.as_mut()) {
+        if let Some(merge_assets) = self.merge_assets {
+            let old_assets = assets.get_or_insert_with(|| {
+                listener.warning(format!("variant has merge-assets, but not assets to merge"));
+                vec![]
+            });
             if let Some(mut append) = merge_assets.append {
                 old_assets.append(&mut append);
             }
@@ -454,6 +465,7 @@ fn run_cargo_metadata(manifest_rel_path: Option<&Path>, cargo_locking_flags: Car
 
 #[cfg(test)]
 mod tests {
+    use crate::listener::NoOpListener;
     use super::*;
 
     #[test]
@@ -481,7 +493,7 @@ mod tests {
         let parent = CargoDeb { assets: Some(vec![ original_asset ]), .. Default::default() };
         let variant = CargoDeb { merge_assets: Some(MergeAssets { append: None, by: Some(MergeByKey::Dest(vec![ merge_asset ])) }), .. Default::default() };
 
-        let merged = variant.inherit_from(parent);
+        let merged = variant.inherit_from(parent, &NoOpListener);
         let mut merged = merged.assets.expect("should have assets");
         let merged_asset = merged.pop().expect("should have an asset");
         assert_eq!("lib/test_variant/empty.txt", merged_asset.source_path.as_os_str(), "should have merged the source location");
@@ -504,7 +516,7 @@ mod tests {
         let parent = CargoDeb { assets: Some(vec![ original_asset ]), .. Default::default() };
         let variant = CargoDeb { merge_assets: Some(MergeAssets { append: None, by: Some(MergeByKey::Src(vec![ merge_asset ])) }), .. Default::default() };
 
-        let merged = variant.inherit_from(parent);
+        let merged = variant.inherit_from(parent, &NoOpListener);
         let mut merged = merged.assets.expect("should have assets");
         let merged_asset = merged.pop().expect("should have an asset");
         assert_eq!("lib/test/empty.txt", merged_asset.source_path.as_os_str(), "should have merged the source location");
@@ -527,7 +539,7 @@ mod tests {
         let parent = CargoDeb { assets: Some(vec![ original_asset ]), .. Default::default() };
         let variant = CargoDeb { merge_assets: Some(MergeAssets { append: Some(vec![merge_asset]), by: None }), .. Default::default() };
         
-        let merged = variant.inherit_from(parent);
+        let merged = variant.inherit_from(parent, &NoOpListener);
         let mut merged = merged.assets.expect("should have assets");
 
         let merged_asset = merged.pop().expect("should have an asset");
@@ -562,7 +574,7 @@ mod tests {
         let parent = CargoDeb { assets: Some(vec![ original_asset ]), .. Default::default() };
         let variant = CargoDeb { merge_assets: Some(MergeAssets { append: None, by: Some(MergeByKey::Dest(vec![ merge_asset.clone() ])) }), assets: Some(vec![ merge_asset, additional_asset ]), .. Default::default() };
 
-        let merged = variant.inherit_from(parent);
+        let merged = variant.inherit_from(parent, &NoOpListener);
         let mut merged = merged.assets.expect("should have assets");
         let merged_asset = merged.remove(0);
         assert_eq!("lib/test_variant/empty.txt", merged_asset.source_path.as_os_str(), "should have merged the source location");
