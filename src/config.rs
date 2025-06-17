@@ -236,9 +236,10 @@ pub struct DebConfigOverrides {
     pub all_features: bool,
 }
 
-#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Default)]
 pub enum Multiarch {
     /// Not supported
+    #[default]
     None,
     /// Architecture-dependent, but more than one arch can be installed at the same time
     Same,
@@ -246,21 +247,39 @@ pub enum Multiarch {
     Foreign,
 }
 
+#[derive(Debug, Default)]
+pub struct BuildOptions<'a> {
+    pub root_manifest_path: Option<&'a Path>,
+    pub selected_package_name: Option<&'a str>,
+    pub deb_output_path: Option<String>,
+    pub rust_target_triple: Option<&'a str>,
+    pub config_variant: Option<&'a str>,
+    pub overrides: DebConfigOverrides,
+    pub build_profile_override: Option<String>,
+    pub separate_debug_symbols: Option<bool>,
+    pub compress_debug_symbols: Option<bool>,
+    pub cargo_locking_flags: CargoLockingFlags,
+    pub multiarch: Multiarch,
+}
+
 impl BuildEnvironment {
     /// Makes a new config from `Cargo.toml` in the `manifest_path`
     ///
     /// `None` target means the host machine's architecture.
     pub fn from_manifest(
-        root_manifest_path: Option<&Path>,
-        selected_package_name: Option<&str>,
-        deb_output_path: Option<String>,
-        rust_target_triple: Option<&str>,
-        config_variant: Option<&str>,
-        overrides: DebConfigOverrides,
-        build_profile_override: Option<String>,
-        separate_debug_symbols: Option<bool>,
-        compress_debug_symbols: Option<bool>,
-        cargo_locking_flags: CargoLockingFlags,
+        BuildOptions {
+            root_manifest_path,
+            selected_package_name,
+            deb_output_path,
+            rust_target_triple,
+            config_variant,
+            overrides,
+            build_profile_override,
+            separate_debug_symbols,
+            compress_debug_symbols,
+            cargo_locking_flags,
+            multiarch,
+        }: BuildOptions,
         listener: &dyn Listener,
     ) -> CDResult<(Self, PackageConfig)> {
         // **IMPORTANT**: This function must not create or expect to see any asset files on disk!
@@ -361,7 +380,7 @@ impl BuildEnvironment {
             cargo_run_current_dir,
         };
 
-        let package_deb = PackageConfig::new(deb, cargo_package, listener, default_timestamp, overrides, config.rust_target_triple())?;
+        let package_deb = PackageConfig::new(deb, cargo_package, listener, default_timestamp, overrides, config.rust_target_triple(), multiarch)?;
 
         Ok((config, package_deb))
     }
@@ -645,7 +664,7 @@ impl BuildEnvironment {
 }
 
 impl PackageConfig {
-    pub(crate) fn new(mut deb: CargoDeb, cargo_package: &mut cargo_toml::Package<CargoPackageMetadata>, listener: &dyn Listener, default_timestamp: u64, overrides: DebConfigOverrides, target: &str) -> Result<Self, CargoDebError> {
+    pub(crate) fn new(mut deb: CargoDeb, cargo_package: &mut cargo_toml::Package<CargoPackageMetadata>, listener: &dyn Listener, default_timestamp: u64, overrides: DebConfigOverrides, target: &str, multiarch: Multiarch) -> Result<Self, CargoDebError> {
         let (license_file_rel_path, license_file_skip_lines) = parse_license_file(cargo_package, deb.license_file.as_ref())?;
         let mut license = cargo_package.license.take().map(|v| v.unwrap());
 
@@ -733,7 +752,7 @@ impl PackageConfig {
                 Some(SystemUnitsSingleOrMultiple::Single(s)) => Some(vec![s]),
                 Some(SystemUnitsSingleOrMultiple::Multi(v)) => Some(v),
             },
-            multiarch: Multiarch::None,
+            multiarch,
         })
     }
 
@@ -1282,7 +1301,10 @@ mod tests {
         // supply a systemd unit file as if it were available on disk
         let _g = add_test_fs_paths(&[to_canon_static_str("cargo-deb.service")]);
 
-        let (config, mut package_deb) = BuildEnvironment::from_manifest(Some(Path::new("Cargo.toml")), None, None, None, None, DebConfigOverrides::default(), None, None, None, CargoLockingFlags::default(), &mock_listener).unwrap();
+        let (config, mut package_deb) = BuildEnvironment::from_manifest(BuildOptions {
+            root_manifest_path: Some(Path::new("Cargo.toml")),
+            ..Default::default()
+        }, &mock_listener).unwrap();
         config.prepare_assets_before_build(&mut package_deb, &mock_listener).unwrap();
 
         let num_unit_assets = package_deb.assets.resolved.iter()
@@ -1300,7 +1322,10 @@ mod tests {
         // supply a systemd unit file as if it were available on disk
         let _g = add_test_fs_paths(&[to_canon_static_str("cargo-deb.service")]);
 
-        let (config, mut package_deb) = BuildEnvironment::from_manifest(Some(Path::new("Cargo.toml")), None, None, None, None, DebConfigOverrides::default(), None, None, None, CargoLockingFlags::default(), &mock_listener).unwrap();
+        let (config, mut package_deb) = BuildEnvironment::from_manifest(BuildOptions {
+            root_manifest_path: Some(Path::new("Cargo.toml")),
+            ..Default::default()
+        }, &mock_listener).unwrap();
         config.prepare_assets_before_build(&mut package_deb, &mock_listener).unwrap();
 
         package_deb.systemd_units.get_or_insert(vec![SystemdUnitsConfig::default()]);

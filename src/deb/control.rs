@@ -171,7 +171,7 @@ mod tests {
     use crate::listener::MockListener;
     use crate::parse::manifest::SystemdUnitsConfig;
     use crate::util::tests::{add_test_fs_paths, set_test_fs_path_content};
-    use crate::CargoLockingFlags;
+
     use std::collections::HashMap;
     use std::io::prelude::Read;
     use std::path::PathBuf;
@@ -208,22 +208,18 @@ mod tests {
     #[track_caller]
     #[cfg(test)]
     fn prepare<'l, W: Write>(dest: W, package_name: Option<&str>, mock_listener: &'l mut MockListener) -> (BuildEnvironment, PackageConfig, ControlArchiveBuilder<'l, W>) {
+        use crate::config::BuildOptions;
+
         mock_listener.expect_info().return_const(());
 
         let (mut config, mut package_deb) = BuildEnvironment::from_manifest(
-            Some(Path::new("test-resources/testroot/Cargo.toml")),
-            package_name,
-            None,
-            None,
-            None,
-            Default::default(),
-            None,
-            None,
-            None,
-            CargoLockingFlags::default(),
+            BuildOptions {
+                root_manifest_path: Some(Path::new("test-resources/testroot/Cargo.toml")),
+                selected_package_name: package_name,
+                ..Default::default()
+            },
             mock_listener,
-        )
-        .unwrap();
+        ).unwrap();
         config.prepare_assets_before_build(&mut package_deb, mock_listener).unwrap();
 
         // make the absolute manifest dir relative to our crate root dir

@@ -59,7 +59,7 @@ use crate::assets::compress_assets;
 use crate::deb::control::ControlArchiveBuilder;
 use crate::deb::tar::Tarball;
 use crate::listener::Listener;
-use config::{DebConfigOverrides, Multiarch};
+use config::{BuildOptions, DebConfigOverrides, Multiarch};
 use itertools::Itertools;
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -104,20 +104,21 @@ impl CargoDeb {
         }
 
         let root_manifest_path = self.options.manifest_path.as_deref().map(Path::new);
-        let (mut config, mut package_deb) = BuildEnvironment::from_manifest(
-            root_manifest_path,
-            self.options.selected_package_name.as_deref(),
-            self.options.output_path,
-            self.options.target.as_deref(),
-            self.options.variant.as_deref(),
-            self.options.overrides,
-            selected_profile,
-            self.options.separate_debug_symbols,
-            self.options.compress_debug_symbols,
-            self.options.cargo_locking_flags,
+        let (mut config, mut package_deb) = BuildEnvironment::from_manifest(BuildOptions {
+                root_manifest_path: root_manifest_path,
+                selected_package_name: self.options.selected_package_name.as_deref(),
+                deb_output_path: self.options.output_path,
+                rust_target_triple: self.options.target.as_deref(),
+                config_variant: self.options.variant.as_deref(),
+                overrides: self.options.overrides,
+                build_profile_override: selected_profile,
+                separate_debug_symbols: self.options.separate_debug_symbols,
+                compress_debug_symbols: self.options.compress_debug_symbols,
+                cargo_locking_flags: self.options.cargo_locking_flags,
+                multiarch: self.options.multiarch,
+            },
             listener,
         )?;
-        package_deb.set_multiarch(self.options.multiarch);
         config.prepare_assets_before_build(&mut package_deb, listener)?;
 
         if !self.options.no_build {

@@ -411,10 +411,9 @@ pub fn compress_assets(package_deb: &mut PackageConfig, listener: &dyn Listener)
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::config::{BuildEnvironment, DebConfigOverrides};
+    use crate::config::{BuildEnvironment, BuildOptions};
     use crate::parse::manifest::SystemdUnitsConfig;
     use crate::util::tests::add_test_fs_paths;
-    use crate::CargoLockingFlags;
 
     #[test]
     fn assets() {
@@ -525,7 +524,11 @@ mod tests {
         // supply a systemd unit file as if it were available on disk
         let _g = add_test_fs_paths(&[to_canon_static_str("cargo-deb.service")]);
 
-        let (config, mut package_deb) = BuildEnvironment::from_manifest(Some(Path::new("Cargo.toml")), None, None, None, None, DebConfigOverrides::default(), None, None, None, CargoLockingFlags::default(), &mock_listener).unwrap();
+        let (config, mut package_deb) = BuildEnvironment::from_manifest(BuildOptions {
+            root_manifest_path: Some(Path::new("Cargo.toml")),
+            ..Default::default()
+        }, &mock_listener).unwrap();
+
         config.prepare_assets_before_build(&mut package_deb, &mock_listener).unwrap();
 
         let num_unit_assets = package_deb.assets.resolved.iter()
@@ -543,7 +546,11 @@ mod tests {
         // supply a systemd unit file as if it were available on disk
         let _g = add_test_fs_paths(&[to_canon_static_str("cargo-deb.service")]);
 
-        let (config, mut package_deb) = BuildEnvironment::from_manifest(Some(Path::new("Cargo.toml")), None, None, None, None, DebConfigOverrides::default(), None, None, None, CargoLockingFlags::default(), &mock_listener).unwrap();
+        let (config, mut package_deb) = BuildEnvironment::from_manifest(BuildOptions {
+            root_manifest_path: Some(Path::new("Cargo.toml")),
+            ..Default::default()
+        }, &mock_listener).unwrap();
+
 
         package_deb.systemd_units.get_or_insert(vec![SystemdUnitsConfig::default()]);
         package_deb.maintainer_scripts_rel_path.get_or_insert(PathBuf::new());
