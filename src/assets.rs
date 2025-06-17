@@ -92,31 +92,47 @@ pub(crate) struct Assets {
 
 #[derive(Debug, Clone, serde::Deserialize)]
 #[serde(try_from = "CargoDebAssetArrayOrTable")]
+pub(crate) enum RawAssetOrAuto {
+    Auto,
+    RawAsset(RawAsset),
+}
+
+impl RawAssetOrAuto {
+    pub fn asset(self) -> Option<RawAsset> {
+        match self {
+            Self::RawAsset(a) => Some(a),
+            _ => None,
+        }
+    }
+}
+
+impl From<RawAsset> for RawAssetOrAuto {
+    fn from(r: RawAsset) -> Self {
+        Self::RawAsset(r)
+    }
+}
+
+#[derive(Debug, Clone, serde::Deserialize)]
+#[serde(try_from = "RawAssetOrAuto")]
 pub(crate) struct RawAsset {
     pub source_path: PathBuf,
     pub target_path: PathBuf,
     pub chmod: u32,
 }
 
+impl TryFrom<RawAssetOrAuto> for RawAsset {
+    type Error = &'static str;
+
+    fn try_from(maybe_auto: RawAssetOrAuto) -> Result<Self, Self::Error> {
+        maybe_auto.asset().ok_or("$auto is not allowed here")
+    }
+}
+
 impl Assets {
-    pub(crate) const fn new() -> Self {
+    pub(crate) const fn new(unresolved: Vec<UnresolvedAsset>, resolved: Vec<Asset>) -> Self {
         Self {
-            unresolved: vec![],
-            resolved: vec![],
-        }
-    }
-
-    pub(crate) fn with_resolved_assets(assets: Vec<Asset>) -> Self {
-        Self {
-            unresolved: vec![],
-            resolved: assets,
-        }
-    }
-
-    pub(crate) fn with_unresolved_assets(assets: Vec<UnresolvedAsset>) -> Self {
-        Self {
-            unresolved: assets,
-            resolved: vec![],
+            unresolved,
+            resolved,
         }
     }
 

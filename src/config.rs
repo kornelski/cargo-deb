@@ -1,5 +1,5 @@
 use crate::assets::is_dynamic_library_filename;
-use crate::assets::{Asset, AssetSource, Assets, IsBuilt, UnresolvedAsset, RawAsset};
+use crate::assets::{RawAssetOrAuto, Asset, AssetSource, Assets, IsBuilt, UnresolvedAsset, RawAsset};
 use crate::util::compress::gzipped;
 use crate::dependencies::resolve_with_dpkg;
 use crate::dh::dh_installsystemd;
@@ -196,7 +196,7 @@ pub struct PackageConfig {
     pub conf_files: Vec<String>,
     /// All of the files that are to be packaged.
     pub(crate) assets: Assets,
-    pub(crate) raw_assets: Option<Vec<RawAsset>>,
+    pub(crate) raw_assets: Vec<RawAssetOrAuto>,
 
     /// Added to usr/share/doc as a fallback
     pub readme_rel_path: Option<PathBuf>,
@@ -367,11 +367,7 @@ impl Config {
     }
 
     pub fn prepare_assets_before_build(&self, package_deb: &mut PackageConfig, listener: &dyn Listener) -> CDResult<()> {
-        package_deb.assets = if let Some(raw_assets) = package_deb.raw_assets.take() {
-            self.explicit_assets(raw_assets, package_deb, listener)?
-        } else {
-            self.implicit_assets(package_deb)?
-        };
+        package_deb.assets = self.explicit_assets(package_deb, listener)?;
 
         // https://wiki.debian.org/Multiarch/Implementation
         if package_deb.multiarch != Multiarch::None {
@@ -670,7 +666,7 @@ impl PackageConfig {
         Ok(Self {
             deb_version,
             default_timestamp,
-            raw_assets: deb.assets.take(),
+            raw_assets: deb.assets.take().unwrap_or_else(|| vec![RawAssetOrAuto::Auto]),
             cargo_crate_name: cargo_package.name.clone(),
             deb_name: deb.name.take().unwrap_or_else(|| debian_package_name(&cargo_package.name)),
             license,
@@ -727,7 +723,7 @@ impl PackageConfig {
             priority: deb.priority.take().unwrap_or_else(|| "optional".to_owned()),
             architecture: debian_architecture_from_rust_triple(target).to_owned(),
             conf_files: deb.conf_files.take().unwrap_or_default(),
-            assets: Assets::new(),
+            assets: Assets::new(vec![], vec![]),
             triggers_file_rel_path: deb.triggers_file.take().map(PathBuf::from),
             changelog: deb.changelog.take(),
             maintainer_scripts_rel_path: deb.maintainer_scripts.take().map(PathBuf::from),
@@ -993,39 +989,46 @@ impl PackageConfig {
         Some(format_conffiles(&self.conf_files))
     }
 }
+const EXPECTED: &str = "Expected items in `assets` to be either `[source, dest, mode]` array, or `{source, dest, mode}` object, or `\"$auto\"`";
 
-impl TryFrom<CargoDebAssetArrayOrTable> for RawAsset {
+impl TryFrom<CargoDebAssetArrayOrTable> for RawAssetOrAuto {
     type Error = String;
 
     fn try_from(toml: CargoDebAssetArrayOrTable) -> Result<Self, Self::Error> {
         fn parse_chmod(mode: &str) -> Result<u32, String> {
             u32::from_str_radix(mode, 8).map_err(|e| format!("Unable to parse mode argument (third array element) as an octal number in an asset: {e}"))
         }
-        let a = match toml {
-            CargoDebAssetArrayOrTable::Table(a) => Self {
+        let raw_asset = match toml {
+            CargoDebAssetArrayOrTable::Table(a) => Self::RawAsset(RawAsset {
                 source_path: a.source.into(),
                 target_path: a.dest.into(),
                 chmod: parse_chmod(&a.mode)?,
-            },
+            }),
             CargoDebAssetArrayOrTable::Array(a) => {
                 let mut a = a.into_iter();
-                Self {
+                Self::RawAsset(RawAsset {
                     source_path: PathBuf::from(a.next().ok_or("Missing source path (first array element) in an asset in Cargo.toml")?),
                     target_path: PathBuf::from(a.next().ok_or("missing dest path (second array entry) for asset in Cargo.toml. Use something like \"usr/local/bin/\".")?),
                     chmod: parse_chmod(&a.next().ok_or("Missing mode (third array element) in an asset")?)?
-                }
+                })
+            },
+            CargoDebAssetArrayOrTable::Auto(s) if s == "$auto" => Self::Auto,
+            CargoDebAssetArrayOrTable::Auto(bad) => {
+                return Err(format!("{EXPECTED}, but found a string: '{bad}'"));
             },
             CargoDebAssetArrayOrTable::Invalid(bad) => {
-                return Err(format!("Expected assets array to contain either an array of 3 strings, or a `{{source, dest, mode}}` object, but found: {bad}"));
+                return Err(format!("{EXPECTED}, but found {}: {bad}", bad.type_str()));
             },
         };
-        if let Some(msg) = is_trying_to_customize_target_path(&a.source_path) {
-            return Err(format!("Please only use `target/release` path prefix for built products, not `{}`.
-{msg}
-The `target/release` is treated as a special prefix, and will be replaced dynamically by cargo-deb with the actual target directory path used by the build.
-", a.source_path.display()));
+        if let Self::RawAsset(a) = &raw_asset {
+            if let Some(msg) = is_trying_to_customize_target_path(&a.source_path) {
+                return Err(format!("Please only use `target/release` path prefix for built products, not `{}`.
+    {msg}
+    The `target/release` is treated as a special prefix, and will be replaced dynamically by cargo-deb with the actual target directory path used by the build.
+    ", a.source_path.display()));
+            }
         }
-        Ok(a)
+        Ok(raw_asset)
     }
 }
 
@@ -1076,10 +1079,22 @@ fn debian_package_name(crate_name: &str) -> String {
 }
 
 impl Config {
-    fn explicit_assets(&self, assets: Vec<RawAsset>, package_deb: &PackageConfig, listener: &dyn Listener) -> CDResult<Assets> {
+    fn explicit_assets(&self, package_deb: &mut PackageConfig, listener: &dyn Listener) -> CDResult<Assets> {
         let custom_profile_target_dir = self.build_profile_override.as_deref().map(|profile| format!("target/{profile}"));
+
+        let assets = std::mem::take(&mut package_deb.raw_assets);
+        let mut has_auto = false;
+
         // Treat all explicit assets as unresolved until after the build step
-        let unresolved_assets = assets.into_iter().map(|RawAsset { source_path, mut target_path, chmod }| {
+        let unresolved_assets = assets.into_iter().filter_map(|asset_or_auto| {
+            match asset_or_auto {
+                RawAssetOrAuto::Auto => {
+                    has_auto = true;
+                    None
+                },
+                RawAssetOrAuto::RawAsset(asset) => Some(asset),
+            }
+        }).map(|RawAsset { source_path, mut target_path, chmod }| {
             // target/release is treated as a magic prefix that resolves to any profile
             let target_artifact_rel_path = source_path.strip_prefix("target/release").ok()
                 .or_else(|| source_path.strip_prefix(custom_profile_target_dir.as_ref()?).ok());
@@ -1097,16 +1112,19 @@ impl Config {
                 if let Ok(lib_file_name) = target_path.strip_prefix("usr/lib") {
                     let lib_dir = package_deb.library_install_dir(self.rust_target_triple());
                     if !target_path.starts_with(&lib_dir) {
-                        target_path = lib_dir.join(lib_file_name);
+                        let new_path = lib_dir.join(lib_file_name);
+                        log::debug!("multiarch: changed {} to {}", target_path.display(), new_path.display());
+                        target_path = new_path;
                     }
                 }
             }
             Ok(UnresolvedAsset::new(source_path, target_path, chmod, is_built, is_example))
         }).collect::<CDResult<Vec<_>>>()?;
-        Ok(Assets::with_unresolved_assets(unresolved_assets))
+        let resolved = if has_auto { self.implicit_assets(package_deb)? } else { vec![] };
+        Ok(Assets::new(unresolved_assets, resolved))
     }
 
-    fn implicit_assets(&self, package_deb: &PackageConfig) -> CDResult<Assets> {
+    fn implicit_assets(&self, package_deb: &PackageConfig) -> CDResult<Vec<Asset>> {
         let mut implied_assets: Vec<_> = self.build_targets.iter()
             .filter_map(|t| {
                 if t.crate_types.iter().any(|ty| ty == "bin") && t.kind.iter().any(|k| k == "bin") {
@@ -1143,7 +1161,7 @@ impl Config {
                 .join(path.file_name().ok_or("bad README path")?);
             implied_assets.push(Asset::new(AssetSource::Path(path), target_path, 0o644, IsBuilt::No, false));
         }
-        Ok(Assets::with_resolved_assets(implied_assets))
+        Ok(implied_assets)
     }
 
     fn find_is_built_file_in_package(&self, rel_path: &Path, expected_kind: &str) -> IsBuilt {

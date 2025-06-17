@@ -29,10 +29,10 @@ changelog = "changelog"
 default-features = false
 features = ["example_debian_build"]
 
-[package.metadata.deb.variants.debug]
+[package.metadata.deb.variants.auto_assets]
 assets =  [
     # binary
-    ["target/release/example", "usr/bin/", "755"],
+    "$auto",
     # assets
     ["assets/*", "var/lib/example", "644"],
     ["target/release/assets/*", "var/lib/example", "644"],

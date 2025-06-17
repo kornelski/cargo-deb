@@ -266,7 +266,7 @@ fn run_cargo_deb_command_on_example_dir_with_separate_debug_symbols() {
 #[test]
 #[cfg(feature = "lzma")]
 fn run_cargo_deb_command_on_example_dir_with_variant() {
-    let args = ["--variant=debug", "--no-strip"];
+    let args = ["--variant=auto_assets", "--no-strip"];
     let (_bdir, deb_path) = cargo_deb("example/Cargo.toml", &args);
 
     let ardir = tempfile::tempdir().unwrap();
@@ -290,7 +290,7 @@ fn run_cargo_deb_command_on_example_dir_with_variant() {
         .status().unwrap().success());
 
     let control = fs::read_to_string(cdir.path().join("control")).unwrap();
-    assert!(control.contains("Package: example-debug\n"), "Control is: {control:?}");
+    assert!(control.contains("Package: example-auto-assets\n"), "Control is: {control:?}");
     assert!(control.contains("Version: 0.1.0-1\n"));
     assert!(control.contains("Section: utils\n"));
     assert!(control.contains("Architecture: "));
@@ -306,8 +306,8 @@ fn run_cargo_deb_command_on_example_dir_with_variant() {
     assert!(ddir.path().join("var/lib/example/1.txt").exists());
     assert!(ddir.path().join("var/lib/example/2.txt").exists());
     assert!(ddir.path().join("var/lib/example/4.txt").exists());
-    assert!(ddir.path().join("usr/share/doc/example-debug/copyright").exists());
-    assert!(ddir.path().join("usr/share/doc/example-debug/changelog.Debian.gz").exists());
+    assert!(ddir.path().join("usr/share/doc/example-auto-assets/copyright").exists());
+    assert!(ddir.path().join("usr/share/doc/example-auto-assets/changelog.Debian.gz").exists());
     assert!(ddir.path().join("usr/bin/example").exists());
 }
 

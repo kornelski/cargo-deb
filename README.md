@@ -54,7 +54,7 @@ Everything is optional:
 - **revision**: An additional version of the Debian package (when the package is updated more often than the project). It defaults to "1", but can be set to an empty string to omit the revision. Can be set via `--deb-revision` on the command line.
 - **section**: The [application category](https://packages.debian.org/bookworm/) that the software belongs to.
 - **priority**: Defines if the package is `required` or `optional`.
-- **assets**: Files to be included in the package and the permissions to assign them. If assets are not specified, then defaults are taken from binaries listed in `[[bin]]` (copied to `/usr/bin/`) and package `readme` (copied to `usr/share/doc/…`).
+- **assets**: Files to be included in the package and the permissions to assign them. If assets are not specified, they default to `["$auto"]`, which takes binaries built by Cargo (copied to `/usr/bin/`) and the package's `readme` (copied to `usr/share/doc/…`).
     1. `source`: the first argument of each asset is the location of that asset in the Rust project. Glob patterns are allowed. Always use `target/release/` path prefix for packaging binaries built by Cargo, *even if that's not the real path* to your target directory. Cargo-deb uses this prefix to detect what to compile, and will replace it with the actual target dir path, taking into account cross-compilation, build profiles, workspaces, `CARGO_TARGET_DIR`, custom configs, etc. If you try to "fix" the hardcoded `target/release` paths, you will break cargo-deb, and make it package stale files and mishandle debug info.
     2. `dest`: the second argument is where the file will be copied. If it starts with `usr/lib`, it will be changed to `usr/lib/$tuple` when multiarch option is enabled.
         - If is argument ends with `/` it will be inferred that the target is the directory where the file will be copied.
@@ -91,6 +91,7 @@ assets = [
     # both array and object syntaxes are equivalent:
     { source = "README.md", dest = "usr/share/doc/cargo-deb/README", mode = "644"},
 ]
+# assets = ["$auto"] # the default if assets are not specified
 ```
 
 ## Advanced usage
@@ -116,6 +117,8 @@ When defining a variant it can be useful to also define different assets. If the
 - **merge-assets.by.src**: Merges this list of assets to the parent list of assets, joining on the source path. Will replace both the destination path and permissions.
 
 **Note**: Using both `append`, and a `by.*` option are allowed, w/ the former being applied before the latter.
+
+The special `"$auto"` entry is not expanded before merging. Explicit paths take precedence over `"$auto"`.
 
 #### Example of `merge-assets`
 
