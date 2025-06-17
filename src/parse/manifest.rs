@@ -117,7 +117,7 @@ impl DependencyList {
 
 /// Type-alias for list of assets
 ///
-pub(crate) type AssetList = Vec<RawAsset>;
+pub(crate) type RawAssetList = Vec<RawAsset>;
 
 /// Type-alias for a merge map,
 ///
@@ -161,7 +161,7 @@ pub(crate) struct CargoDeb {
     pub priority: Option<String>,
     pub revision: Option<String>,
     pub conf_files: Option<Vec<String>>,
-    pub assets: Option<AssetList>,
+    pub assets: Option<RawAssetList>,
     pub merge_assets: Option<MergeAssets>,
     pub triggers_file: Option<String>,
     pub maintainer_scripts: Option<String>,
@@ -181,7 +181,7 @@ pub(crate) struct CargoDeb {
 pub(crate) struct MergeAssets {
     /// Merge assets by appending this list,
     ///
-    pub append: Option<AssetList>,
+    pub append: Option<RawAssetList>,
     /// Merge assets using the src as the key,
     ///
     pub by: Option<MergeByKey>,
@@ -192,15 +192,15 @@ pub(crate) struct MergeAssets {
 #[derive(Clone, Debug, Deserialize)]
 pub(crate) enum MergeByKey {
     #[serde(rename = "src")]
-    Src(AssetList),
+    Src(RawAssetList),
     #[serde(rename = "dest")]
-    Dest(AssetList),
+    Dest(RawAssetList),
 }
 
 impl MergeByKey {
     /// Merges w/ a parent asset list
     ///
-    fn merge(self, parent: &AssetList) -> AssetList {
+    fn merge(self, parent: &RawAssetList) -> RawAssetList {
         let merge_map = {
             parent.iter().fold(BTreeMap::new(), |parent, asset| {
                 self.prep_parent_item(parent, asset)
@@ -226,7 +226,7 @@ impl MergeByKey {
 
     /// Merges w/ a parent merge map and returns the resulting asset list,
     ///
-    fn merge_with(&self, parent: MergeMap<'_>) -> AssetList {
+    fn merge_with(&self, parent: MergeMap<'_>) -> RawAssetList {
         match self {
             Self::Src(assets) => assets.iter()
                 .fold(parent, |mut acc, RawAsset { source_path: src,target_path: dest, chmod: perm }| {
