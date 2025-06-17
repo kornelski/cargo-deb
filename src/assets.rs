@@ -1,3 +1,4 @@
+use std::fmt;
 use crate::config::{is_glob_pattern, PackageConfig};
 use crate::error::{CDResult, CargoDebError};
 use crate::listener::Listener;
@@ -239,6 +240,30 @@ pub struct AssetCommon {
     pub chmod: u32,
     pub(crate) is_example: bool,
     is_built: IsBuilt,
+}
+
+pub(crate) struct AssetFmt<'a>(pub &'a Asset, pub &'a Path);
+
+impl fmt::Display for AssetFmt<'_> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let AssetFmt(asset, base_dir) = self;
+
+        let mut src = asset.source.path();
+        let action = asset.processed_from.as_ref().map(|proc| {
+            src = proc.original_path.as_deref().or(src);
+            proc.action
+        });
+        if let Some(src) = src {
+            write!(f, "{} ", src.strip_prefix(base_dir).unwrap_or(src).display())?;
+        }
+        if let Some(action) = action {
+            write!(f, "({action}{}) ", if asset.c.is_built() {"; built"} else {""})?;
+        } else if asset.c.is_built() {
+            write!(f, "(built) ")?;
+        }
+        write!(f, "-> {}", asset.c.target_path.display())?;
+        Ok(())
+    }
 }
 
 #[derive(Debug, Clone)]

@@ -1,5 +1,5 @@
+use crate::assets::{AssetFmt, RawAssetOrAuto, Asset, AssetSource, Assets, IsBuilt, UnresolvedAsset, RawAsset};
 use crate::assets::is_dynamic_library_filename;
-use crate::assets::{RawAssetOrAuto, Asset, AssetSource, Assets, IsBuilt, UnresolvedAsset, RawAsset};
 use crate::util::compress::gzipped;
 use crate::dependencies::resolve_with_dpkg;
 use crate::dh::dh_installsystemd;
