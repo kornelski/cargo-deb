@@ -1,4 +1,4 @@
-use crate::config::{Config, PackageConfig};
+use crate::config::{BuildEnvironment, PackageConfig};
 use crate::deb::tar::Tarball;
 use crate::dh::{dh_installsystemd, dh_lib};
 use crate::error::{CDResult, CargoDebError};
@@ -23,7 +23,7 @@ impl<'l, W: Write> ControlArchiveBuilder<'l, W> {
     }
 
     /// Generates an uncompressed tar archive with `control`, and others
-    pub fn generate_archive(&mut self, config: &Config, package_deb: &PackageConfig) -> CDResult<()> {
+    pub fn generate_archive(&mut self, config: &BuildEnvironment, package_deb: &PackageConfig) -> CDResult<()> {
         self.add_control(&package_deb.generate_control(config)?)?;
 
         if let Some(files) = package_deb.conf_files() {
@@ -58,7 +58,7 @@ impl<'l, W: Write> ControlArchiveBuilder<'l, W> {
     /// When `systemd_units` is configured, user supplied `maintainer_scripts` must
     /// contain a `#DEBHELPER#` token at the point where shell script fragments
     /// should be inserted.
-    fn generate_scripts(&mut self, config: &Config, package_deb: &PackageConfig) -> CDResult<()> {
+    fn generate_scripts(&mut self, config: &BuildEnvironment, package_deb: &PackageConfig) -> CDResult<()> {
         if let Some(ref maintainer_scripts_dir) = package_deb.maintainer_scripts_rel_path {
             let maintainer_scripts_dir = config.path_in_package(maintainer_scripts_dir);
             let mut scripts = ScriptFragments::with_capacity(0);
@@ -131,7 +131,7 @@ impl<'l, W: Write> ControlArchiveBuilder<'l, W> {
         self.add_file_with_log("./conffiles".as_ref(), list.as_bytes(), 0o644, None)
     }
 
-    fn add_triggers_file(&mut self, config: &Config, rel_path: &Path) -> CDResult<()> {
+    fn add_triggers_file(&mut self, config: &BuildEnvironment, rel_path: &Path) -> CDResult<()> {
         let path = config.path_in_package(rel_path);
         let content = match fs::read(&path) {
             Ok(p) => p,
@@ -207,10 +207,10 @@ mod tests {
 
     #[track_caller]
     #[cfg(test)]
-    fn prepare<'l, W: Write>(dest: W, package_name: Option<&str>, mock_listener: &'l mut MockListener) -> (Config, PackageConfig, ControlArchiveBuilder<'l, W>) {
+    fn prepare<'l, W: Write>(dest: W, package_name: Option<&str>, mock_listener: &'l mut MockListener) -> (BuildEnvironment, PackageConfig, ControlArchiveBuilder<'l, W>) {
         mock_listener.expect_info().return_const(());
 
-        let (mut config, mut package_deb) = Config::from_manifest(
+        let (mut config, mut package_deb) = BuildEnvironment::from_manifest(
             Some(Path::new("test-resources/testroot/Cargo.toml")),
             package_name,
             None,

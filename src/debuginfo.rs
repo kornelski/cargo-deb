@@ -1,5 +1,5 @@
 use crate::assets::{Asset, AssetSource, IsBuilt, ProcessedFrom};
-use crate::config::{Config, DebugSymbols, PackageConfig};
+use crate::config::{BuildEnvironment, DebugSymbols, PackageConfig};
 use crate::error::{CDResult, CargoDebError};
 use crate::listener::Listener;
 use crate::parse::cargo::CargoConfig;
@@ -18,7 +18,7 @@ fn ensure_success(status: ExitStatus) -> io::Result<()> {
 }
 
 /// Strips the binary that was created with cargo
-pub fn strip_binaries(config: &mut Config, package_deb: &mut PackageConfig, rust_target_triple: Option<&str>, listener: &dyn Listener) -> CDResult<()> {
+pub fn strip_binaries(config: &mut BuildEnvironment, package_deb: &mut PackageConfig, rust_target_triple: Option<&str>, listener: &dyn Listener) -> CDResult<()> {
     let mut cargo_config = None;
     let objcopy_tmp;
     let strip_tmp;

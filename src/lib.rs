@@ -42,7 +42,7 @@ pub(crate) mod parse {
     pub(crate) mod cargo;
     pub(crate) mod manifest;
 }
-pub use crate::config::{Config, DebugSymbols, PackageConfig};
+pub use crate::config::{BuildEnvironment, DebugSymbols, PackageConfig};
 pub use crate::deb::ar::DebArchive;
 pub use crate::error::*;
 pub use crate::util::compress;
@@ -104,7 +104,7 @@ impl CargoDeb {
         }
 
         let root_manifest_path = self.options.manifest_path.as_deref().map(Path::new);
-        let (mut config, mut package_deb) = Config::from_manifest(
+        let (mut config, mut package_deb) = BuildEnvironment::from_manifest(
             root_manifest_path,
             self.options.selected_package_name.as_deref(),
             self.options.output_path,
@@ -264,7 +264,7 @@ pub fn install_deb(path: &Path) -> CDResult<()> {
     Ok(())
 }
 
-pub fn write_deb(config: &Config, package_deb: &PackageConfig, &compress::CompressConfig { fast, compress_type, compress_system, rsyncable }: &compress::CompressConfig, listener: &dyn Listener) -> Result<PathBuf, CargoDebError> {
+pub fn write_deb(config: &BuildEnvironment, package_deb: &PackageConfig, &compress::CompressConfig { fast, compress_type, compress_system, rsyncable }: &compress::CompressConfig, listener: &dyn Listener) -> Result<PathBuf, CargoDebError> {
     let (control_builder, data_result) = rayon::join(
         move || {
             // The control archive is the metadata for the package manager
@@ -303,7 +303,7 @@ pub fn write_deb(config: &Config, package_deb: &PackageConfig, &compress::Compre
 }
 
 /// Builds a binary with `cargo build`
-pub fn cargo_build(config: &Config, rust_target_triple: Option<&str>, build_command: &str, build_flags: &[String], verbose: bool, listener: &dyn Listener) -> CDResult<()> {
+pub fn cargo_build(config: &BuildEnvironment, rust_target_triple: Option<&str>, build_command: &str, build_flags: &[String], verbose: bool, listener: &dyn Listener) -> CDResult<()> {
     let mut cmd = Command::new("cargo");
     cmd.current_dir(&config.cargo_run_current_dir);
     cmd.args(build_command.split(' ')

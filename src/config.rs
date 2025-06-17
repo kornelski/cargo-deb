@@ -87,7 +87,7 @@ fn match_architecture(spec: ArchSpec, target_arch: &str) -> CDResult<bool> {
 #[derive(Debug)]
 #[non_exhaustive]
 /// Cargo deb configuration read from the manifest and cargo metadata
-pub struct Config {
+pub struct BuildEnvironment {
     /// Directory where `Cargo.toml` is located. It's a subdirectory in workspaces.
     pub package_manifest_dir: PathBuf,
     /// Run `cargo` commands from this dir, or things may subtly break
@@ -246,7 +246,7 @@ pub enum Multiarch {
     Foreign,
 }
 
-impl Config {
+impl BuildEnvironment {
     /// Makes a new config from `Cargo.toml` in the `manifest_path`
     ///
     /// `None` target means the host machine's architecture.
@@ -872,7 +872,7 @@ impl PackageConfig {
         });
     }
 
-    fn extended_description(&self, config: &Config) -> CDResult<Option<Cow<'_, str>>> {
+    fn extended_description(&self, config: &BuildEnvironment) -> CDResult<Option<Cow<'_, str>>> {
         let path = match &self.extended_description {
             ExtendedDescription::None => return Ok(None),
             ExtendedDescription::String(s) => return Ok(Some(s.as_str().into())),
@@ -885,7 +885,7 @@ impl PackageConfig {
     }
 
     /// Generates the control file that obtains all the important information about the package.
-    pub fn generate_control(&self, config: &Config) -> CDResult<Vec<u8>> {
+    pub fn generate_control(&self, config: &BuildEnvironment) -> CDResult<Vec<u8>> {
         // Create and return the handle to the control file with write access.
         let mut control: Vec<u8> = Vec::with_capacity(1024);
 
@@ -1092,7 +1092,7 @@ fn debian_package_name(crate_name: &str) -> String {
     }).collect()
 }
 
-impl Config {
+impl BuildEnvironment {
     fn explicit_assets(&self, package_deb: &mut PackageConfig, listener: &dyn Listener) -> CDResult<Assets> {
         let custom_profile_target_dir = self.build_profile_override.as_deref().map(|profile| format!("target/{profile}"));
 
@@ -1282,7 +1282,7 @@ mod tests {
         // supply a systemd unit file as if it were available on disk
         let _g = add_test_fs_paths(&[to_canon_static_str("cargo-deb.service")]);
 
-        let (config, mut package_deb) = Config::from_manifest(Some(Path::new("Cargo.toml")), None, None, None, None, DebConfigOverrides::default(), None, None, None, CargoLockingFlags::default(), &mock_listener).unwrap();
+        let (config, mut package_deb) = BuildEnvironment::from_manifest(Some(Path::new("Cargo.toml")), None, None, None, None, DebConfigOverrides::default(), None, None, None, CargoLockingFlags::default(), &mock_listener).unwrap();
         config.prepare_assets_before_build(&mut package_deb, &mock_listener).unwrap();
 
         let num_unit_assets = package_deb.assets.resolved.iter()
@@ -1300,7 +1300,7 @@ mod tests {
         // supply a systemd unit file as if it were available on disk
         let _g = add_test_fs_paths(&[to_canon_static_str("cargo-deb.service")]);
 
-        let (config, mut package_deb) = Config::from_manifest(Some(Path::new("Cargo.toml")), None, None, None, None, DebConfigOverrides::default(), None, None, None, CargoLockingFlags::default(), &mock_listener).unwrap();
+        let (config, mut package_deb) = BuildEnvironment::from_manifest(Some(Path::new("Cargo.toml")), None, None, None, None, DebConfigOverrides::default(), None, None, None, CargoLockingFlags::default(), &mock_listener).unwrap();
         config.prepare_assets_before_build(&mut package_deb, &mock_listener).unwrap();
 
         package_deb.systemd_units.get_or_insert(vec![SystemdUnitsConfig::default()]);
