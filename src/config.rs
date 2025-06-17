@@ -226,6 +226,7 @@ pub enum DebugSymbols {
 
 /// Replace config values via command-line
 #[derive(Debug, Clone, Default)]
+#[non_exhaustive]
 pub struct DebConfigOverrides {
     pub deb_version: Option<String>,
     pub deb_revision: Option<String>,
@@ -234,6 +235,8 @@ pub struct DebConfigOverrides {
     pub features: Vec<String>,
     pub no_default_features: bool,
     pub all_features: bool,
+    pub(crate) systemd_units: Option<Vec<SystemdUnitsConfig>>,
+    pub(crate) maintainer_scripts_rel_path: Option<PathBuf>,
 }
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Default)]
@@ -380,12 +383,14 @@ impl BuildEnvironment {
             cargo_run_current_dir,
         };
 
-        let package_deb = PackageConfig::new(deb, cargo_package, listener, default_timestamp, overrides, config.rust_target_triple(), multiarch)?;
+        let mut package_deb = PackageConfig::new(deb, cargo_package, listener, default_timestamp, overrides, config.rust_target_triple(), multiarch)?;
+
+        config.prepare_assets_before_build(&mut package_deb, listener)?;
 
         Ok((config, package_deb))
     }
 
-    pub fn prepare_assets_before_build(&self, package_deb: &mut PackageConfig, listener: &dyn Listener) -> CDResult<()> {
+    fn prepare_assets_before_build(&self, package_deb: &mut PackageConfig, listener: &dyn Listener) -> CDResult<()> {
         package_deb.assets = self.explicit_assets(package_deb, listener)?;
 
         // https://wiki.debian.org/Multiarch/Implementation
@@ -745,13 +750,13 @@ impl PackageConfig {
             assets: Assets::new(vec![], vec![]),
             triggers_file_rel_path: deb.triggers_file.take().map(PathBuf::from),
             changelog: deb.changelog.take(),
-            maintainer_scripts_rel_path: deb.maintainer_scripts.take().map(PathBuf::from),
+            maintainer_scripts_rel_path: overrides.maintainer_scripts_rel_path.or_else(|| deb.maintainer_scripts.take().map(PathBuf::from)),
             preserve_symlinks: deb.preserve_symlinks.unwrap_or(false),
-            systemd_units: match deb.systemd_units.take() {
+            systemd_units: overrides.systemd_units.or_else(|| match deb.systemd_units.take() {
                 None => None,
                 Some(SystemUnitsSingleOrMultiple::Single(s)) => Some(vec![s]),
                 Some(SystemUnitsSingleOrMultiple::Multi(v)) => Some(v),
-            },
+            }),
             multiarch,
         })
     }
@@ -1301,11 +1306,10 @@ mod tests {
         // supply a systemd unit file as if it were available on disk
         let _g = add_test_fs_paths(&[to_canon_static_str("cargo-deb.service")]);
 
-        let (config, mut package_deb) = BuildEnvironment::from_manifest(BuildOptions {
+        let (_config, package_deb) = BuildEnvironment::from_manifest(BuildOptions {
             root_manifest_path: Some(Path::new("Cargo.toml")),
             ..Default::default()
         }, &mock_listener).unwrap();
-        config.prepare_assets_before_build(&mut package_deb, &mock_listener).unwrap();
 
         let num_unit_assets = package_deb.assets.resolved.iter()
             .filter(|a| a.c.target_path.starts_with("lib/systemd/system/"))
@@ -1326,7 +1330,6 @@ mod tests {
             root_manifest_path: Some(Path::new("Cargo.toml")),
             ..Default::default()
         }, &mock_listener).unwrap();
-        config.prepare_assets_before_build(&mut package_deb, &mock_listener).unwrap();
 
         package_deb.systemd_units.get_or_insert(vec![SystemdUnitsConfig::default()]);
         package_deb.maintainer_scripts_rel_path.get_or_insert(PathBuf::new());

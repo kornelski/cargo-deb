@@ -116,10 +116,10 @@ impl CargoDeb {
                 compress_debug_symbols: self.options.compress_debug_symbols,
                 cargo_locking_flags: self.options.cargo_locking_flags,
                 multiarch: self.options.multiarch,
+                ..Default::default()
             },
             listener,
         )?;
-        config.prepare_assets_before_build(&mut package_deb, listener)?;
 
         if !self.options.no_build {
             config.set_cargo_build_flags_for_package(&package_deb, &mut self.options.cargo_build_flags);

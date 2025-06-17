@@ -111,14 +111,16 @@ fn main() -> ExitCode {
         output_path: matches.get_one::<String>("output").cloned(),
         selected_package_name: matches.get_one::<String>("package").cloned(),
         manifest_path: matches.get_one::<String>("manifest-path").cloned(),
-        overrides: cargo_deb::config::DebConfigOverrides {
-            deb_version,
-            deb_revision,
-            maintainer: matches.get_one::<String>("maintainer").cloned(),
-            section: matches.get_one::<String>("section").cloned(),
-            features: matches.get_many::<String>("features").unwrap_or_default().cloned().collect(),
-            no_default_features: matches.get_flag("no-default-features"),
-            all_features: matches.get_flag("all-features"),
+        overrides: {
+            let mut tmp = cargo_deb::config::DebConfigOverrides::default();
+            tmp.deb_version = deb_version;
+            tmp.deb_revision = deb_revision;
+            tmp.maintainer = matches.get_one::<String>("maintainer").cloned();
+            tmp.section = matches.get_one::<String>("section").cloned();
+            tmp.features = matches.get_many::<String>("features").unwrap_or_default().cloned().collect();
+            tmp.no_default_features = matches.get_flag("no-default-features");
+            tmp.all_features = matches.get_flag("all-features");
+            tmp
         },
         compress_type,
         compress_system: matches.get_flag("compress-system"),

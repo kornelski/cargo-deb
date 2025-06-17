@@ -212,7 +212,7 @@ mod tests {
 
         mock_listener.expect_info().return_const(());
 
-        let (mut config, mut package_deb) = BuildEnvironment::from_manifest(
+        let (mut config, package_deb) = BuildEnvironment::from_manifest(
             BuildOptions {
                 root_manifest_path: Some(Path::new("test-resources/testroot/Cargo.toml")),
                 selected_package_name: package_name,
@@ -220,7 +220,6 @@ mod tests {
             },
             mock_listener,
         ).unwrap();
-        config.prepare_assets_before_build(&mut package_deb, mock_listener).unwrap();
 
         // make the absolute manifest dir relative to our crate root dir
         // as the static paths we receive from the caller cannot be set
