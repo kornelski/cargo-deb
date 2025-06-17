@@ -196,7 +196,6 @@ pub struct PackageConfig {
     pub conf_files: Vec<String>,
     /// All of the files that are to be packaged.
     pub(crate) assets: Assets,
-    pub(crate) raw_assets: Vec<RawAssetOrAuto>,
 
     /// Added to usr/share/doc as a fallback
     pub readme_rel_path: Option<PathBuf>,
@@ -383,15 +382,17 @@ impl BuildEnvironment {
             cargo_run_current_dir,
         };
 
-        let mut package_deb = PackageConfig::new(deb, cargo_package, listener, default_timestamp, overrides, config.rust_target_triple(), multiarch)?;
+        let arch = debian_architecture_from_rust_triple(config.rust_target_triple());
+        let assets = deb.assets.take().unwrap_or_else(|| vec![RawAssetOrAuto::Auto]);
+        let mut package_deb = PackageConfig::new(deb, cargo_package, listener, default_timestamp, overrides, arch, multiarch)?;
 
-        config.prepare_assets_before_build(&mut package_deb, listener)?;
+        config.add_assets(&mut package_deb, assets, listener)?;
 
         Ok((config, package_deb))
     }
 
-    fn prepare_assets_before_build(&self, package_deb: &mut PackageConfig, listener: &dyn Listener) -> CDResult<()> {
-        package_deb.assets = self.explicit_assets(package_deb, listener)?;
+    fn add_assets(&self, package_deb: &mut PackageConfig, assets: Vec<RawAssetOrAuto>, listener: &dyn Listener) -> CDResult<()> {
+        package_deb.assets = self.explicit_assets(package_deb, assets, listener)?;
 
         // https://wiki.debian.org/Multiarch/Implementation
         if package_deb.multiarch != Multiarch::None {
@@ -669,7 +670,7 @@ impl BuildEnvironment {
 }
 
 impl PackageConfig {
-    pub(crate) fn new(mut deb: CargoDeb, cargo_package: &mut cargo_toml::Package<CargoPackageMetadata>, listener: &dyn Listener, default_timestamp: u64, overrides: DebConfigOverrides, target: &str, multiarch: Multiarch) -> Result<Self, CargoDebError> {
+    pub(crate) fn new(mut deb: CargoDeb, cargo_package: &mut cargo_toml::Package<CargoPackageMetadata>, listener: &dyn Listener, default_timestamp: u64, overrides: DebConfigOverrides, architecture: &str, multiarch: Multiarch) -> Result<Self, CargoDebError> {
         let (license_file_rel_path, license_file_skip_lines) = parse_license_file(cargo_package, deb.license_file.as_ref())?;
         let mut license = cargo_package.license.take().map(|v| v.unwrap());
 
@@ -690,7 +691,6 @@ impl PackageConfig {
         Ok(Self {
             deb_version,
             default_timestamp,
-            raw_assets: deb.assets.take().unwrap_or_else(|| vec![RawAssetOrAuto::Auto]),
             cargo_crate_name: cargo_package.name.clone(),
             deb_name: deb.name.take().unwrap_or_else(|| debian_package_name(&cargo_package.name)),
             license,
@@ -745,7 +745,7 @@ impl PackageConfig {
             provides: deb.provides.take().map(DependencyList::into_depends_string),
             section: overrides.section.or_else(|| deb.section.take()),
             priority: deb.priority.take().unwrap_or_else(|| "optional".to_owned()),
-            architecture: debian_architecture_from_rust_triple(target).to_owned(),
+            architecture: architecture.to_owned(),
             conf_files: deb.conf_files.take().unwrap_or_default(),
             assets: Assets::new(vec![], vec![]),
             triggers_file_rel_path: deb.triggers_file.take().map(PathBuf::from),
@@ -1117,10 +1117,9 @@ fn debian_package_name(crate_name: &str) -> String {
 }
 
 impl BuildEnvironment {
-    fn explicit_assets(&self, package_deb: &mut PackageConfig, listener: &dyn Listener) -> CDResult<Assets> {
+    fn explicit_assets(&self, package_deb: &mut PackageConfig, assets: Vec<RawAssetOrAuto>, listener: &dyn Listener) -> CDResult<Assets> {
         let custom_profile_target_dir = self.build_profile_override.as_deref().map(|profile| format!("target/{profile}"));
 
-        let assets = std::mem::take(&mut package_deb.raw_assets);
         let mut has_auto = false;
 
         // Treat all explicit assets as unresolved until after the build step
