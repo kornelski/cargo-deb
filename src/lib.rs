@@ -104,8 +104,9 @@ impl CargoDeb {
         }
 
         let root_manifest_path = self.options.manifest_path.as_deref().map(Path::new);
-        let (mut config, mut package_deb) = BuildEnvironment::from_manifest(BuildOptions {
-                root_manifest_path: root_manifest_path,
+        let (mut config, mut package_deb) = BuildEnvironment::from_manifest(
+            BuildOptions {
+                root_manifest_path,
                 selected_package_name: self.options.selected_package_name.as_deref(),
                 deb_output_path: self.options.output_path,
                 rust_target_triple: self.options.target.as_deref(),

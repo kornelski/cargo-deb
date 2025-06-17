@@ -357,11 +357,11 @@ impl BuildEnvironment {
                 // Rust still adds debug bloat from the libstd
                 DebugSymbols::Strip
             },
-            _ if separate_debug_symbols => {
-                DebugSymbols::Separate { compress: compress_debug_symbols }
+            _ if separate_debug_symbols => DebugSymbols::Separate {
+                compress: compress_debug_symbols,
             },
             ManifestDebugFlags::SomeSymbolsAdded => DebugSymbols::Keep,
-            ManifestDebugFlags::Default => DebugSymbols::Strip
+            ManifestDebugFlags::Default => DebugSymbols::Strip,
         };
 
         let mut features = deb.features.take().unwrap_or_default();
@@ -422,7 +422,10 @@ impl BuildEnvironment {
     }
 
     pub fn set_cargo_build_flags_for_package(&self, package_deb: &PackageConfig, flags: &mut Vec<String>) {
-        flags.push(self.build_profile_override.as_deref().map(|p| format!("--profile={p}")).unwrap_or("--release".into()));
+        flags.push(
+            self.build_profile_override.as_deref().map(|p| format!("--profile={p}"))
+                .unwrap_or("--release".into()),
+        );
         flags.extend(self.cargo_locking_flags.flags().map(String::from));
 
         if flags.iter().any(|f| f == "--workspace" || f == "--all") {
@@ -468,11 +471,11 @@ impl BuildEnvironment {
             flags.push("--workspace".into());
         }
         flags.extend(build_bins.iter().map(|name| {
-            log::debug!("building bin for {}", name);
+            log::debug!("building bin for {name}");
             format!("--bin={name}")
         }));
         flags.extend(build_examples.iter().map(|name| {
-            log::debug!("building example for {}", name);
+            log::debug!("building example for {name}");
             format!("--example={name}")
         }));
         if build_libs {
@@ -589,7 +592,7 @@ impl BuildEnvironment {
                             target.mode,
                             IsBuilt::No,
                             false,
-                        ).processed("systemd", unit_dir.to_path_buf()));
+                        ).processed("systemd", unit_dir.clone()));
                     }
                 }
             }
@@ -670,7 +673,10 @@ impl BuildEnvironment {
 }
 
 impl PackageConfig {
-    pub(crate) fn new(mut deb: CargoDeb, cargo_package: &mut cargo_toml::Package<CargoPackageMetadata>, listener: &dyn Listener, default_timestamp: u64, overrides: DebConfigOverrides, architecture: &str, multiarch: Multiarch) -> Result<Self, CargoDebError> {
+    pub(crate) fn new(
+        mut deb: CargoDeb, cargo_package: &mut cargo_toml::Package<CargoPackageMetadata>, listener: &dyn Listener, default_timestamp: u64,
+        overrides: DebConfigOverrides, architecture: &str, multiarch: Multiarch,
+    ) -> Result<Self, CargoDebError> {
         let (license_file_rel_path, license_file_skip_lines) = parse_license_file(cargo_package, deb.license_file.as_ref())?;
         let mut license = cargo_package.license.take().map(|v| v.unwrap());
 
@@ -750,7 +756,8 @@ impl PackageConfig {
             assets: Assets::new(vec![], vec![]),
             triggers_file_rel_path: deb.triggers_file.take().map(PathBuf::from),
             changelog: deb.changelog.take(),
-            maintainer_scripts_rel_path: overrides.maintainer_scripts_rel_path.or_else(|| deb.maintainer_scripts.take().map(PathBuf::from)),
+            maintainer_scripts_rel_path: overrides.maintainer_scripts_rel_path
+                .or_else(|| deb.maintainer_scripts.take().map(PathBuf::from)),
             preserve_symlinks: deb.preserve_symlinks.unwrap_or(false),
             systemd_units: overrides.systemd_units.or_else(|| match deb.systemd_units.take() {
                 None => None,
@@ -1079,11 +1086,11 @@ fn is_trying_to_customize_target_path(p: &Path) -> Option<&'static str> {
         return None;
     };
     if subdir == "debug" {
-        return Some("Packaging of development-only binaries is intentionally unsupported in cargo-deb.\nTo add debug information or additional assertions use `[profile.release]` in `Cargo.toml` instead.")
+        return Some("Packaging of development-only binaries is intentionally unsupported in cargo-deb.\nTo add debug information or additional assertions use `[profile.release]` in `Cargo.toml` instead.");
     }
-    if subdir.to_str().unwrap_or_default().contains("-")
+    if subdir.to_str().unwrap_or_default().contains('-')
             && p.next() == Some(Component::Normal("release".as_ref())) {
-        return Some("Hardcoding of cross-compilation paths in the configuration is unnecessary, and counter-productive. cargo-deb understands cross-compilation natively and adjusts the path when you use --target.")
+        return Some("Hardcoding of cross-compilation paths in the configuration is unnecessary, and counter-productive. cargo-deb understands cross-compilation natively and adjusts the path when you use --target.");
     }
     None
 }
@@ -1117,7 +1124,7 @@ fn debian_package_name(crate_name: &str) -> String {
 }
 
 impl BuildEnvironment {
-    fn explicit_assets(&self, package_deb: &mut PackageConfig, assets: Vec<RawAssetOrAuto>, listener: &dyn Listener) -> CDResult<Assets> {
+    fn explicit_assets(&self, package_deb: &PackageConfig, assets: Vec<RawAssetOrAuto>, listener: &dyn Listener) -> CDResult<Assets> {
         let custom_profile_target_dir = self.build_profile_override.as_deref().map(|profile| format!("target/{profile}"));
 
         let mut has_auto = false;
