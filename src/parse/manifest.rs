@@ -373,6 +373,7 @@ pub(crate) struct CargoMetadataTarget {
 pub(crate) struct ManifestFound {
     pub build_targets: Vec<CargoMetadataTarget>,
     pub manifest_path: PathBuf,
+    pub workspace_root_manifest_path: PathBuf,
     pub root_manifest: Option<cargo_toml::Manifest<CargoPackageMetadata>>,
     pub target_dir: PathBuf,
     pub manifest: cargo_toml::Manifest<CargoPackageMetadata>,
@@ -429,22 +430,32 @@ fn pick_default_package_from_workspace(metadata: &CargoMetadata) -> Option<usize
     packages_with_deb_meta.next().is_none().then_some(expected_single_id)
 }
 
+fn parse_manifest_only(manifest_path: &Path) -> Result<cargo_toml::Manifest<CargoPackageMetadata>, CargoDebError> {
+    let manifest_bytes = fs::read(manifest_path)
+        .map_err(|e| CargoDebError::IoFile("unable to read manifest", e, manifest_path.to_owned()))?;
+
+    cargo_toml::Manifest::<CargoPackageMetadata>::from_slice_with_metadata(&manifest_bytes)
+            .map_err(|e| CargoDebError::TomlParsing(e, manifest_path.into()))
+}
+
 pub(crate) fn cargo_metadata(initial_manifest_path: Option<&Path>, selected_package_name: Option<&str>, cargo_locking_flags: CargoLockingFlags) -> Result<ManifestFound, CargoDebError> {
     let (metadata, cargo_run_current_dir) = run_cargo_metadata(initial_manifest_path, cargo_locking_flags)?;
     let (target_package, target_dir, workspace_root) = parse_metadata(metadata, selected_package_name)?;
 
-    let workspace_root_manifest_path = workspace_root.join("Cargo.toml");
-    let root_manifest = cargo_toml::Manifest::<CargoPackageMetadata>::from_path_with_metadata(workspace_root_manifest_path).ok();
     let manifest_path = Path::new(&target_package.manifest_path);
-    let manifest_bytes = fs::read(manifest_path).map_err(|e| CargoDebError::IoFile("unable to read manifest", e, manifest_path.to_owned()))?;
-    let mut manifest = cargo_toml::Manifest::<CargoPackageMetadata>::from_slice_with_metadata(&manifest_bytes)
-        .map_err(|e| CargoDebError::TomlParsing(e, manifest_path.into()))?;
-    let ws_root = root_manifest.as_ref().map(|ws| (ws, workspace_root.as_path()));
-    manifest.complete_from_path_and_workspace(manifest_path, ws_root)
+    let mut manifest = parse_manifest_only(manifest_path)?;
+
+    let workspace_root_manifest_path = workspace_root.join("Cargo.toml");
+    let root_manifest = if manifest.workspace.is_none() && manifest_path != workspace_root_manifest_path {
+        parse_manifest_only(&workspace_root_manifest_path).inspect_err(|e| log::error!("{e}")).ok()
+    } else { None };
+
+    manifest.complete_from_path_and_workspace(manifest_path, root_manifest.as_ref().map(|ws| (ws, workspace_root.as_path())))
         .map_err(move |e| CargoDebError::TomlParsing(e, manifest_path.to_path_buf()))?;
 
     Ok(ManifestFound {
         manifest_path: target_package.manifest_path,
+        workspace_root_manifest_path,
         build_targets: target_package.targets,
         root_manifest,
         target_dir,

@@ -298,6 +298,7 @@ impl BuildEnvironment {
         let ManifestFound {
             build_targets,
             root_manifest,
+            workspace_root_manifest_path,
             mut manifest_path,
             mut target_dir,
             mut manifest,
@@ -313,9 +314,6 @@ impl BuildEnvironment {
             timestamp
         };
 
-        manifest_path.pop();
-        let manifest_dir = manifest_path;
-
         // Cargo cross-compiles to a dir
         if let Some(rust_target_triple) = rust_target_triple {
             target_dir.push(rust_target_triple);
@@ -323,10 +321,19 @@ impl BuildEnvironment {
 
         let selected_profile = build_profile_override.as_deref().unwrap_or("release");
 
-        let manifest_debug = find_profile(&manifest, selected_profile)
-            .or_else(|| find_profile(root_manifest.as_ref()?, selected_profile))
+        let package_profile = find_profile(&manifest, selected_profile);
+        let root_profile = root_manifest.as_ref().and_then(|m| find_profile(m, selected_profile));
+        if package_profile.is_some() && root_profile.is_some() {
+            let rel_path = workspace_root_manifest_path.parent().and_then(|base| manifest_path.strip_prefix(base).ok()).unwrap_or(&manifest_path);
+            listener.warning(format!("The [profile.{selected_profile}] is in both the package and the root workspace.\n\
+                Picking root ({}) over the package ({}) for compatibility with Cargo", workspace_root_manifest_path.display(), rel_path.display()));
+        }
+
+        let manifest_debug = root_profile.or(package_profile)
             .map(debug_flags)
             .unwrap_or(ManifestDebugFlags::Default);
+
+        drop(workspace_root_manifest_path);
         drop(root_manifest);
 
         let cargo_package = manifest.package.as_mut().ok_or("bad package")?;
@@ -346,6 +353,9 @@ impl BuildEnvironment {
         } else {
             cargo_package.metadata.take().and_then(|m| m.deb).unwrap_or_default()
         };
+
+        manifest_path.pop();
+        let manifest_dir = manifest_path;
 
         let generate_dbgsym_package = generate_dbgsym_package.unwrap_or_else(|| deb.dbgsym.unwrap_or(false));
         let separate_option_name = if generate_dbgsym_package { "dbgsym" } else { "separate-debug-symbols" };
