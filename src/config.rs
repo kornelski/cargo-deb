@@ -333,15 +333,16 @@ impl BuildEnvironment {
 
         // If we build against a variant use that config and change the package name
         let mut deb = if let Some(variant) = config_variant {
-            // Use dash as underscore is not allowed in package names
-            cargo_package.name = format!("{}-{variant}", cargo_package.name);
             let mut deb = cargo_package.metadata.take()
                 .and_then(|m| m.deb).unwrap_or_default();
-            let variant = deb.variants
+            if deb.name.is_none() {
+                deb.name = Some(debian_package_name(&format!("{}-{variant}", cargo_package.name)));
+            }
+            deb.variants
                 .as_mut()
                 .and_then(|v| v.remove(variant))
-                .ok_or_else(|| CargoDebError::VariantNotFound(variant.to_string()))?;
-            variant.inherit_from(deb, listener)
+                .ok_or_else(|| CargoDebError::VariantNotFound(variant.to_string()))?
+                .inherit_from(deb, listener)
         } else {
             cargo_package.metadata.take().and_then(|m| m.deb).unwrap_or_default()
         };
