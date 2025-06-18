@@ -94,13 +94,13 @@ impl<'l, W: Write> ControlArchiveBuilder<'l, W> {
             for name in ["config", "preinst", "postinst", "prerm", "postrm", "templates"] {
                 let script_path;
                 let (contents, source_path) = if let Some(script) = scripts.remove(name) {
-                    (script, Some("systemd_units"))
+                    (script, Some(Path::new("systemd_units")))
                 } else {
                     script_path = maintainer_scripts_dir.join(name);
                     if !is_path_file(&script_path) {
                         continue;
                     }
-                    (read_file_to_bytes(&script_path)?, script_path.to_str())
+                    (read_file_to_bytes(&script_path)?, Some(script_path.as_path()))
                 };
 
                 // The config, postinst, postrm, preinst, and prerm
@@ -115,8 +115,9 @@ impl<'l, W: Write> ControlArchiveBuilder<'l, W> {
         Ok(())
     }
 
-    fn add_file_with_log(&mut self, name: &Path, contents: &[u8], permissions: u32, source_path: Option<&str>) -> CDResult<()> {
-        self.listener.info(format!("{} -> {}", source_path.unwrap_or("-"), name.display()));
+    fn add_file_with_log(&mut self, name: &Path, contents: &[u8], permissions: u32, source_path: Option<&Path>) -> CDResult<()> {
+        let source_path = source_path.and_then(|s| s.to_str()).unwrap_or("-");
+        self.listener.info(format!("Adding '{}' control-> {}", source_path, name.display()));
         self.archive.file(name, contents, permissions)
     }
 
@@ -137,7 +138,7 @@ impl<'l, W: Write> ControlArchiveBuilder<'l, W> {
             Ok(p) => p,
             Err(e) => return Err(CargoDebError::IoFile("triggers file", e, path)),
         };
-        self.add_file_with_log("./triggers".as_ref(), &content, 0o644, path.to_str())
+        self.add_file_with_log("./triggers".as_ref(), &content, 0o644, Some(&path))
     }
 }
 

@@ -1,4 +1,4 @@
-use crate::assets::AssetSource;
+use crate::assets::{Asset, AssetSource};
 use crate::error::{CDResult, CargoDebError};
 use crate::listener::Listener;
 use crate::PackageConfig;
@@ -29,22 +29,11 @@ impl<W: Write> Tarball<W> {
     pub fn archive_files(mut self, package_deb: &PackageConfig, rsyncable: bool, listener: &dyn Listener) -> CDResult<W> {
         let mut archive_data_added = 0;
         let mut prev_is_built = false;
+        let log_display_base_dir = std::env::current_dir().unwrap_or_default();
 
         debug_assert!(package_deb.assets.unresolved.is_empty());
         for asset in &package_deb.assets.resolved {
-            let mut log_line = format!("{} {}-> {}",
-                asset.processed_from.as_ref().and_then(|p| p.original_path.as_deref())
-                    .or(asset.source.path())
-                    .unwrap_or_else(|| Path::new("-")).display(),
-                asset.processed_from.as_ref().map(|p| p.action).unwrap_or_default(),
-                asset.c.target_path.display()
-            );
-            if let Some(len) = asset.source.file_size() {
-                let (size, unit) = human_size(len);
-                use std::fmt::Write;
-                let _ = write!(&mut log_line, " ({size}{unit})");
-            }
-            listener.info(log_line);
+            log_asset(asset, &log_display_base_dir, listener);
 
             if let AssetSource::Symlink(source_path) = &asset.source {
                 let link_name = fs::read_link(source_path)
@@ -138,6 +127,27 @@ impl<W: Write> Tarball<W> {
     pub fn into_inner(self) -> io::Result<W> {
         self.tar.into_inner()
     }
+}
+
+fn log_asset(asset: &Asset, log_display_base_dir: &Path, listener: &dyn Listener) {
+    let operation = if let AssetSource::Symlink(_) = &asset.source {
+        "Linking"
+    } else {
+        "Adding"
+    };
+    let mut log_line = format!("{operation} '{}' {}-> {}",
+        asset.processed_from.as_ref().and_then(|p| p.original_path.as_deref()).or(asset.source.path())
+            .map(|p| p.strip_prefix(&log_display_base_dir).unwrap_or(p))
+            .unwrap_or_else(|| Path::new("-")).display(),
+        asset.processed_from.as_ref().map(|p| p.action).unwrap_or_default(),
+        asset.c.target_path.display()
+    );
+    if let Some(len) = asset.source.file_size() {
+        let (size, unit) = human_size(len);
+        use std::fmt::Write;
+        let _ = write!(&mut log_line, " ({size}{unit})");
+    }
+    listener.info(log_line);
 }
 
 fn human_size(len: u64) -> (u64, &'static str) {

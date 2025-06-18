@@ -311,11 +311,16 @@ pub fn write_deb(config: &BuildEnvironment, package_deb: &PackageConfig, &compre
 
     let mut deb_contents = DebArchive::new(config.deb_output_path(package_deb), package_deb.default_timestamp)?;
 
+    let compressed_control_size = control_compressed.len();
     deb_contents.add_control(control_compressed)?;
-    let compressed_data_size = data_compressed.len();
+
+    let compressed_size = data_compressed.len() + compressed_control_size;
+    let original_size = original_data_size + compressed_control_size; // doesn't track control size
     listener.info(format!(
-        "compressed/original ratio {compressed_data_size}/{original_data_size} ({}%)",
-        compressed_data_size * 100 / original_data_size
+        "{}KB compressed to {}KB (by {}%)",
+        original_data_size / 1000,
+        compressed_size / 1000,
+        (original_size.saturating_sub(compressed_size)) * 100 / original_size,
     ));
     deb_contents.add_data(data_compressed)?;
     let generated = deb_contents.finish()?;
