@@ -291,12 +291,17 @@ pub fn install_deb(path: &Path) -> CDResult<()> {
 }
 
 pub fn write_deb(config: &BuildEnvironment, package_deb: &PackageConfig, &compress::CompressConfig { fast, compress_type, compress_system, rsyncable }: &compress::CompressConfig, listener: &dyn Listener) -> Result<PathBuf, CargoDebError> {
-    let (control_builder, data_result) = rayon::join(
+    let (deb_contents, data_result) = rayon::join(
         move || {
             // The control archive is the metadata for the package manager
             let mut control_builder = ControlArchiveBuilder::new(util::compress::select_compressor(fast, compress_type, compress_system)?, package_deb.default_timestamp, listener);
             control_builder.generate_archive(config, package_deb)?;
-            Ok::<_, CargoDebError>(control_builder)
+            let control_compressed = control_builder.finish()?.finish()?;
+
+            let mut deb_contents = DebArchive::new(config.deb_output_path(package_deb), package_deb.default_timestamp)?;
+            let compressed_control_size = control_compressed.len();
+            deb_contents.add_control(control_compressed)?;
+            Ok::<_, CargoDebError>((deb_contents, compressed_control_size))
         },
         move || {
             // Initialize the contents of the data archive (files that go into the filesystem).
@@ -307,14 +312,8 @@ pub fn write_deb(config: &BuildEnvironment, package_deb: &PackageConfig, &compre
             Ok::<_, CargoDebError>((compressed.finish()?, original_data_size))
         },
     );
-    let control_builder = control_builder?;
+    let (mut deb_contents, compressed_control_size) = deb_contents?;
     let (data_compressed, original_data_size) = data_result?;
-    let control_compressed = control_builder.finish()?.finish()?;
-
-    let mut deb_contents = DebArchive::new(config.deb_output_path(package_deb), package_deb.default_timestamp)?;
-
-    let compressed_control_size = control_compressed.len();
-    deb_contents.add_control(control_compressed)?;
 
     let compressed_size = data_compressed.len() + compressed_control_size;
     let original_size = original_data_size + compressed_control_size; // doesn't track control size

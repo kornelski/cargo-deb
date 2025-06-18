@@ -25,7 +25,6 @@ impl<W: Write> Tarball<W> {
     }
 
     /// Copies all the files to be packaged into the tar archive.
-    /// Returns MD5 hashes of files copied
     pub fn archive_files(mut self, package_deb: &PackageConfig, rsyncable: bool, listener: &dyn Listener) -> CDResult<W> {
         let mut archive_data_added = 0;
         let mut prev_is_built = false;
