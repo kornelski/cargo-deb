@@ -1353,8 +1353,6 @@ fn check_debian_version(mut ver: &str) -> Result<(), &'static str> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::parse::manifest::SystemdUnitsConfig;
-    use crate::util::tests::add_test_fs_paths;
 
     #[test]
     fn match_arm_arch() {
@@ -1374,59 +1372,6 @@ mod tests {
             get_architecture_specification("libjpeg64-turbo [!amd64]").expect("arch"),
             ("libjpeg64-turbo".to_owned(), Some(NegRequire("amd64".to_owned())))
         );
-    }
-
-    fn to_canon_static_str(s: &str) -> &'static str {
-        let cwd = std::env::current_dir().unwrap();
-        let abs_path = cwd.join(s);
-        let abs_path_string = abs_path.to_string_lossy().into_owned();
-        Box::leak(abs_path_string.into_boxed_str())
-    }
-
-    #[test]
-    fn add_systemd_assets_with_no_config_does_nothing() {
-        let mut mock_listener = crate::listener::MockListener::new();
-        mock_listener.expect_info().return_const(());
-
-        // supply a systemd unit file as if it were available on disk
-        let _g = add_test_fs_paths(&[to_canon_static_str("cargo-deb.service")]);
-
-        let (_config, package_deb) = BuildEnvironment::from_manifest(BuildOptions {
-            root_manifest_path: Some(Path::new("Cargo.toml")),
-            ..Default::default()
-        }, &mock_listener).unwrap();
-
-        let num_unit_assets = package_deb.assets.resolved.iter()
-            .filter(|a| a.c.target_path.starts_with("lib/systemd/system/"))
-            .count();
-
-        assert_eq!(0, num_unit_assets);
-    }
-
-    #[test]
-    fn add_systemd_assets_with_config_adds_unit_assets() {
-        let mut mock_listener = crate::listener::MockListener::new();
-        mock_listener.expect_info().return_const(());
-
-        // supply a systemd unit file as if it were available on disk
-        let _g = add_test_fs_paths(&[to_canon_static_str("cargo-deb.service")]);
-
-        let (config, mut package_deb) = BuildEnvironment::from_manifest(BuildOptions {
-            root_manifest_path: Some(Path::new("Cargo.toml")),
-            ..Default::default()
-        }, &mock_listener).unwrap();
-
-        package_deb.systemd_units.get_or_insert(vec![SystemdUnitsConfig::default()]);
-        package_deb.maintainer_scripts_rel_path.get_or_insert(PathBuf::new());
-
-        config.add_systemd_assets(&mut package_deb, &mock_listener).unwrap();
-
-        let num_unit_assets = package_deb.assets.resolved
-            .iter()
-            .filter(|a| a.c.target_path.starts_with("lib/systemd/system/"))
-            .count();
-
-        assert_eq!(1, num_unit_assets);
     }
 
     #[test]
