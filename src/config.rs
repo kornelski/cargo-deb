@@ -6,9 +6,9 @@ use crate::dh::dh_installsystemd;
 use crate::error::{CDResult, CargoDebError};
 use crate::listener::Listener;
 use crate::parse::cargo::CargoConfig;
-use crate::parse::manifest::{cargo_metadata, manifest_debug_flag, manifest_version_string, LicenseFile, ManifestDebugFlags};
+use crate::parse::manifest::{cargo_metadata, debug_flags, find_profile, manifest_version_string};
 use crate::parse::manifest::{CargoDeb, CargoDebAssetArrayOrTable, CargoMetadataTarget, CargoPackageMetadata, ManifestFound};
-use crate::parse::manifest::{DependencyList, SystemUnitsSingleOrMultiple, SystemdUnitsConfig};
+use crate::parse::manifest::{DependencyList, SystemUnitsSingleOrMultiple, SystemdUnitsConfig, LicenseFile, ManifestDebugFlags};
 use crate::util::ok_or::OkOrThen;
 use crate::util::pathbytes::AsUnixPathBytes;
 use crate::util::wordsplit::WordSplit;
@@ -265,6 +265,7 @@ pub struct BuildOptions<'a> {
     pub generate_dbgsym_package: Option<bool>,
     pub separate_debug_symbols: Option<bool>,
     pub compress_debug_symbols: Option<bool>,
+    pub strip_override: Option<bool>,
     pub cargo_locking_flags: CargoLockingFlags,
     pub multiarch: Multiarch,
 }
@@ -285,6 +286,7 @@ impl BuildEnvironment {
             separate_debug_symbols,
             generate_dbgsym_package,
             compress_debug_symbols,
+            strip_override,
             cargo_locking_flags,
             multiarch,
         }: BuildOptions,
@@ -321,9 +323,11 @@ impl BuildEnvironment {
 
         let selected_profile = build_profile_override.as_deref().unwrap_or("release");
 
-        let manifest_debug = manifest_debug_flag(&manifest, selected_profile)
-            .or_else(move || manifest_debug_flag(root_manifest.as_ref()?, selected_profile))
+        let manifest_debug = find_profile(&manifest, selected_profile)
+            .or_else(|| find_profile(root_manifest.as_ref()?, selected_profile))
+            .map(debug_flags)
             .unwrap_or(ManifestDebugFlags::Default);
+        drop(root_manifest);
 
         let cargo_package = manifest.package.as_mut().ok_or("bad package")?;
 
@@ -343,33 +347,69 @@ impl BuildEnvironment {
         };
 
         let generate_dbgsym_package = generate_dbgsym_package.unwrap_or_else(|| deb.dbgsym.unwrap_or(false));
-        let separate_debug_symbols = separate_debug_symbols.unwrap_or_else(|| deb.separate_debug_symbols.unwrap_or(generate_dbgsym_package));
+        let separate_option_name = if generate_dbgsym_package { "dbgsym" } else { "separate-debug-symbols" };
+
+        let wants_separate_debug_symbols = separate_debug_symbols
+            .or((strip_override == Some(false)).then_some(false)) // --no-strip means not running the strip command, even to separate symbols
+            .or(deb.separate_debug_symbols)
+            .unwrap_or(generate_dbgsym_package);
+        let separate_debug_symbols = generate_dbgsym_package || wants_separate_debug_symbols;
         let compress_debug_symbols = compress_debug_symbols.unwrap_or_else(|| deb.compress_debug_symbols.unwrap_or(false));
 
-        if !separate_debug_symbols && compress_debug_symbols {
-            listener.warning("separate-debug-symbols required to compress".into());
+        if strip_override == Some(false) && separate_debug_symbols {
+            listener.warning(format!("--no-strip has no effect when using {separate_option_name}"));
+        }
+        else if generate_dbgsym_package && !wants_separate_debug_symbols {
+            listener.warning("separate-debug-symbols can't be disabled when generating dbgsym".into());
+        }
+        else if !separate_debug_symbols && compress_debug_symbols {
+            listener.warning("--separate-debug-symbols or --dbgsym is required to compresss symbols".into());
         }
 
+        let strip_override_default = strip_override.map(|s| if s { DebugSymbols::Strip } else { DebugSymbols::Keep });
+
+        let keep_debug_symbols_default = if separate_debug_symbols {
+            DebugSymbols::Separate {
+                compress: compress_debug_symbols,
+                generate_dbgsym_package,
+            }
+        } else {
+            strip_override_default.unwrap_or(DebugSymbols::Keep)
+        };
+
         let debug_symbols = match manifest_debug {
+            ManifestDebugFlags::SomeSymbolsAdded => keep_debug_symbols_default,
+            ManifestDebugFlags::FullSymbolsAdded => {
+                if !separate_debug_symbols {
+                    listener.warning(format!("the debug symbols may be bloated. Use `[profile.{selected_profile}] debug = \"line-tables-only\"` or --separate-debug-symbols or --dbgsym options"));
+                }
+                keep_debug_symbols_default
+            },
+            ManifestDebugFlags::Default if separate_debug_symbols => {
+                listener.warning(format!("debug info hasn't been explicitly enabled. Add `[profile.{selected_profile}] debug = 1` to Cargo.toml"));
+                keep_debug_symbols_default
+            },
             ManifestDebugFlags::FullyStrippedByCargo => {
                 if separate_debug_symbols || compress_debug_symbols {
-                    listener.warning("separate-debug-symbols won't have any effect when Cargo is configured to strip the symbols first".into());
+                    listener.warning(format!("{separate_option_name} won't have any effect when Cargo is configured to strip the symbols first"));
                 }
-                DebugSymbols::Keep
+                strip_override_default.unwrap_or(DebugSymbols::Keep) // no need to launch strip
             },
             ManifestDebugFlags::SymbolsDisabled => {
                 if separate_debug_symbols {
-                    listener.warning("separate-debug-symbols won't have any effect when debug symbols are disabled".into());
+                    listener.warning(format!("{separate_option_name} won't have any effect when debug symbols are disabled"));
                 }
                 // Rust still adds debug bloat from the libstd
-                DebugSymbols::Strip
+                strip_override_default.unwrap_or(DebugSymbols::Strip)
             },
-            _ if separate_debug_symbols => DebugSymbols::Separate {
-                compress: compress_debug_symbols,
-                generate_dbgsym_package,
+            ManifestDebugFlags::Default => {
+                // Rust still adds debug bloat from the libstd
+                strip_override_default.unwrap_or(DebugSymbols::Strip)
             },
-            ManifestDebugFlags::SomeSymbolsAdded => DebugSymbols::Keep,
-            ManifestDebugFlags::Default => DebugSymbols::Strip,
+            ManifestDebugFlags::SymbolsPackedExternally => {
+                listener.warning("Cargo's split-debuginfo option (.dwp/.dwo) is not supported; the symbols may be incomplete".into());
+                keep_debug_symbols_default
+            },
         };
 
         let mut features = deb.features.take().unwrap_or_default();

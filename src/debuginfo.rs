@@ -18,7 +18,13 @@ fn ensure_success(status: ExitStatus) -> io::Result<()> {
 }
 
 /// Strips the binary that was created with cargo
-pub fn strip_binaries(config: &mut BuildEnvironment, package_deb: &mut PackageConfig, rust_target_triple: Option<&str>, listener: &dyn Listener) -> CDResult<()> {
+pub fn strip_binaries(config: &BuildEnvironment, package_deb: &mut PackageConfig, rust_target_triple: Option<&str>, listener: &dyn Listener) -> CDResult<()> {
+    let (separate_debug_symbols, compress_debug_symbols) = match config.debug_symbols {
+        DebugSymbols::Keep => return Ok(()),
+        DebugSymbols::Strip => (false, false),
+        DebugSymbols::Separate { compress, .. } => (true, compress),
+    };
+
     let mut cargo_config = None;
     let objcopy_tmp;
     let strip_tmp;
@@ -41,10 +47,6 @@ pub fn strip_binaries(config: &mut BuildEnvironment, package_deb: &mut PackageCo
     }
 
     let stripped_binaries_output_dir = config.default_deb_output_dir();
-    let (separate_debug_symbols, compress_debug_symbols) = match config.debug_symbols {
-        DebugSymbols::Keep | DebugSymbols::Strip => (false, false),
-        DebugSymbols::Separate { compress, .. } => (true, compress),
-    };
 
     let lib_dir_base = package_deb.library_install_dir(config.rust_target_triple());
     let added_debug_assets = package_deb.built_binaries_mut().into_par_iter().enumerate()
@@ -70,7 +72,7 @@ pub fn strip_binaries(config: &mut BuildEnvironment, package_deb: &mut PackageCo
                .and_then(ensure_success)
                .map_err(|err| {
                     if let Some(target) = rust_target_triple {
-                        CargoDebError::StripFailed(path.to_owned(), format!("{}: {}.\nTarget-specific strip commands are configured in [target.{}] strip = {{ path = \"{}\" }} in {}\nYou can also add strip=true to [profiles.release] or --no-strip", strip_cmd.display(), err, target, strip_cmd.display(), conf_path.display()))
+                        CargoDebError::StripFailed(path.to_owned(), format!("{}: {}.\nTarget-specific strip commands are configured in [target.{}] strip = {{ path = \"{}\" }} in {}\nYou can also add strip=true to [profile.release] or --no-strip", strip_cmd.display(), err, target, strip_cmd.display(), conf_path.display()))
                     } else {
                         CargoDebError::CommandFailed(err, "strip")
                     }

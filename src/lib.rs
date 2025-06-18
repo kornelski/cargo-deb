@@ -85,9 +85,8 @@ impl CargoDeb {
             warn_if_not_linux(listener); // compiling natively for non-linux = nope
         }
 
-        if self.options.generate_dbgsym_package.unwrap_or(false)
-            && !*self.options.separate_debug_symbols.get_or_insert(true) {
-                listener.warning("separate-debug-symbols is required for dbgsym".into());
+        if self.options.generate_dbgsym_package == Some(true) {
+            let _ = self.options.separate_debug_symbols.get_or_insert(true);
         }
 
         if self.options.system_xz {
@@ -109,7 +108,7 @@ impl CargoDeb {
         }
 
         let root_manifest_path = self.options.manifest_path.as_deref().map(Path::new);
-        let (mut config, mut package_deb) = BuildEnvironment::from_manifest(
+        let (config, mut package_deb) = BuildEnvironment::from_manifest(
             BuildOptions {
                 root_manifest_path,
                 selected_package_name: self.options.selected_package_name.as_deref(),
@@ -121,6 +120,7 @@ impl CargoDeb {
                 generate_dbgsym_package: self.options.generate_dbgsym_package,
                 separate_debug_symbols: self.options.separate_debug_symbols,
                 compress_debug_symbols: self.options.compress_debug_symbols,
+                strip_override: self.options.strip_override,
                 cargo_locking_flags: self.options.cargo_locking_flags,
                 multiarch: self.options.multiarch,
                 ..Default::default()
@@ -154,11 +154,7 @@ impl CargoDeb {
 
         compress_assets(&mut package_deb, listener)?;
 
-        if self.options.strip_override.unwrap_or(config.debug_symbols != DebugSymbols::Keep) {
-            strip_binaries(&mut config, &mut package_deb, self.options.target.as_deref(), listener)?;
-        } else {
-            log::debug!("not stripping debug={:?} strip-flag={:?}", config.debug_symbols, self.options.strip_override);
-        }
+        strip_binaries(&config, &mut package_deb, self.options.target.as_deref(), listener)?;
 
         let package_dbgsym_ddeb = if let DebugSymbols::Separate { generate_dbgsym_package: true, .. } = config.debug_symbols {
             let ddeb = package_deb.split_dbgsym()?;

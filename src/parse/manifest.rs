@@ -39,23 +39,32 @@ pub(crate) enum ManifestDebugFlags {
     FullyStrippedByCargo,
     /// Explicitly doesn't want debug symbols
     SymbolsDisabled,
+    SymbolsPackedExternally,
     SomeSymbolsAdded,
+    FullSymbolsAdded,
+    /// Not explicitly specified either way
     Default,
 }
 
-pub(crate) fn manifest_debug_flag(manifest: &cargo_toml::Manifest<CargoPackageMetadata>, selected_profile: &str) -> Option<ManifestDebugFlags> {
-    let profile = if selected_profile == "release" {
-        manifest.profile.release.as_ref()?
+pub(crate) fn find_profile<'a>(manifest: &'a cargo_toml::Manifest<CargoPackageMetadata>, selected_profile: &str) -> Option<&'a cargo_toml::Profile> {
+    if selected_profile == "release" {
+        manifest.profile.release.as_ref()
     } else {
-        manifest.profile.custom.get(selected_profile)?
-    };
-    if profile.strip.as_ref() == Some(&StripSetting::Symbols) {
-        return Some(ManifestDebugFlags::FullyStrippedByCargo);
+        manifest.profile.custom.get(selected_profile)
     }
-    if *profile.debug.as_ref()? == DebugSetting::None {
-        return Some(ManifestDebugFlags::SymbolsDisabled);
+}
+
+pub(crate) fn debug_flags(profile: &cargo_toml::Profile) -> ManifestDebugFlags {
+    if profile.strip == Some(StripSetting::Symbols) {
+        return ManifestDebugFlags::FullyStrippedByCargo;
     }
-    Some(ManifestDebugFlags::SomeSymbolsAdded)
+    match profile.debug.as_ref() {
+        None => ManifestDebugFlags::Default,
+        Some(DebugSetting::None) => ManifestDebugFlags::SymbolsDisabled,
+        Some(_) if profile.split_debuginfo.as_deref().is_some_and(|p| p != "off") => ManifestDebugFlags::SymbolsPackedExternally,
+        Some(DebugSetting::Full) if profile.strip != Some(StripSetting::Debuginfo) => ManifestDebugFlags::FullSymbolsAdded,
+        Some(_) => ManifestDebugFlags::SomeSymbolsAdded,
+    }
 }
 
 /// Debian-compatible version of the semver version
