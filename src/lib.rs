@@ -55,7 +55,7 @@ mod dependencies;
 mod error;
 pub use debuginfo::strip_binaries;
 
-use crate::assets::compress_assets;
+use crate::assets::{compressed_assets, apply_compressed_assets};
 use crate::deb::control::ControlArchiveBuilder;
 use crate::deb::tar::Tarball;
 use crate::listener::{Listener, PrefixedListener};
@@ -134,24 +134,12 @@ impl CargoDeb {
 
         package_deb.resolve_assets(listener)?;
 
-        // When cross-compiling, resolve dependencies using libs for the target platform (where multiarch is supported)
-        let lib_search_paths = config.rust_target_triple.as_deref().map(|triple| package_deb.multiarch_lib_dirs(triple));
-        let lib_search_paths: Vec<_> = lib_search_paths.iter().flatten().enumerate()
-            .filter_map(|(i, dir)| {
-                if dir.exists() {
-                    Some(dir.as_path())
-                } else {
-                    if i == 0 { // report only the preferred one
-                        log::debug!("lib dir doesn't exist: {}", dir.display());
-                    }
-                    None
-                }
-            })
-            .collect();
-
-        package_deb.resolve_binary_dependencies(&lib_search_paths, listener)?;
-
-        compress_assets(&mut package_deb, listener)?;
+        let (depends, compressed_assets) = rayon::join(
+            || package_deb.resolved_binary_dependencies(config.rust_target_triple.as_deref(), listener),
+            || compressed_assets(&package_deb, listener),
+        );
+        package_deb.resolved_depends = Some(depends?);
+        apply_compressed_assets(&mut package_deb, compressed_assets?);
 
         strip_binaries(&config, &mut package_deb, self.options.target.as_deref(), listener)?;
 

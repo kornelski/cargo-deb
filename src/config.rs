@@ -857,9 +857,10 @@ impl PackageConfig {
     }
 
     pub fn resolve_assets(&mut self, listener: &dyn Listener) -> CDResult<()> {
-        for u in self.assets.unresolved.drain(..) {
-            let matched = u.resolve(self.preserve_symlinks)?;
-            self.assets.resolved.extend(matched);
+        let unresolved = std::mem::take(&mut self.assets.unresolved);
+        let matched = unresolved.into_par_iter().map(|asset| asset.resolve(self.preserve_symlinks)).collect_vec_list();
+        for res in matched.into_iter().flatten() {
+            self.assets.resolved.extend(res?);
         }
 
         let mut target_paths = HashMap::new();
@@ -900,7 +901,22 @@ impl PackageConfig {
     }
 
     /// run dpkg/ldd to check deps of libs
-    pub fn resolve_binary_dependencies(&mut self, lib_dir_search_paths: &[&Path], listener: &dyn Listener) -> CDResult<()> {
+    pub fn resolved_binary_dependencies(&self, rust_target_triple: Option<&str>, listener: &dyn Listener) -> CDResult<String> {
+        // When cross-compiling, resolve dependencies using libs for the target platform (where multiarch is supported)
+        let lib_search_paths = rust_target_triple.map(|triple| self.multiarch_lib_dirs(triple));
+        let lib_search_paths: Vec<_> = lib_search_paths.iter().flatten().enumerate()
+            .filter_map(|(i, dir)| {
+                if dir.exists() {
+                    Some(dir.as_path())
+                } else {
+                    if i == 0 { // report only the preferred one
+                        log::debug!("lib dir doesn't exist: {}", dir.display());
+                    }
+                    None
+                }
+            })
+            .collect();
+
         let mut deps = BTreeSet::new();
         for word in self.wildcard_depends.split(',') {
             let word = word.trim();
@@ -910,18 +926,15 @@ impl PackageConfig {
                     .filter(|bin| !bin.archive_as_symlink_only())
                     .filter_map(|&p| {
                         let bname = p.path()?;
-                        match resolve_with_dpkg(bname, lib_dir_search_paths) {
+                        match resolve_with_dpkg(bname, &lib_search_paths) {
                             Ok(bindeps) => Some(bindeps),
                             Err(err) => {
                                 listener.warning(format!("{err}\nNo $auto deps for {}", bname.display()));
                                 None
                             },
                         }
-                    })
-                    .collect::<Vec<_>>();
-                for dep in resolved.into_iter().flat_map(|s| s.into_iter()) {
-                    deps.insert(dep);
-                }
+                    }).collect_vec_list();
+                deps.extend(resolved.into_iter().flatten().flatten());
             } else {
                 let (dep, arch_spec) = get_architecture_specification(word)?;
                 if let Some(spec) = arch_spec {
@@ -933,8 +946,7 @@ impl PackageConfig {
                 }
             }
         }
-        self.resolved_depends = Some(itertools::Itertools::join(&mut deps.into_iter(), ", "));
-        Ok(())
+        Ok(itertools::Itertools::join(&mut deps.into_iter(), ", "))
     }
 
     /// Executables AND dynamic libraries. May include symlinks.

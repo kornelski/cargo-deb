@@ -9,6 +9,7 @@ use std::borrow::Cow;
 use std::env::consts::DLL_SUFFIX;
 use std::fs;
 use std::path::{Path, PathBuf};
+use rayon::prelude::*;
 
 #[derive(Debug, Clone)]
 pub enum AssetSource {
@@ -371,10 +372,7 @@ pub(crate) fn is_dynamic_library_filename(path: &Path) -> bool {
 ///
 /// <https://www.debian.org/doc/debian-policy/ch-docs.html>
 /// <https://lintian.debian.org/tags/manpage-not-compressed.html>
-pub fn compress_assets(package_deb: &mut PackageConfig, listener: &dyn Listener) -> CDResult<()> {
-    let mut indices_to_remove = Vec::new();
-    let mut new_assets = Vec::new();
-
+pub fn compressed_assets(package_deb: &PackageConfig, listener: &dyn Listener) -> CDResult<Vec<(usize, Asset)>> {
     fn needs_compression(path: &str) -> bool {
         !path.ends_with(".gz") &&
             (path.starts_with("usr/share/man/") ||
@@ -382,18 +380,17 @@ pub fn compress_assets(package_deb: &mut PackageConfig, listener: &dyn Listener)
                 (path.starts_with("usr/share/info/") && path.ends_with(".info")))
     }
 
-    for (idx, orig_asset) in package_deb.assets.resolved.iter().enumerate() {
-        if !orig_asset.c.target_path.starts_with("usr") {
-            continue;
-        }
-        let target_path_str = orig_asset.c.target_path.to_string_lossy();
-        if needs_compression(&target_path_str) {
-            debug_assert!(!orig_asset.c.is_built());
-
-            let mut new_path = target_path_str.into_owned();
-            new_path.push_str(".gz");
-            listener.info(format!("Compressing '{new_path}'"));
-            new_assets.push(Asset::new(
+    package_deb.assets.resolved.iter().enumerate()
+        .filter(|(_, asset)| {
+            asset.c.target_path.starts_with("usr") && !asset.c.is_built() && needs_compression(&asset.c.target_path.to_string_lossy())
+        })
+        .par_bridge()
+        .map(|(idx, orig_asset)| {
+            let mut file_name = orig_asset.c.target_path.file_name().map(|f| f.to_string_lossy().into_owned()).unwrap_or_default();
+            file_name.push_str(".gz");
+            let new_path = orig_asset.c.target_path.with_file_name(file_name);
+            listener.info(format!("Compressing '{}'", new_path.display()));
+            CDResult::Ok((idx, Asset::new(
                 crate::assets::AssetSource::Data(gzipped(&orig_asset.source.data()?)?),
                 new_path.into(),
                 orig_asset.c.chmod,
@@ -401,19 +398,16 @@ pub fn compress_assets(package_deb: &mut PackageConfig, listener: &dyn Listener)
                 AssetKind::Any,
             ).processed("compressed",
                 orig_asset.source.path().unwrap_or(&orig_asset.c.target_path).to_path_buf()
-            ));
-            indices_to_remove.push(idx);
-        }
-    }
-
-    for idx in indices_to_remove.into_iter().rev() {
-        package_deb.assets.resolved.swap_remove(idx);
-    }
-
-    package_deb.assets.resolved.append(&mut new_assets);
-
-    Ok(())
+            )))
+        }).collect()
 }
+
+pub fn apply_compressed_assets(package_deb: &mut PackageConfig, new_assets: Vec<(usize, Asset)>) {
+    for (idx, asset) in new_assets {
+        package_deb.assets.resolved[idx] = asset;
+    }
+}
+
 
 #[cfg(test)]
 mod tests {
