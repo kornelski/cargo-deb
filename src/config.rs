@@ -254,6 +254,14 @@ pub enum Multiarch {
 }
 
 #[derive(Debug, Default)]
+pub struct DebugSymbolOptions {
+    pub generate_dbgsym_package: Option<bool>,
+    pub separate_debug_symbols: Option<bool>,
+    pub compress_debug_symbols: Option<bool>,
+    pub strip_override: Option<bool>,
+}
+
+#[derive(Debug, Default)]
 pub struct BuildOptions<'a> {
     pub manifest_path: Option<&'a Path>,
     pub selected_package_name: Option<&'a str>,
@@ -262,10 +270,7 @@ pub struct BuildOptions<'a> {
     pub config_variant: Option<&'a str>,
     pub overrides: DebConfigOverrides,
     pub build_profile_override: Option<String>,
-    pub generate_dbgsym_package: Option<bool>,
-    pub separate_debug_symbols: Option<bool>,
-    pub compress_debug_symbols: Option<bool>,
-    pub strip_override: Option<bool>,
+    pub debug: DebugSymbolOptions,
     pub cargo_locking_flags: CargoLockingFlags,
     pub multiarch: Multiarch,
 }
@@ -283,10 +288,7 @@ impl BuildEnvironment {
             config_variant,
             overrides,
             build_profile_override,
-            separate_debug_symbols,
-            generate_dbgsym_package,
-            compress_debug_symbols,
-            strip_override,
+            debug,
             cargo_locking_flags,
             multiarch,
         }: BuildOptions,
@@ -354,8 +356,40 @@ impl BuildEnvironment {
             cargo_package.metadata.take().and_then(|m| m.deb).unwrap_or_default()
         };
 
+        let debug_symbols = Self::configure_debug_symbols(debug, &deb, manifest_debug, selected_profile, listener);
+
+        let mut features = deb.features.take().unwrap_or_default();
+        features.extend(overrides.features.iter().cloned());
+
         manifest_path.pop();
         let manifest_dir = manifest_path;
+
+        let config = Self {
+            package_manifest_dir: manifest_dir,
+            deb_output_path,
+            rust_target_triple: rust_target_triple.map(|t| t.to_string()),
+            target_dir,
+            features,
+            all_features: overrides.all_features,
+            default_features: if overrides.no_default_features { false } else { deb.default_features.unwrap_or(true) },
+            debug_symbols,
+            build_profile_override,
+            build_targets,
+            cargo_locking_flags,
+            cargo_run_current_dir,
+        };
+
+        let arch = debian_architecture_from_rust_triple(config.rust_target_triple());
+        let assets = deb.assets.take().unwrap_or_else(|| vec![RawAssetOrAuto::Auto]);
+        let mut package_deb = PackageConfig::new(deb, cargo_package, listener, default_timestamp, overrides, arch, multiarch)?;
+
+        config.add_assets(&mut package_deb, assets, listener)?;
+
+        Ok((config, package_deb))
+    }
+
+    fn configure_debug_symbols(debug: DebugSymbolOptions, deb: &CargoDeb, manifest_debug: ManifestDebugFlags, selected_profile: &str, listener: &dyn Listener) -> DebugSymbols {
+        let DebugSymbolOptions { generate_dbgsym_package, separate_debug_symbols, compress_debug_symbols, strip_override } = debug;
 
         let generate_dbgsym_package = generate_dbgsym_package.unwrap_or_else(|| deb.dbgsym.unwrap_or(false));
         let separate_option_name = if generate_dbgsym_package { "dbgsym" } else { "separate-debug-symbols" };
@@ -392,23 +426,23 @@ impl BuildEnvironment {
             ManifestDebugFlags::SomeSymbolsAdded => keep_debug_symbols_default,
             ManifestDebugFlags::FullSymbolsAdded => {
                 if !separate_debug_symbols {
-                    listener.warning(format!("the debug symbols may be bloated. Use `[profile.{selected_profile}] debug = \"line-tables-only\"` or --separate-debug-symbols or --dbgsym options"));
+                    listener.warning(format!("the debug symbols may be bloated\nUse `[profile.{selected_profile}] debug = \"line-tables-only\"` or --separate-debug-symbols or --dbgsym options"));
                 }
                 keep_debug_symbols_default
             },
             ManifestDebugFlags::Default if separate_debug_symbols => {
-                listener.warning(format!("debug info hasn't been explicitly enabled. Add `[profile.{selected_profile}] debug = 1` to Cargo.toml"));
+                listener.warning(format!("debug info hasn't been explicitly enabled\nAdd `[profile.{selected_profile}] debug = 1` to Cargo.toml"));
                 keep_debug_symbols_default
             },
             ManifestDebugFlags::FullyStrippedByCargo => {
                 if separate_debug_symbols || compress_debug_symbols {
-                    listener.warning(format!("{separate_option_name} won't have any effect when Cargo is configured to strip the symbols first"));
+                    listener.warning(format!("{separate_option_name} won't have any effect when Cargo is configured to strip the symbols first.\nRemove `strip` from `[profile.{selected_profile}]`"));
                 }
                 strip_override_default.unwrap_or(DebugSymbols::Keep) // no need to launch strip
             },
             ManifestDebugFlags::SymbolsDisabled => {
-                if separate_debug_symbols {
-                    listener.warning(format!("{separate_option_name} won't have any effect when debug symbols are disabled"));
+                if separate_debug_symbols || generate_dbgsym_package {
+                    listener.warning(format!("{separate_option_name} won't have any effect when debug symbols are disabled\nAdd `[profile.{selected_profile}] debug = \"line-tables-only\"` to Cargo.toml"));
                 }
                 // Rust still adds debug bloat from the libstd
                 strip_override_default.unwrap_or(DebugSymbols::Strip)
@@ -422,32 +456,7 @@ impl BuildEnvironment {
                 keep_debug_symbols_default
             },
         };
-
-        let mut features = deb.features.take().unwrap_or_default();
-        features.extend(overrides.features.iter().cloned());
-
-        let config = Self {
-            package_manifest_dir: manifest_dir,
-            deb_output_path,
-            rust_target_triple: rust_target_triple.map(|t| t.to_string()),
-            target_dir,
-            features,
-            all_features: overrides.all_features,
-            default_features: if overrides.no_default_features { false } else { deb.default_features.unwrap_or(true) },
-            debug_symbols,
-            build_profile_override,
-            build_targets,
-            cargo_locking_flags,
-            cargo_run_current_dir,
-        };
-
-        let arch = debian_architecture_from_rust_triple(config.rust_target_triple());
-        let assets = deb.assets.take().unwrap_or_else(|| vec![RawAssetOrAuto::Auto]);
-        let mut package_deb = PackageConfig::new(deb, cargo_package, listener, default_timestamp, overrides, arch, multiarch)?;
-
-        config.add_assets(&mut package_deb, assets, listener)?;
-
-        Ok((config, package_deb))
+        debug_symbols
     }
 
     fn add_assets(&self, package_deb: &mut PackageConfig, assets: Vec<RawAssetOrAuto>, listener: &dyn Listener) -> CDResult<()> {

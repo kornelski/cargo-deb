@@ -18,7 +18,7 @@ fn ensure_success(status: ExitStatus) -> io::Result<()> {
 }
 
 /// Strips the binary that was created with cargo
-pub fn strip_binaries(config: &BuildEnvironment, package_deb: &mut PackageConfig, rust_target_triple: Option<&str>, listener: &dyn Listener) -> CDResult<()> {
+pub fn strip_binaries(config: &BuildEnvironment, package_deb: &mut PackageConfig, rust_target_triple: Option<&str>, asked_for_dbgsym_package: bool, listener: &dyn Listener) -> CDResult<()> {
     let (separate_debug_symbols, compress_debug_symbols) = match config.debug_symbols {
         DebugSymbols::Keep => return Ok(()),
         DebugSymbols::Strip => (false, false),
@@ -133,7 +133,14 @@ pub fn strip_binaries(config: &BuildEnvironment, package_deb: &mut PackageConfig
             } else {
                 None // no new asset
             };
-            listener.info(format!("Stripped '{}'", path.display()));
+
+            listener.info(if separate_debug_symbols && new_debug_asset.is_some() {
+                format!("Extracted debug info from '{}'", path.display())
+            } else if !separate_debug_symbols && asked_for_dbgsym_package {
+                format!("No debug info in '{}'", path.display())
+            } else {
+                format!("Stripped '{}'", path.display())
+            });
 
             (AssetSource::Path(stripped_temp_path), new_debug_asset)
         } else {

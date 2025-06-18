@@ -59,7 +59,7 @@ use crate::assets::{compressed_assets, apply_compressed_assets};
 use crate::deb::control::ControlArchiveBuilder;
 use crate::deb::tar::Tarball;
 use crate::listener::{Listener, PrefixedListener};
-use config::{BuildOptions, DebConfigOverrides, Multiarch};
+use config::{BuildOptions, DebConfigOverrides, DebugSymbolOptions, Multiarch};
 use itertools::Itertools;
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -116,10 +116,12 @@ impl CargoDeb {
                 config_variant: self.options.variant.as_deref(),
                 overrides: self.options.overrides,
                 build_profile_override: selected_profile,
-                generate_dbgsym_package: self.options.generate_dbgsym_package,
-                separate_debug_symbols: self.options.separate_debug_symbols,
-                compress_debug_symbols: self.options.compress_debug_symbols,
-                strip_override: self.options.strip_override,
+                debug: DebugSymbolOptions {
+                    generate_dbgsym_package: self.options.generate_dbgsym_package,
+                    separate_debug_symbols: self.options.separate_debug_symbols,
+                    compress_debug_symbols: self.options.compress_debug_symbols,
+                    strip_override: self.options.strip_override,
+                },
                 cargo_locking_flags: self.options.cargo_locking_flags,
                 multiarch: self.options.multiarch,
                 ..Default::default()
@@ -141,15 +143,15 @@ impl CargoDeb {
         package_deb.resolved_depends = Some(depends?);
         apply_compressed_assets(&mut package_deb, compressed_assets?);
 
-        strip_binaries(&config, &mut package_deb, self.options.target.as_deref(), listener)?;
+        let asked_for_dbgsym_package = self.options.generate_dbgsym_package.unwrap_or(false);
+        strip_binaries(&config, &mut package_deb, self.options.target.as_deref(), asked_for_dbgsym_package, listener)?;
 
-        let package_dbgsym_ddeb = if let DebugSymbols::Separate { generate_dbgsym_package: true, .. } = config.debug_symbols {
-            let ddeb = package_deb.split_dbgsym()?;
-            if ddeb.is_none() {
-                listener.warning("No debug symbols found. Skipping dbgsym.ddeb".to_string());
-            }
-            ddeb
-        } else { None };
+        let generate_dbgsym_package = matches!(config.debug_symbols, DebugSymbols::Separate { generate_dbgsym_package: true, .. });
+        let package_dbgsym_ddeb = generate_dbgsym_package.then(|| package_deb.split_dbgsym()).transpose()?.flatten();
+
+        if package_dbgsym_ddeb.is_none() && generate_dbgsym_package {
+            listener.warning("No debug symbols found. Skipping dbgsym.ddeb".into());
+        }
 
         let compress_config = CompressConfig {
             fast: self.options.fast,
