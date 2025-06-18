@@ -58,7 +58,7 @@ pub use debuginfo::strip_binaries;
 use crate::assets::compress_assets;
 use crate::deb::control::ControlArchiveBuilder;
 use crate::deb::tar::Tarball;
-use crate::listener::Listener;
+use crate::listener::{Listener, PrefixedListener};
 use config::{BuildOptions, DebConfigOverrides, Multiarch};
 use itertools::Itertools;
 use std::path::{Path, PathBuf};
@@ -85,6 +85,11 @@ impl CargoDeb {
             warn_if_not_linux(listener); // compiling natively for non-linux = nope
         }
 
+        if self.options.generate_dbgsym_package.unwrap_or(false)
+            && !*self.options.separate_debug_symbols.get_or_insert(true) {
+                listener.warning("separate-debug-symbols is required for dbgsym".into());
+        }
+
         if self.options.system_xz {
             listener.warning("--system-xz is deprecated, use --compress-system instead.".into());
 
@@ -100,7 +105,7 @@ impl CargoDeb {
         if selected_profile.as_deref() == Some("dev") {
             listener.warning("dev profile is not supported and will be a hard error in the future. \
                 cargo-deb is for making releases, and it doesn't make sense to use it with dev profiles.".into());
-            listener.warning("To enable debug symbols set `[profile.release] debug = true` instead.".into());
+            listener.warning("To enable debug symbols set `[profile.release] debug = 1` instead.".into());
         }
 
         let root_manifest_path = self.options.manifest_path.as_deref().map(Path::new);
@@ -113,6 +118,7 @@ impl CargoDeb {
                 config_variant: self.options.variant.as_deref(),
                 overrides: self.options.overrides,
                 build_profile_override: selected_profile,
+                generate_dbgsym_package: self.options.generate_dbgsym_package,
                 separate_debug_symbols: self.options.separate_debug_symbols,
                 compress_debug_symbols: self.options.compress_debug_symbols,
                 cargo_locking_flags: self.options.cargo_locking_flags,
@@ -154,24 +160,55 @@ impl CargoDeb {
             log::debug!("not stripping debug={:?} strip-flag={:?}", config.debug_symbols, self.options.strip_override);
         }
 
-        package_deb.sort_assets_by_type();
+        let package_dbgsym_ddeb = if let DebugSymbols::Separate { generate_dbgsym_package: true, .. } = config.debug_symbols {
+            let ddeb = package_deb.split_dbgsym()?;
+            if ddeb.is_none() {
+                listener.warning("No debug symbols found. Skipping dbgsym.ddeb".to_string());
+            }
+            ddeb
+        } else { None };
 
-        let generated = write_deb(
-            &config,
-            &package_deb,
-            &CompressConfig {
-                fast: self.options.fast,
-                compress_type: self.options.compress_type,
-                compress_system: self.options.compress_system,
-                rsyncable: self.options.rsyncable,
+        let compress_config = CompressConfig {
+            fast: self.options.fast,
+            compress_type: self.options.compress_type,
+            compress_system: self.options.compress_system,
+            rsyncable: self.options.rsyncable,
+        };
+
+        let (generated_deb, generated_dbgsym_ddeb) = rayon::join(
+            || {
+                package_deb.sort_assets_by_type();
+                write_deb(
+                    &config,
+                    &package_deb,
+                    &compress_config,
+                    listener,
+                )
             },
-            listener,
-        )?;
+            || package_dbgsym_ddeb.map(|mut ddeb| {
+                ddeb.sort_assets_by_type();
+                write_deb(
+                    &config,
+                    &ddeb,
+                    &compress_config,
+                    &PrefixedListener("ddeb: ", listener),
+                )
+            }),
+        );
+        let generated_deb = generated_deb?;
+        let generated_dbgsym_ddeb = generated_dbgsym_ddeb.transpose()?;
 
-        listener.generated_archive(&generated);
+        if let Some(generated) = &generated_dbgsym_ddeb {
+            listener.generated_archive(generated);
+        }
+        listener.generated_archive(&generated_deb);
 
         if self.options.install {
-            install_deb(&generated)?;
+            install_deb(&generated_deb)?;
+
+            if let Some(dbgsym_ddeb) = &generated_dbgsym_ddeb {
+                install_deb(dbgsym_ddeb)?;
+            }
         }
         Ok(())
     }
@@ -182,6 +219,7 @@ pub struct CargoDebOptions {
     pub strip_override: Option<bool>,
     pub separate_debug_symbols: Option<bool>,
     pub compress_debug_symbols: Option<bool>,
+    pub generate_dbgsym_package: Option<bool>,
     /// Don't compress heavily
     pub fast: bool,
     /// Build with --verbose
@@ -234,6 +272,7 @@ impl Default for CargoDebOptions {
             strip_override: None,
             separate_debug_symbols: None,
             compress_debug_symbols: None,
+            generate_dbgsym_package: None,
             fast: false,
             verbose: false,
             install: false,

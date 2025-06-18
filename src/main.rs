@@ -25,7 +25,8 @@ fn main() -> ExitCode {
         .next_help_heading("Debug info")
         .arg(Arg::new("strip").long("strip").help("Always try to strip debug symbols").action(ArgAction::SetTrue))
         .arg(Arg::new("no-strip").long("no-strip").help("Do not strip debug symbols from the binary").action(ArgAction::SetTrue))
-        .arg(Arg::new("separate-debug-symbols").long("separate-debug-symbols").help("Strip debug symbols into a separate .debug file").action(ArgAction::SetTrue))
+        .arg(Arg::new("dbgsym").long("dbgsym").help("Move debug symbols into a separate -dbgsym.ddeb package").action(ArgAction::SetTrue))
+        .arg(Arg::new("separate-debug-symbols").long("separate-debug-symbols").help("Move debug symbols to a .debug file in the same package").action(ArgAction::SetTrue))
         .arg(Arg::new("no-separate-debug-symbols").long("no-separate-debug-symbols").help("Do not strip debug symbols into a separate .debug file").action(ArgAction::SetTrue))
         .arg(Arg::new("compress-debug-symbols").long("compress-debug-symbols").help("Apply `objcopy --compress-debug-sections`").action(ArgAction::SetTrue))
         .next_help_heading("Metadata overrides")
@@ -101,6 +102,7 @@ fn main() -> ExitCode {
         strip_override: if matches.get_flag("strip") { Some(true) } else if matches.get_flag("no-strip") { Some(false) } else { None },
         separate_debug_symbols: if matches.get_flag("separate-debug-symbols") { Some(true) } else if matches.get_flag("no-separate-debug-symbols") { Some(false) } else { None },
         compress_debug_symbols: if matches.get_flag("compress-debug-symbols") { Some(true) } else { None },
+        generate_dbgsym_package: if matches.get_flag("dbgsym") { Some(true) } else { None },
         verbose,
         install,
         // when installing locally it won't be transferred anywhere, so allow faster compression

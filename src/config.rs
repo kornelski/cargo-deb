@@ -1,4 +1,4 @@
-use crate::assets::{AssetFmt, RawAssetOrAuto, Asset, AssetSource, Assets, IsBuilt, UnresolvedAsset, RawAsset};
+use crate::assets::{AssetFmt, AssetKind, RawAssetOrAuto, Asset, AssetSource, Assets, IsBuilt, UnresolvedAsset, RawAsset};
 use crate::assets::is_dynamic_library_filename;
 use crate::util::compress::gzipped;
 use crate::dependencies::resolve_with_dpkg;
@@ -209,6 +209,8 @@ pub struct PackageConfig {
     pub(crate) systemd_units: Option<Vec<SystemdUnitsConfig>>,
     /// unix timestamp for generated files
     pub default_timestamp: u64,
+    /// Save it under a different path
+    pub is_split_dbgsym_package: bool,
 }
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
@@ -220,6 +222,8 @@ pub enum DebugSymbols {
     Separate {
         /// Should the debug symbols be compressed
         compress: bool,
+        /// Generate dbgsym.ddeb package
+        generate_dbgsym_package: bool,
     },
 }
 
@@ -258,6 +262,7 @@ pub struct BuildOptions<'a> {
     pub config_variant: Option<&'a str>,
     pub overrides: DebConfigOverrides,
     pub build_profile_override: Option<String>,
+    pub generate_dbgsym_package: Option<bool>,
     pub separate_debug_symbols: Option<bool>,
     pub compress_debug_symbols: Option<bool>,
     pub cargo_locking_flags: CargoLockingFlags,
@@ -278,6 +283,7 @@ impl BuildEnvironment {
             overrides,
             build_profile_override,
             separate_debug_symbols,
+            generate_dbgsym_package,
             compress_debug_symbols,
             cargo_locking_flags,
             multiarch,
@@ -336,7 +342,8 @@ impl BuildEnvironment {
             cargo_package.metadata.take().and_then(|m| m.deb).unwrap_or_default()
         };
 
-        let separate_debug_symbols = separate_debug_symbols.unwrap_or_else(|| deb.separate_debug_symbols.unwrap_or(false));
+        let generate_dbgsym_package = generate_dbgsym_package.unwrap_or_else(|| deb.dbgsym.unwrap_or(false));
+        let separate_debug_symbols = separate_debug_symbols.unwrap_or_else(|| deb.separate_debug_symbols.unwrap_or(generate_dbgsym_package));
         let compress_debug_symbols = compress_debug_symbols.unwrap_or_else(|| deb.compress_debug_symbols.unwrap_or(false));
 
         if !separate_debug_symbols && compress_debug_symbols {
@@ -359,6 +366,7 @@ impl BuildEnvironment {
             },
             _ if separate_debug_symbols => DebugSymbols::Separate {
                 compress: compress_debug_symbols,
+                generate_dbgsym_package,
             },
             ManifestDebugFlags::SomeSymbolsAdded => DebugSymbols::Keep,
             ManifestDebugFlags::Default => DebugSymbols::Strip,
@@ -458,7 +466,7 @@ impl BuildEnvironment {
                 if let Some(source_path) = source_path {
                     let name = source_path.file_name().unwrap().to_str().expect("utf-8 target name");
                     let name = name.strip_suffix(EXE_SUFFIX).unwrap_or(name);
-                    if asset_target.is_example {
+                    if asset_target.asset_kind == AssetKind::CargoExampleBinary {
                         build_examples.push(name);
                     } else {
                         build_bins.push(name);
@@ -491,7 +499,7 @@ impl BuildEnvironment {
             Path::new("usr/share/doc").join(&package_deb.deb_name).join("copyright"),
             0o644,
             IsBuilt::No,
-            false,
+            AssetKind::Any,
         ).processed("generated", source_path));
         Ok(())
     }
@@ -535,7 +543,7 @@ impl BuildEnvironment {
                     Path::new("usr/share/doc").join(&package_deb.deb_name).join("changelog.Debian.gz"),
                     0o644,
                     IsBuilt::No,
-                    false,
+                    AssetKind::Any,
                 ).processed("generated", source_path));
             }
         }
@@ -591,7 +599,7 @@ impl BuildEnvironment {
                             target.path,
                             target.mode,
                             IsBuilt::No,
-                            false,
+                            AssetKind::Any,
                         ).processed("systemd", unit_dir.clone()));
                     }
                 }
@@ -629,12 +637,24 @@ impl BuildEnvironment {
 
     /// Save final .deb here
     pub(crate) fn deb_output_path(&self, package_deb: &PackageConfig) -> PathBuf {
-        let filename = format!("{}_{}_{}.deb", package_deb.deb_name, package_deb.deb_version, package_deb.architecture);
+        let filename = format!(
+            "{}_{}_{}.{}",
+            package_deb.deb_name,
+            package_deb.deb_version,
+            package_deb.architecture,
+            if package_deb.is_split_dbgsym_package {
+                "ddeb"
+            } else {
+                "deb"
+            }
+        );
 
         if let Some(ref path_str) = self.deb_output_path {
             let path = Path::new(path_str);
             if path_str.ends_with('/') || path.is_dir() {
                 path.join(filename)
+            } else if package_deb.is_split_dbgsym_package {
+                path.with_extension("ddeb")
             } else {
                 path.to_owned()
             }
@@ -656,11 +676,15 @@ impl BuildEnvironment {
         let deb_temp_dir = self.deb_temp_dir(package_deb);
         let _ = fs::remove_dir(&deb_temp_dir);
         // Delete previous .deb from target/debian, but only other versions of the same package
-        let mut deb_dir = self.default_deb_output_dir();
-        deb_dir.push(format!("{}_*_{}.deb", package_deb.deb_name, package_deb.architecture));
-        if let Ok(old_files) = glob::glob(deb_dir.to_str().ok_or(io::ErrorKind::InvalidInput)?) {
-            for old_file in old_files.flatten() {
-                let _ = fs::remove_file(old_file);
+        let deb_dir = self.default_deb_output_dir();
+        for base_name in [
+            format!("{}_*_{}.deb", package_deb.deb_name, package_deb.architecture),
+            format!("{}-dbgsym_*_{}.ddeb", package_deb.deb_name, package_deb.architecture),
+        ] {
+            if let Ok(old_files) = glob::glob(deb_dir.join(base_name).to_str().ok_or(io::ErrorKind::InvalidInput)?) {
+                for old_file in old_files.flatten() {
+                    let _ = fs::remove_file(old_file);
+                }
             }
         }
         fs::create_dir_all(deb_temp_dir)
@@ -765,6 +789,7 @@ impl PackageConfig {
                 Some(SystemUnitsSingleOrMultiple::Multi(v)) => Some(v),
             }),
             multiarch,
+            is_split_dbgsym_package: false,
         })
     }
 
@@ -800,8 +825,8 @@ impl PackageConfig {
         let mut indices_to_remove = Vec::new();
         let cwd = std::env::current_dir().unwrap_or_default();
         for (idx, asset) in self.assets.resolved.iter().enumerate() {
-            target_paths.entry(asset.c.target_path.as_path()).and_modify(|old_asset| {
-                listener.warning(format!("Duplicate assets: [{}] and [{}] have the same target path; first one wins", AssetFmt(*old_asset, &cwd), AssetFmt(asset, &cwd)));
+            target_paths.entry(asset.c.target_path.as_path()).and_modify(|&mut old_asset| {
+                listener.warning(format!("Duplicate assets: [{}] and [{}] have the same target path; first one wins", AssetFmt(old_asset, &cwd), AssetFmt(asset, &cwd)));
                 indices_to_remove.push(idx);
             }).or_insert(asset);
         }
@@ -932,6 +957,9 @@ impl PackageConfig {
         if !ma.is_empty() {
             writeln!(&mut control, "Multi-Arch: {ma}")?;
         }
+        if self.is_split_dbgsym_package {
+            writeln!(&mut control, "Auto-Built-Package: debug-symbols")?;
+        }
         if let Some(homepage) = self.homepage.as_deref().or(self.documentation.as_deref()).or(self.repository.as_deref()) {
             writeln!(&mut control, "Homepage: {homepage}")?;
         }
@@ -1032,6 +1060,57 @@ impl PackageConfig {
             return None;
         }
         Some(format_conffiles(&self.conf_files))
+    }
+
+    pub(crate) fn split_dbgsym(&mut self) -> Result<Option<Self>, CargoDebError> {
+        debug_assert!(self.assets.unresolved.is_empty());
+        let (debug_assets, regular): (Vec<_>, Vec<_>) = self.assets.resolved.drain(..).partition(|asset| {
+            asset.c.asset_kind == AssetKind::SeparateDebugSymbols
+        });
+        self.assets.resolved = regular;
+        if debug_assets.is_empty() {
+            return Ok(None);
+        }
+
+        Ok(Some(Self {
+            cargo_crate_name: self.cargo_crate_name.clone(),
+            deb_name: format!("{}-dbgsym", self.deb_name),
+            deb_version: self.deb_version.clone(),
+            license: self.license.clone(),
+            license_file_rel_path: None,
+            license_file_skip_lines: 0,
+            copyright: None,
+            changelog: None,
+            homepage: self.homepage.clone(),
+            documentation: self.documentation.clone(),
+            repository: self.repository.clone(),
+            description: format!("Debug symbols for {} v{} ({})", self.deb_name, self.deb_version, self.architecture),
+            extended_description: ExtendedDescription::None,
+            maintainer: self.maintainer.clone(),
+            wildcard_depends: String::new(),
+            resolved_depends: Some(format!("{} (= {})", self.deb_name, self.deb_version)),
+            pre_depends: None,
+            recommends: None,
+            suggests: None,
+            enhances: None,
+            section: Some("debug".into()),
+            priority: "extra".into(),
+            conflicts: None,
+            breaks: None,
+            replaces: None,
+            provides: None,
+            architecture: self.architecture.clone(),
+            multiarch: if self.multiarch != Multiarch::None { Multiarch::Same } else { Multiarch::None },
+            conf_files: Vec::new(),
+            assets: Assets::new(Vec::new(), debug_assets),
+            readme_rel_path: None,
+            triggers_file_rel_path: None,
+            maintainer_scripts_rel_path: None,
+            preserve_symlinks: self.preserve_symlinks,
+            systemd_units: None,
+            default_timestamp: self.default_timestamp,
+            is_split_dbgsym_package: true,
+        }))
     }
 }
 const EXPECTED: &str = "Expected items in `assets` to be either `[source, dest, mode]` array, or `{source, dest, mode}` object, or `\"$auto\"`";
@@ -1162,7 +1241,7 @@ impl BuildEnvironment {
                     }
                 }
             }
-            Ok(UnresolvedAsset::new(source_path, target_path, chmod, is_built, is_example))
+            Ok(UnresolvedAsset::new(source_path, target_path, chmod, is_built, if is_example { AssetKind::CargoExampleBinary } else { AssetKind::Any }))
         }).collect::<CDResult<Vec<_>>>()?;
         let resolved = if has_auto { self.implicit_assets(package_deb)? } else { vec![] };
         Ok(Assets::new(unresolved_assets, resolved))
@@ -1177,7 +1256,7 @@ impl BuildEnvironment {
                         Path::new("usr/bin").join(&t.name),
                         0o755,
                         self.is_built_file_in_package(t),
-                        false,
+                        AssetKind::Any,
                     ).processed("$auto", t.src_path.clone()))
                 } else if t.crate_types.iter().any(|ty| ty == "cdylib") && t.kind.iter().any(|k| k == "cdylib") {
                     let (prefix, suffix) = if self.rust_target_triple.is_none() { (DLL_PREFIX, DLL_SUFFIX) } else { ("lib", ".so") };
@@ -1188,7 +1267,7 @@ impl BuildEnvironment {
                         lib_dir.join(lib_name),
                         0o644,
                         self.is_built_file_in_package(t),
-                        false,
+                        AssetKind::Any,
                     ).processed("$auto", t.src_path.clone()))
                 } else {
                     None
@@ -1203,7 +1282,7 @@ impl BuildEnvironment {
             let target_path = Path::new("usr/share/doc")
                 .join(&package_deb.deb_name)
                 .join(path.file_name().ok_or("bad README path")?);
-            implied_assets.push(Asset::new(AssetSource::Path(path), target_path, 0o644, IsBuilt::No, false)
+            implied_assets.push(Asset::new(AssetSource::Path(path), target_path, 0o644, IsBuilt::No, AssetKind::Any)
                 .processed("$auto", readme_rel_path.to_path_buf()));
         }
         Ok(implied_assets)

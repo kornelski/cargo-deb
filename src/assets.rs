@@ -143,6 +143,13 @@ impl Assets {
 }
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
+pub enum AssetKind {
+    Any,
+    CargoExampleBinary,
+    SeparateDebugSymbols,
+}
+
+#[derive(Debug, Copy, Clone, Eq, PartialEq)]
 pub enum IsBuilt {
     No,
     SamePackage,
@@ -157,16 +164,16 @@ pub struct UnresolvedAsset {
 }
 
 impl UnresolvedAsset {
-    pub(crate) fn new(source_path: PathBuf, target_path: PathBuf, chmod: u32, is_built: IsBuilt, is_example: bool) -> Self {
+    pub(crate) fn new(source_path: PathBuf, target_path: PathBuf, chmod: u32, is_built: IsBuilt, asset_kind: AssetKind) -> Self {
         Self {
             source_path,
-            c: AssetCommon { target_path, chmod, is_example, is_built },
+            c: AssetCommon { target_path, chmod, asset_kind, is_built },
         }
     }
 
     /// Convert `source_path` (with glob or dir) to actual path
     pub fn resolve(self, preserve_symlinks: bool) -> CDResult<Vec<Asset>> {
-        let Self { source_path, c: AssetCommon { target_path, chmod, is_built, is_example } } = self;
+        let Self { source_path, c: AssetCommon { target_path, chmod, is_built, asset_kind } } = self;
 
         let source_prefix_len = is_glob_pattern(source_path.as_os_str()).then(|| {
             let file_name_is_glob = source_path
@@ -216,7 +223,7 @@ impl UnresolvedAsset {
                         target_file,
                         chmod,
                         is_built,
-                        is_example,
+                        asset_kind,
                     );
                     if source_prefix_len.is_some() {
                         asset.processed("glob", None)
@@ -238,7 +245,7 @@ impl UnresolvedAsset {
 pub struct AssetCommon {
     pub target_path: PathBuf,
     pub chmod: u32,
-    pub(crate) is_example: bool,
+    pub(crate) asset_kind: AssetKind,
     is_built: IsBuilt,
 }
 
@@ -282,7 +289,7 @@ pub struct ProcessedFrom {
 
 impl Asset {
     #[must_use]
-    pub fn new(source: AssetSource, mut target_path: PathBuf, chmod: u32, is_built: IsBuilt, is_example: bool) -> Self {
+    pub fn new(source: AssetSource, mut target_path: PathBuf, chmod: u32, is_built: IsBuilt, asset_kind: AssetKind) -> Self {
         // is_dir() is only for paths that exist
         if target_path.to_string_lossy().ends_with('/') {
             let file_name = source.path().and_then(|p| p.file_name()).expect("source must be a file");
@@ -296,7 +303,7 @@ impl Asset {
         Self {
             source,
             processed_from: None,
-            c: AssetCommon { target_path, chmod, is_example, is_built },
+            c: AssetCommon { target_path, chmod, asset_kind, is_built },
         }
     }
 
@@ -391,7 +398,7 @@ pub fn compress_assets(package_deb: &mut PackageConfig, listener: &dyn Listener)
                 new_path.into(),
                 orig_asset.c.chmod,
                 IsBuilt::No,
-                false,
+                AssetKind::Any,
             ).processed("compressed",
                 orig_asset.source.path().unwrap_or(&orig_asset.c.target_path).to_path_buf()
             ));
@@ -422,7 +429,7 @@ mod tests {
             PathBuf::from("baz/"),
             0o644,
             IsBuilt::SamePackage,
-            false,
+            AssetKind::Any,
         );
         assert_eq!("baz/bar", a.c.target_path.to_str().unwrap());
         assert!(a.c.is_built != IsBuilt::No);
@@ -432,7 +439,7 @@ mod tests {
             PathBuf::from("/baz/quz"),
             0o644,
             IsBuilt::No,
-            false,
+            AssetKind::Any,
         );
         assert_eq!("baz/quz", a.c.target_path.to_str().unwrap());
         assert!(a.c.is_built == IsBuilt::No);
@@ -455,7 +462,7 @@ mod tests {
                 c: AssetCommon {
                     target_path: PathBuf::from("bar/"),
                     chmod: 0o644,
-                    is_example: false,
+                    asset_kind: AssetKind::Any,
                     is_built: IsBuilt::SamePackage,
                 },
             };
@@ -488,7 +495,7 @@ mod tests {
             PathBuf::from("/usr/bin/baz/"),
             0o644,
             IsBuilt::SamePackage,
-            false,
+            AssetKind::Any,
         );
         let debug_target = a.c.default_debug_target_path("usr/lib".as_ref());
         assert_eq!(debug_target, Path::new("/usr/lib/debug/usr/bin/baz/bar.debug"));
@@ -503,7 +510,7 @@ mod tests {
             PathBuf::from("baz/"),
             0o644,
             IsBuilt::Workspace,
-            false,
+            AssetKind::Any,
         );
         let debug_target = a.c.default_debug_target_path("usr/lib".as_ref());
         assert_eq!(debug_target, Path::new("/usr/lib/debug/baz/bar.debug"));

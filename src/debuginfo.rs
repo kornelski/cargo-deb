@@ -43,7 +43,7 @@ pub fn strip_binaries(config: &mut BuildEnvironment, package_deb: &mut PackageCo
     let stripped_binaries_output_dir = config.default_deb_output_dir();
     let (separate_debug_symbols, compress_debug_symbols) = match config.debug_symbols {
         DebugSymbols::Keep | DebugSymbols::Strip => (false, false),
-        DebugSymbols::Separate { compress } => (true, compress),
+        DebugSymbols::Separate { compress, .. } => (true, compress),
     };
 
     let lib_dir_base = package_deb.library_install_dir(config.rust_target_triple());
@@ -126,8 +126,8 @@ pub fn strip_binaries(config: &mut BuildEnvironment, package_deb: &mut PackageCo
                     debug_target_path,
                     0o644,
                     IsBuilt::No,
-                    false,
-                ).processed(if compress_debug_symbols { "compress"} else {"separate"}, path.to_path_buf()))
+                    crate::assets::AssetKind::SeparateDebugSymbols,
+                ).processed(if compress_debug_symbols {"compress"} else {"separate"}, path.to_path_buf()))
             } else {
                 None // no new asset
             };

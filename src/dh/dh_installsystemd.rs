@@ -385,7 +385,7 @@ pub fn generate(package: &str, assets: &[Asset], options: &Options, listener: &d
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::assets::{Asset, AssetSource};
+    use crate::assets::{Asset, AssetKind, AssetSource, IsBuilt};
     use crate::util::tests::{add_test_fs_paths, get_read_count, set_test_fs_path_content};
     use rstest::*;
 
@@ -558,8 +558,8 @@ mod tests {
             AssetSource::Path(PathBuf::new()),
             PathBuf::new(),
             0o0,
-            crate::assets::IsBuilt::No,
-            false,
+            IsBuilt::No,
+            AssetKind::Any,
         )];
 
         let fragments = generate("mypkg", &assets, &Options::default(), &mock_listener).unwrap();
@@ -575,8 +575,8 @@ mod tests {
             AssetSource::Path(PathBuf::new()), // path source with empty source path makes no sense
             Path::new("usr/lib/tmpfiles.d/blah").to_path_buf(),
             0o0,
-            crate::assets::IsBuilt::No,
-            false,
+            IsBuilt::No,
+            AssetKind::Any,
         )];
 
         assert!(generate("mypkg", &assets, &Options::default(), &mock_listener).is_err());
@@ -591,8 +591,8 @@ mod tests {
             AssetSource::Data(vec![]), // only assets of type Path are currently supported
             Path::new("usr/lib/tmpfiles.d/blah").to_path_buf(),
             0o0,
-            crate::assets::IsBuilt::No,
-            false,
+            IsBuilt::No,
+            AssetKind::Any,
         )];
 
         assert!(generate("mypkg", &assets, &Options::default(), &mock_listener).is_err());
@@ -612,8 +612,8 @@ mod tests {
             AssetSource::Path(tmp_file_path),
             Path::new("usr/lib/tmpfiles.d/blah").to_path_buf(),
             0o0,
-            crate::assets::IsBuilt::No,
-            false,
+            IsBuilt::No,
+            AssetKind::Any,
         )];
 
         let fragments = generate("mypkg", &assets, &Options::default(), &mock_listener).unwrap();
@@ -663,8 +663,8 @@ mod tests {
             AssetSource::Path(PathBuf::from("debian/my_unit@.service")),
             Path::new("lib/systemd/system/").to_path_buf(),
             0o0,
-            crate::assets::IsBuilt::No,
-            false,
+            IsBuilt::No,
+            AssetKind::Any,
         )];
 
         let fragments = generate("mypkg", &assets, &Options::default(), &mock_listener).unwrap();
@@ -680,8 +680,8 @@ mod tests {
             AssetSource::Path(PathBuf::from("debian/10-extra-hardening.conf")),
             Path::new("lib/systemd/system/foobar.service.d/").to_path_buf(),
             0o0,
-            crate::assets::IsBuilt::No,
-            false,
+            IsBuilt::No,
+            AssetKind::Any,
         )];
 
         let fragments = generate("mypkg", &assets, &Options::default(), &mock_listener).unwrap();
@@ -698,8 +698,8 @@ mod tests {
             AssetSource::Path(PathBuf::from("debian/my_unit.service")),
             Path::new("some/other/path/").to_path_buf(),
             0o0,
-            crate::assets::IsBuilt::No,
-            false,
+            IsBuilt::No,
+            AssetKind::Any,
         )];
 
         let fragments = generate("mypkg", &assets, &Options::default(), &mock_listener).unwrap();
@@ -764,8 +764,8 @@ mod tests {
             AssetSource::Path(PathBuf::from(unit_file_path)),
             format!("{install_base_path}/mypkg.service").into(),
             0o0,
-            crate::assets::IsBuilt::No,
-            false,
+            IsBuilt::No,
+            AssetKind::Any,
         )];
 
         let options = Options {

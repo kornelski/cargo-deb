@@ -64,7 +64,7 @@ merge-assets.by.src = [
 
 [profile.release]
 # You must enable debug symbols explicitly if you want them in the package
-debug = true
+debug = "line-tables-only"
 
 [features]
 default = ["example_non_debian_build"]

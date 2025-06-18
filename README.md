@@ -23,7 +23,7 @@ Upon running `cargo deb` from the base directory of your Rust project, the Debia
 
 `cargo deb --install` builds and installs the project system-wide.
 
-## Configuration
+## Optional Configuration
 
 No configuration is necessary to make a basic package from a Cargo project with a binary. This command obtains basic information it needs from [the `Cargo.toml` file](https://doc.rust-lang.org/cargo/reference/manifest.html). It uses Cargo fields: `name`, `version`, `license`, `license-file`, `description`, `readme`, and `homepage` or `repository`.
 
@@ -33,7 +33,7 @@ For a Debian package that includes one or more systemd unit files you may also w
 
 ### Debug symbols
 
-Debug symbols are stripped from built binaries by default, unless `[profile.release] debug = true` is set in `Cargo.toml`. If `cargo deb --separate-debug-symbols` is run, the debug symbols will be packaged as a separate file installed at `/usr/lib/debug/<build-id-or-path>.debug`. This can also be enabled via `[package.metadata.deb]` under `separate-debug-symbols`.
+Debug symbols are stripped from built binaries by default, unless `[profile.release] debug` is enabled in `Cargo.toml` (`debug = "line-tables-only"` is recommended). The `--separate-debug-symbols` and `--dbgsym` options package debug symbols as separate files installed at `/usr/lib/debug/<build-id-or-path>.debug`. This can also be enabled via `[package.metadata.deb]` under `separate-debug-symbols`.
 
 ### `[package.metadata.deb]` options
 
@@ -199,11 +199,21 @@ To get debug symbols, set in `Cargo.toml`:
 
 ```toml
 [profile.release]
-debug = true
-# or debug="line-tables-only" for smaller files
+debug = "line-tables-only"
+# or debug = 1 for fatter debug info
 ```
 
-Note: building using the `dev` profile is intentionally unsupported.
+Note: building using the `dev` profile is intentionally unsupported. You can specify other profiles with `--profile`.
+
+#### Separate `-dbgsym.ddeb` package
+
+```sh
+cargo deb --dbgsym
+```
+
+Removes debug symbols from the executables, and makes a second `-dbgsym.ddeb` package with only `/usr/lib/debug/.build-id/*` fikes. Requires GNU `objcopy` tool. The `.ddeb` package is a regular deb package that can be installed together with the base `.deb` package.
+
+#### Separate files in the same package
 
 ```sh
 cargo deb --separate-debug-symbols --compress-debug-symbols
