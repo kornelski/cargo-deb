@@ -214,7 +214,7 @@ mod tests {
 
         let (mut config, package_deb) = BuildEnvironment::from_manifest(
             BuildOptions {
-                root_manifest_path: Some(Path::new("test-resources/testroot/Cargo.toml")),
+                manifest_path: Some(Path::new("test-resources/testroot/Cargo.toml")),
                 selected_package_name: package_name,
                 ..Default::default()
             },

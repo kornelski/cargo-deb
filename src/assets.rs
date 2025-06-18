@@ -532,7 +532,7 @@ mod tests {
         let _g = add_test_fs_paths(&[to_canon_static_str("cargo-deb.service")]);
 
         let (_config, package_deb) = BuildEnvironment::from_manifest(BuildOptions {
-            root_manifest_path: Some(Path::new("Cargo.toml")),
+            manifest_path: Some(Path::new("Cargo.toml")),
             ..Default::default()
         }, &mock_listener).unwrap();
 
@@ -552,7 +552,7 @@ mod tests {
         let _g = add_test_fs_paths(&[to_canon_static_str("cargo-deb.service")]);
 
         let (_config, package_deb) = BuildEnvironment::from_manifest(BuildOptions {
-            root_manifest_path: Some(Path::new("Cargo.toml")),
+            manifest_path: Some(Path::new("Cargo.toml")),
             overrides: DebConfigOverrides {
                 systemd_units: Some(vec![SystemdUnitsConfig::default()]),
                 maintainer_scripts_rel_path: Some(PathBuf::new()),

@@ -255,7 +255,7 @@ pub enum Multiarch {
 
 #[derive(Debug, Default)]
 pub struct BuildOptions<'a> {
-    pub root_manifest_path: Option<&'a Path>,
+    pub manifest_path: Option<&'a Path>,
     pub selected_package_name: Option<&'a str>,
     pub deb_output_path: Option<String>,
     pub rust_target_triple: Option<&'a str>,
@@ -276,7 +276,7 @@ impl BuildEnvironment {
     /// `None` target means the host machine's architecture.
     pub fn from_manifest(
         BuildOptions {
-            root_manifest_path,
+            manifest_path,
             selected_package_name,
             deb_output_path,
             rust_target_triple,
@@ -302,7 +302,7 @@ impl BuildEnvironment {
             mut target_dir,
             mut manifest,
             cargo_run_current_dir,
-        } = cargo_metadata(root_manifest_path, selected_package_name, cargo_locking_flags)?;
+        } = cargo_metadata(manifest_path, selected_package_name, cargo_locking_flags)?;
 
         let default_timestamp = if let Ok(source_date_epoch) = std::env::var("SOURCE_DATE_EPOCH") {
             source_date_epoch.parse().map_err(|e| CargoDebError::NumParse("SOURCE_DATE_EPOCH", e))?

@@ -429,8 +429,8 @@ fn pick_default_package_from_workspace(metadata: &CargoMetadata) -> Option<usize
     packages_with_deb_meta.next().is_none().then_some(expected_single_id)
 }
 
-pub(crate) fn cargo_metadata(root_manifest_path: Option<&Path>, selected_package_name: Option<&str>, cargo_locking_flags: CargoLockingFlags) -> Result<ManifestFound, CargoDebError> {
-    let (metadata, cargo_run_current_dir) = run_cargo_metadata(root_manifest_path, cargo_locking_flags)?;
+pub(crate) fn cargo_metadata(initial_manifest_path: Option<&Path>, selected_package_name: Option<&str>, cargo_locking_flags: CargoLockingFlags) -> Result<ManifestFound, CargoDebError> {
+    let (metadata, cargo_run_current_dir) = run_cargo_metadata(initial_manifest_path, cargo_locking_flags)?;
     let (target_package, target_dir, workspace_root) = parse_metadata(metadata, selected_package_name)?;
 
     let workspace_root_manifest_path = workspace_root.join("Cargo.toml");
