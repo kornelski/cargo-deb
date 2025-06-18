@@ -54,11 +54,28 @@ pub(crate) fn find_profile<'a>(manifest: &'a cargo_toml::Manifest<CargoPackageMe
     }
 }
 
-pub(crate) fn debug_flags(profile: &cargo_toml::Profile) -> ManifestDebugFlags {
-    if profile.strip == Some(StripSetting::Symbols) {
+pub(crate) fn debug_flags(profile: &cargo_toml::Profile, selected_profile: &str) -> ManifestDebugFlags {
+    let profile_uppercase = selected_profile.to_ascii_uppercase();
+    let cargo_var = |name| {
+        let name = format!("CARGO_PROFILE_{profile_uppercase}_{name}");
+        std::env::var(&name).ok().inspect(|v| log::debug!("{name} = {v}"))
+    };
+
+    let strip = cargo_var("STRIP").and_then(|var| {
+            StripSetting::deserialize(toml::de::ValueDeserializer::new(&var)).inspect_err(|e| log::warn!("{e}")).ok()
+        })
+        .or(profile.strip.clone())
+        .inspect(|v| log::debug!("strip={v:?}"));
+    if strip == Some(StripSetting::Symbols) {
         return ManifestDebugFlags::FullyStrippedByCargo;
     }
-    match profile.debug.as_ref() {
+
+    let debug = cargo_var("DEBUG").and_then(|var| {
+            DebugSetting::deserialize(toml::de::ValueDeserializer::new(&var)).inspect_err(|e| log::warn!("{e}")).ok()
+        })
+        .or(profile.debug.clone())
+        .inspect(|v| log::debug!("debug={v:?}"));
+    match debug {
         None => ManifestDebugFlags::Default,
         Some(DebugSetting::None) => ManifestDebugFlags::SymbolsDisabled,
         Some(_) if profile.split_debuginfo.as_deref().is_some_and(|p| p != "off") => ManifestDebugFlags::SymbolsPackedExternally,

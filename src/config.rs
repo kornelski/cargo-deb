@@ -330,7 +330,7 @@ impl BuildEnvironment {
         }
 
         let manifest_debug = root_profile.or(package_profile)
-            .map(debug_flags)
+            .map(|profile_toml| debug_flags(profile_toml, selected_profile))
             .unwrap_or(ManifestDebugFlags::Default);
 
         drop(workspace_root_manifest_path);
