@@ -44,7 +44,7 @@ impl CargoConfig {
     fn try_parse(dir_path: &Path) -> CDResult<Option<Self>> {
         let mut path = dir_path.join("config.toml");
         if !path.exists() {
-            path = dir_path.join("config");
+            path.set_file_name("config");
             if !path.exists() {
                 return Ok(None);
             }
