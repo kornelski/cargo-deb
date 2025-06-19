@@ -512,9 +512,13 @@ impl BuildEnvironment {
         fn s(s: &(impl AsRef<OsStr> + ?Sized)) -> Cow<'_, OsStr> {
             Cow::Borrowed(s.as_ref())
         }
-        fn o<'s>(s: impl Into<String>) -> Cow<'s, OsStr> {
-            Cow::Owned(OsString::from(s.into()))
+        fn o<'s>(s: impl Into<OsString>) -> Cow<'s, OsStr> {
+            Cow::Owned(s.into())
         }
+
+        let manifest_path = self.manifest_path();
+        debug_assert!(manifest_path.exists());
+        flags.extend([s("--manifest-path"), o(manifest_path)]);
 
         let profile_name = self.build_profile.profile_name();
 
@@ -750,6 +754,10 @@ impl BuildEnvironment {
 
     pub(crate) fn path_in_package<P: AsRef<Path>>(&self, rel_path: P) -> PathBuf {
         self.package_manifest_dir.join(rel_path)
+    }
+
+    fn manifest_path(&self) -> PathBuf {
+        self.package_manifest_dir.join("Cargo.toml")
     }
 
     /// Store intermediate files here
