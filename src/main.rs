@@ -23,11 +23,15 @@ fn main() -> ExitCode {
             .default_value("none").value_name("same|foreign"))
         .arg(Arg::new("profile").long("profile").help("Select which Cargo build profile to use").num_args(1).value_name("release|<custom>"))
         .arg(Arg::new("install").long("install").action(ArgAction::SetTrue).help("Immediately install the created deb package"))
+        .arg(Arg::new("no-install-dbgsym").long("no-install-dbgsym").action(ArgAction::SetTrue).requires("install").requires("dbgsym")
+            .hide_short_help(true).help("Immediately install the created deb package, but without dbgsym package"))
         .arg(Arg::new("quiet").short('q').long("quiet").action(ArgAction::SetTrue).help("Don't print warnings"))
         .arg(Arg::new("verbose").short('v').long("verbose").action(ArgAction::SetTrue).conflicts_with("quiet").help("Print progress"))
         .next_help_heading("Debug info")
         .arg(Arg::new("dbgsym").long("dbgsym").action(ArgAction::SetTrue)
             .help("Move debug symbols into a separate -dbgsym.ddeb package"))
+        .arg(Arg::new("no-dbgsym").long("no-dbgsym").action(ArgAction::SetFalse).conflicts_with("dbgsym")
+            .hide_short_help(true).help("Don't make a dbgsym.ddeb package"))
         .arg(Arg::new("strip").long("strip").action(ArgAction::SetTrue).help("Always try to strip debug symbols").conflicts_with("dbgsym"))
         .arg(Arg::new("no-strip").long("no-strip").action(ArgAction::SetFalse).conflicts_with_all(["separate-debug-symbols", "dbgsym"])
             .hide_short_help(true).help("Do not run `strip` command if possible"))
@@ -67,8 +71,6 @@ fn main() -> ExitCode {
         .after_help("Use --help to show more options")
         .after_long_help("See https://lib.rs/crates/cargo-deb for more info")
         .get_matches();
-
-    let install = matches.get_flag("install");
 
     let compress_type = match matches.get_one::<String>("compress-type").map(|s| s.as_str()) {
         Some("gz" | "gzip") => Format::Gzip,
@@ -111,14 +113,17 @@ fn main() -> ExitCode {
         listener.warning(format!("--deb-version takes precedence over --deb-revision. Revision '{}' will be ignored", deb_revision.as_deref().unwrap_or_default()));
     }
 
+    let install = matches.get_flag("install");
+
     match CargoDeb::new(CargoDebOptions {
         no_build: matches.get_flag("no-build"),
         strip_override: matches.get_one::<bool>("strip").copied(),
         separate_debug_symbols: matches.get_one::<bool>("separate-debug-symbols").or(matches.get_one::<bool>("no-separate-debug-symbols")).copied(),
         compress_debug_symbols: matches.get_one::<bool>("compress-debug-symbols").copied(),
-        generate_dbgsym_package: matches.get_one::<bool>("dbgsym").copied(),
+        generate_dbgsym_package: matches.get_one::<bool>("dbgsym").or(matches.get_one::<bool>("no-dbgsym")).copied(),
         verbose,
         install,
+        install_without_dbgsym: matches.get_flag("no-install-dbgsym"),
         // when installing locally it won't be transferred anywhere, so allow faster compression
         fast: install || matches.get_flag("fast"),
         variant: matches.get_one::<String>("variant").cloned(),

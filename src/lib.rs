@@ -184,8 +184,10 @@ impl CargoDeb {
         if self.options.install {
             install_deb(&generated_deb)?;
 
-            if let Some(dbgsym_ddeb) = &generated_dbgsym_ddeb {
-                install_deb(dbgsym_ddeb)?;
+            if !self.options.install_without_dbgsym {
+                if let Some(dbgsym_ddeb) = &generated_dbgsym_ddeb {
+                    install_deb(dbgsym_ddeb)?;
+                }
             }
         }
         Ok(())
@@ -204,6 +206,7 @@ pub struct CargoDebOptions {
     pub verbose: bool,
     /// Run dpkg -i
     pub install: bool,
+    pub install_without_dbgsym: bool,
     pub selected_package_name: Option<String>,
     pub output_path: Option<String>,
     pub variant: Option<String>,
@@ -253,6 +256,7 @@ impl Default for CargoDebOptions {
             fast: false,
             verbose: false,
             install: false,
+            install_without_dbgsym: false,
             selected_package_name: None,
             output_path: None,
             variant: None,

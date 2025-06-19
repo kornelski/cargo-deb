@@ -390,18 +390,19 @@ impl BuildEnvironment {
 
     fn configure_debug_symbols(debug: DebugSymbolOptions, deb: &CargoDeb, manifest_debug: ManifestDebugFlags, selected_profile: &str, listener: &dyn Listener) -> DebugSymbols {
         let DebugSymbolOptions { generate_dbgsym_package, separate_debug_symbols, compress_debug_symbols, strip_override } = debug;
+        let allows_strip = strip_override != Some(false);
 
         let generate_dbgsym_package = generate_dbgsym_package.unwrap_or_else(|| deb.dbgsym.unwrap_or(false));
-        let separate_option_name = if generate_dbgsym_package { "dbgsym" } else { "separate-debug-symbols" };
 
         let wants_separate_debug_symbols = separate_debug_symbols
-            .or((strip_override == Some(false)).then_some(false)) // --no-strip means not running the strip command, even to separate symbols
+            .or((!allows_strip).then_some(false)) // --no-strip means not running the strip command, even to separate symbols
             .or(deb.separate_debug_symbols)
             .unwrap_or(generate_dbgsym_package);
         let separate_debug_symbols = generate_dbgsym_package || wants_separate_debug_symbols;
-        let compress_debug_symbols = compress_debug_symbols.unwrap_or_else(|| deb.compress_debug_symbols.unwrap_or(false));
+        let compress_debug_symbols = compress_debug_symbols.or(deb.compress_debug_symbols).unwrap_or(false);
 
-        if strip_override == Some(false) && separate_debug_symbols {
+        let separate_option_name = if generate_dbgsym_package { "dbgsym" } else { "separate-debug-symbols" };
+        if !allows_strip && separate_debug_symbols {
             listener.warning(format!("--no-strip has no effect when using {separate_option_name}"));
         }
         else if generate_dbgsym_package && !wants_separate_debug_symbols {
