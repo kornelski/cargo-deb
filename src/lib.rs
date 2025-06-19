@@ -70,6 +70,9 @@ const TAR_REJECTS_CUR_DIR: bool = true;
 /// Set by `build.rs`
 const DEFAULT_TARGET: &str = env!("CARGO_DEB_DEFAULT_TARGET");
 
+pub const DBGSYM_DEFAULT: bool = cfg!(feature = "default_enable_dbgsym");
+pub const SEPARATE_DEBUG_SYMBOLS_DEFAULT: bool = cfg!(feature = "default_enable_separate_debug_symbols");
+
 pub struct CargoDeb {
     options: CargoDebOptions,
 }

@@ -391,13 +391,16 @@ impl BuildEnvironment {
     fn configure_debug_symbols(debug: DebugSymbolOptions, deb: &CargoDeb, manifest_debug: ManifestDebugFlags, selected_profile: &str, listener: &dyn Listener) -> DebugSymbols {
         let DebugSymbolOptions { generate_dbgsym_package, separate_debug_symbols, compress_debug_symbols, strip_override } = debug;
         let allows_strip = strip_override != Some(false);
+        let allows_separate_debug_symbols = separate_debug_symbols != Some(false);
 
-        let generate_dbgsym_package = generate_dbgsym_package.unwrap_or_else(|| deb.dbgsym.unwrap_or(false));
-
+        let generate_dbgsym_package = generate_dbgsym_package
+            .or((!allows_strip).then_some(false)) // --no-strip means not running the strip command, even to separate symbols
+            .or(deb.dbgsym)
+            .unwrap_or(allows_separate_debug_symbols && crate::DBGSYM_DEFAULT);
         let wants_separate_debug_symbols = separate_debug_symbols
             .or((!allows_strip).then_some(false)) // --no-strip means not running the strip command, even to separate symbols
             .or(deb.separate_debug_symbols)
-            .unwrap_or(generate_dbgsym_package);
+            .unwrap_or(generate_dbgsym_package || crate::SEPARATE_DEBUG_SYMBOLS_DEFAULT);
         let separate_debug_symbols = generate_dbgsym_package || wants_separate_debug_symbols;
         let compress_debug_symbols = compress_debug_symbols.or(deb.compress_debug_symbols).unwrap_or(false);
 

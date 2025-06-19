@@ -69,6 +69,13 @@ debug-id = ["dep:elf"]
 # Compile it instead of trying to use system solib
 static-lzma = ["lzma", "xz2?/static"]
 
+# ## Control default options
+
+# Assume `--dbgsym` by default (change with `--no-dbgsym`)
+default_enable_dbgsym = []
+# Assume `--separate-debug-symbols by default (change with `--no-separate-debug-symbols`)
+default_enable_separate_debug_symbols = []
+
 [profile.dev]
 debug = 1
 
