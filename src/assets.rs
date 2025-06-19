@@ -173,8 +173,8 @@ impl UnresolvedAsset {
     }
 
     /// Convert `source_path` (with glob or dir) to actual path
-    pub fn resolve(self, preserve_symlinks: bool) -> CDResult<Vec<Asset>> {
-        let Self { source_path, c: AssetCommon { target_path, chmod, is_built, asset_kind } } = self;
+    pub fn resolve(&self, preserve_symlinks: bool) -> CDResult<Vec<Asset>> {
+        let Self { ref source_path, c: AssetCommon { ref target_path, chmod, is_built, asset_kind } } = *self;
 
         let source_prefix_len = is_glob_pattern(source_path.as_os_str()).then(|| {
             let file_name_is_glob = source_path
@@ -233,10 +233,11 @@ impl UnresolvedAsset {
                     }
                 }))
             })
-            .collect::<CDResult<Vec<_>>>()?;
+            .collect::<CDResult<Vec<_>>>()
+            .map_err(|e| e.context(format_args!("Error while glob searching {}", source_path.display())))?;
 
         if matched_assets.is_empty() {
-            return Err(CargoDebError::AssetFileNotFound(source_path));
+            return Err(CargoDebError::AssetFileNotFound(source_path.to_path_buf()));
         }
         Ok(matched_assets)
     }
@@ -250,26 +251,49 @@ pub struct AssetCommon {
     is_built: IsBuilt,
 }
 
-pub(crate) struct AssetFmt<'a>(pub &'a Asset, pub &'a Path);
+pub(crate) struct AssetFmt<'a>{
+    c: &'a AssetCommon,
+    cwd: &'a Path,
+    source: Option<&'a Path>,
+    processed_from: Option<&'a ProcessedFrom>,
+}
+
+impl<'a> AssetFmt<'a> {
+    pub fn new(asset: &'a Asset, cwd: &'a Path) -> Self {
+        Self {
+            c: &asset.c,
+            source: asset.source.path(),
+            processed_from: asset.processed_from.as_ref(),
+            cwd
+        }
+    }
+    pub fn unresolved(asset: &'a UnresolvedAsset, cwd: &'a Path) -> Self {
+        Self {
+            c: &asset.c,
+            source: Some(&asset.source_path),
+            processed_from: None,
+            cwd
+        }
+    }
+}
 
 impl fmt::Display for AssetFmt<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let AssetFmt(asset, base_dir) = self;
 
-        let mut src = asset.source.path();
-        let action = asset.processed_from.as_ref().map(|proc| {
+        let mut src = self.source;
+        let action = self.processed_from.map(|proc| {
             src = proc.original_path.as_deref().or(src);
             proc.action
         });
         if let Some(src) = src {
-            write!(f, "{} ", src.strip_prefix(base_dir).unwrap_or(src).display())?;
+            write!(f, "{} ", src.strip_prefix(self.cwd).unwrap_or(src).display())?;
         }
         if let Some(action) = action {
-            write!(f, "({action}{}) ", if asset.c.is_built() {"; built"} else {""})?;
-        } else if asset.c.is_built() {
+            write!(f, "({action}{}) ", if self.c.is_built() {"; built"} else {""})?;
+        } else if self.c.is_built() {
             write!(f, "(built) ")?;
         }
-        write!(f, "-> {}", asset.c.target_path.display())?;
+        write!(f, "-> {}", self.c.target_path.display())?;
         Ok(())
     }
 }

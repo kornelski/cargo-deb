@@ -96,10 +96,20 @@ quick_error! {
             display("Unable to iterate asset glob result")
             source(err)
         }
+        Context(msg: String, err: Box<CargoDebError>) {
+            display("{msg}")
+            source(err)
+        }
         #[cfg(feature = "lzma")]
         LzmaCompressionError(err: xz2::stream::Error) {
             display("Lzma compression error: {:?}", err)
         }
+    }
+}
+
+impl CargoDebError {
+    pub fn context(self, msg: impl std::fmt::Display) -> Self {
+        Self::Context(msg.to_string(), Box::new(self))
     }
 }
 

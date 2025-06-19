@@ -9,7 +9,6 @@ use crate::parse::cargo::CargoConfig;
 use crate::parse::manifest::{cargo_metadata, debug_flags, find_profile, manifest_version_string};
 use crate::parse::manifest::{CargoDeb, CargoDebAssetArrayOrTable, CargoMetadataTarget, CargoPackageMetadata, ManifestFound};
 use crate::parse::manifest::{DependencyList, SystemUnitsSingleOrMultiple, SystemdUnitsConfig, LicenseFile, ManifestDebugFlags};
-use crate::util::pathbytes::AsUnixPathBytes;
 use crate::util::wordsplit::WordSplit;
 use crate::{debian_architecture_from_rust_triple, debian_triple_from_rust_triple, CargoLockingFlags, DEFAULT_TARGET};
 use rayon::prelude::*;
@@ -22,8 +21,9 @@ use std::process::Command;
 use std::time::SystemTime;
 use std::{fmt, fs, io, mem};
 
-pub(crate) fn is_glob_pattern(s: impl AsRef<Path> + Sized) -> bool {
-    s.as_ref().to_bytes().iter().any(|&c| c == b'*' || c == b'[' || c == b']' || c == b'!')
+pub(crate) fn is_glob_pattern(s: impl AsRef<Path>) -> bool {
+    // glob crate requires str anyway ;(
+    s.as_ref().to_str().map_or(false, |s| s.as_bytes().iter().any(|&c| c == b'*' || c == b'[' || c == b']' || c == b'!'))
 }
 
 /// Match the official `dh_installsystemd` defaults and rename the confusing
@@ -351,7 +351,7 @@ impl BuildEnvironment {
         drop(workspace_root_manifest_path);
         drop(root_manifest);
 
-        let cargo_package = manifest.package.as_mut().ok_or("bad package")?;
+        let cargo_package = manifest.package.as_mut().ok_or("Cargo.toml is a workspace, not a package")?;
 
         // If we build against a variant use that config and change the package name
         let mut deb = if let Some(variant) = config_variant {
@@ -923,18 +923,21 @@ impl PackageConfig {
     }
 
     pub fn resolve_assets(&mut self, listener: &dyn Listener) -> CDResult<()> {
+        let cwd = std::env::current_dir().unwrap_or_default();
+
         let unresolved = std::mem::take(&mut self.assets.unresolved);
-        let matched = unresolved.into_par_iter().map(|asset| asset.resolve(self.preserve_symlinks)).collect_vec_list();
+        let matched = unresolved.into_par_iter().map(|asset| {
+            asset.resolve(self.preserve_symlinks).map_err(|e| e.context(format_args!("Can't resolve asset: {}", AssetFmt::unresolved(&asset, &cwd))))
+        }).collect_vec_list();
         for res in matched.into_iter().flatten() {
             self.assets.resolved.extend(res?);
         }
 
         let mut target_paths = HashMap::new();
         let mut indices_to_remove = Vec::new();
-        let cwd = std::env::current_dir().unwrap_or_default();
         for (idx, asset) in self.assets.resolved.iter().enumerate() {
             target_paths.entry(asset.c.target_path.as_path()).and_modify(|&mut old_asset| {
-                listener.warning(format!("Duplicate assets: [{}] and [{}] have the same target path; first one wins", AssetFmt(old_asset, &cwd), AssetFmt(asset, &cwd)));
+                listener.warning(format!("Duplicate assets: [{}] and [{}] have the same target path; first one wins", AssetFmt::new(old_asset, &cwd), AssetFmt::new(asset, &cwd)));
                 indices_to_remove.push(idx);
             }).or_insert(asset);
         }
@@ -1004,7 +1007,9 @@ impl PackageConfig {
             } else {
                 let (dep, arch_spec) = get_architecture_specification(word)?;
                 if let Some(spec) = arch_spec {
-                    if match_architecture(spec, &self.architecture)? {
+                    let matches = match_architecture(spec, &self.architecture)
+                        .inspect_err(|e| listener.warning(format!("Can't get arch spec for '{word}'\n{e}")));
+                    if matches.unwrap_or(true) {
                         deps.insert(dep);
                     }
                 } else {
@@ -1378,8 +1383,8 @@ impl BuildEnvironment {
                     }
                 }
             }
-            Ok(UnresolvedAsset::new(source_path, target_path, chmod, is_built, if is_example { AssetKind::CargoExampleBinary } else { AssetKind::Any }))
-        }).collect::<CDResult<Vec<_>>>()?;
+            UnresolvedAsset::new(source_path, target_path, chmod, is_built, if is_example { AssetKind::CargoExampleBinary } else { AssetKind::Any })
+        }).collect::<Vec<_>>();
         let resolved = if has_auto { self.implicit_assets(package_deb)? } else { vec![] };
         Ok(Assets::new(unresolved_assets, resolved))
     }
