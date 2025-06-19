@@ -168,6 +168,7 @@ mod tests {
     //         Cargo.toml
 
     use super::*;
+    use crate::DebugSymbolOptions;
     use crate::assets::{Asset, AssetSource, IsBuilt};
     use crate::listener::MockListener;
     use crate::parse::manifest::SystemdUnitsConfig;
@@ -217,6 +218,13 @@ mod tests {
             BuildOptions {
                 manifest_path: Some(Path::new("test-resources/testroot/Cargo.toml")),
                 selected_package_name: package_name,
+                debug: DebugSymbolOptions {
+                    #[cfg(feature = "default_enable_dbgsym")]
+                    generate_dbgsym_package: Some(false),
+                    #[cfg(feature = "default_enable_separate_debug_symbols")]
+                    separate_debug_symbols: Some(false),
+                    ..Default::default()
+                },
                 ..Default::default()
             },
             mock_listener,

@@ -435,7 +435,7 @@ pub fn apply_compressed_assets(package_deb: &mut PackageConfig, new_assets: Vec<
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::config::{BuildEnvironment, BuildOptions, DebConfigOverrides};
+    use crate::config::{BuildEnvironment, BuildOptions, DebConfigOverrides, DebugSymbolOptions};
     use crate::parse::manifest::SystemdUnitsConfig;
     use crate::util::tests::add_test_fs_paths;
 
@@ -550,6 +550,13 @@ mod tests {
 
         let (_config, package_deb) = BuildEnvironment::from_manifest(BuildOptions {
             manifest_path: Some(Path::new("Cargo.toml")),
+            debug: DebugSymbolOptions {
+                #[cfg(feature = "default_enable_dbgsym")]
+                generate_dbgsym_package: Some(false),
+                #[cfg(feature = "default_enable_separate_debug_symbols")]
+                separate_debug_symbols: Some(false),
+                ..Default::default()
+            },
             ..Default::default()
         }, &mock_listener).unwrap();
 
@@ -570,6 +577,13 @@ mod tests {
 
         let (_config, package_deb) = BuildEnvironment::from_manifest(BuildOptions {
             manifest_path: Some(Path::new("Cargo.toml")),
+            debug: DebugSymbolOptions {
+                #[cfg(feature = "default_enable_dbgsym")]
+                generate_dbgsym_package: Some(false),
+                #[cfg(feature = "default_enable_separate_debug_symbols")]
+                separate_debug_symbols: Some(false),
+                ..Default::default()
+            },
             overrides: DebConfigOverrides {
                 systemd_units: Some(vec![SystemdUnitsConfig::default()]),
                 maintainer_scripts_rel_path: Some(PathBuf::new()),

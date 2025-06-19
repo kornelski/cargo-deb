@@ -413,7 +413,7 @@ impl BuildEnvironment {
         let wants_separate_debug_symbols = separate_debug_symbols
             .or((!allows_strip).then_some(false)) // --no-strip means not running the strip command, even to separate symbols
             .or(deb.separate_debug_symbols)
-            .unwrap_or(generate_dbgsym_package || crate::SEPARATE_DEBUG_SYMBOLS_DEFAULT);
+            .unwrap_or(generate_dbgsym_package || (allows_separate_debug_symbols && crate::SEPARATE_DEBUG_SYMBOLS_DEFAULT));
         let separate_debug_symbols = generate_dbgsym_package || wants_separate_debug_symbols;
         let compress_debug_symbols = compress_debug_symbols.or(deb.compress_debug_symbols).unwrap_or(false);
 
@@ -448,7 +448,7 @@ impl BuildEnvironment {
                 keep_debug_symbols_default
             },
             ManifestDebugFlags::Default if separate_debug_symbols => {
-                listener.warning(format!("debug info hasn't been explicitly enabled\nAdd `[profile.{selected_profile}] debug = 1` to Cargo.toml"));
+                listener.warning(format!("debug info hasn't been explicitly enabled, so {separate_option_name} may not work\nAdd `[profile.{selected_profile}] debug = 1` to Cargo.toml"));
                 keep_debug_symbols_default
             },
             ManifestDebugFlags::FullyStrippedByCargo => {
