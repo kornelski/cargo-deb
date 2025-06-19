@@ -168,7 +168,7 @@ mod tests {
     //         Cargo.toml
 
     use super::*;
-    use crate::DebugSymbolOptions;
+    use crate::config::DebugSymbolOptions;
     use crate::assets::{Asset, AssetSource, IsBuilt};
     use crate::listener::MockListener;
     use crate::parse::manifest::SystemdUnitsConfig;

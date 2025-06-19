@@ -1,8 +1,9 @@
 use cargo_deb::compress::Format;
-use cargo_deb::config::Multiarch;
-use cargo_deb::{listener, BuildProfile, CargoDeb, CargoDebOptions, CargoLockingFlags};
+use cargo_deb::config::{BuildOptions, DebugSymbolOptions, Multiarch};
+use cargo_deb::{listener, BuildProfile, CargoDeb, CargoLockingFlags};
 use clap::{Arg, ArgAction, Command};
 use std::env;
+use std::path::PathBuf;
 use std::process::ExitCode;
 
 fn main() -> ExitCode {
@@ -118,48 +119,52 @@ fn main() -> ExitCode {
 
     let install = matches.get_flag("install");
 
-    match CargoDeb::new(CargoDebOptions {
+    match (CargoDeb {
         no_build: matches.get_flag("no-build"),
-        strip_override: if matches.get_flag("strip") { Some(true) } else if matches.get_flag("no-strip") { Some(false) } else { None },
-        separate_debug_symbols: if matches.get_flag("separate-debug-symbols") { Some(true) } else if matches.get_flag("no-separate-debug-symbols") { Some(false) } else { None },
-        compress_debug_symbols: if matches.get_flag("compress-debug-symbols") { Some(true) } else { None },
-        generate_dbgsym_package: if matches.get_flag("dbgsym") { Some(true) } else if matches.get_flag("no-dbgsym") { Some(false) } else { None },
         verbose,
         install,
         install_without_dbgsym: matches.get_flag("no-install-dbgsym"),
         // when installing locally it won't be transferred anywhere, so allow faster compression
         fast: install || matches.get_flag("fast"),
-        variant: matches.get_one::<String>("variant").cloned(),
-        target: matches.get_one::<String>("target").cloned().or_else(|| std::env::var("CARGO_BUILD_TARGET").ok()),
-        multiarch,
-        output_path: matches.get_one::<String>("output").cloned(),
-        selected_package_name: matches.get_one::<String>("package").cloned(),
-        manifest_path: matches.get_one::<String>("manifest-path").cloned(),
-        overrides: {
-            let mut tmp = cargo_deb::config::DebConfigOverrides::default();
-            tmp.deb_version = deb_version;
-            tmp.deb_revision = deb_revision;
-            tmp.maintainer = matches.get_one::<String>("maintainer").cloned();
-            tmp.section = matches.get_one::<String>("section").cloned();
-            tmp.features = matches.get_many::<String>("features").unwrap_or_default().cloned().collect();
-            tmp.no_default_features = matches.get_flag("no-default-features");
-            tmp.all_features = matches.get_flag("all-features");
-            tmp
+        options: BuildOptions {
+            config_variant: matches.get_one::<String>("variant").map(|x| x.as_str()),
+            rust_target_triple: matches.get_one::<String>("target").cloned().or_else(|| std::env::var("CARGO_BUILD_TARGET").ok()).as_deref(),
+            multiarch,
+            deb_output_path: matches.get_one::<String>("output").cloned(),
+            selected_package_name: matches.get_one::<String>("package").map(|x| x.as_str()),
+            manifest_path: matches.get_one::<PathBuf>("manifest-path").map(|v| &**v),
+            debug: DebugSymbolOptions {
+                strip_override: if matches.get_flag("strip") { Some(true) } else if matches.get_flag("no-strip") { Some(false) } else { None },
+                separate_debug_symbols: if matches.get_flag("separate-debug-symbols") { Some(true) } else if matches.get_flag("no-separate-debug-symbols") { Some(false) } else { None },
+                compress_debug_symbols: if matches.get_flag("compress-debug-symbols") { Some(true) } else { None },
+                generate_dbgsym_package: if matches.get_flag("dbgsym") { Some(true) } else if matches.get_flag("no-dbgsym") { Some(false) } else { None },
+            },
+            overrides: {
+                let mut tmp = cargo_deb::config::DebConfigOverrides::default();
+                tmp.deb_version = deb_version;
+                tmp.deb_revision = deb_revision;
+                tmp.maintainer = matches.get_one::<String>("maintainer").cloned();
+                tmp.section = matches.get_one::<String>("section").cloned();
+                tmp.features = matches.get_many::<String>("features").unwrap_or_default().cloned().collect();
+                tmp.no_default_features = matches.get_flag("no-default-features");
+                tmp.all_features = matches.get_flag("all-features");
+                tmp
+            },
+            build_profile: BuildProfile {
+                profile_name: matches.get_one::<String>("profile").filter(|&n| n != "release").cloned(),
+                override_debug: matches.get_one::<String>("override-debug").cloned(),
+                override_lto: matches.get_one::<String>("override-lto").cloned(),
+            },
+            cargo_locking_flags: CargoLockingFlags {
+                offline: matches.get_flag("offline"),
+                frozen: matches.get_flag("frozen"),
+                locked: matches.get_flag("locked"),
+            },
         },
         compress_type,
         compress_system: matches.get_flag("compress-system"),
         rsyncable: matches.get_flag("rsyncable"),
-        build_profile: BuildProfile {
-            profile_name: matches.get_one::<String>("profile").filter(|&n| n != "release").cloned(),
-            override_debug: matches.get_one::<String>("override-debug").cloned(),
-            override_lto: matches.get_one::<String>("override-lto").cloned(),
-        },
         cargo_build_cmd: matches.get_one::<String>("cargo-build").map_or("build", |s| s.as_str()).into(),
-        cargo_locking_flags: CargoLockingFlags {
-            offline: matches.get_flag("offline"),
-            frozen: matches.get_flag("frozen"),
-            locked: matches.get_flag("locked"),
-        },
         cargo_build_flags: free_args,
     }).process(listener) {
         Ok(()) => ExitCode::SUCCESS,

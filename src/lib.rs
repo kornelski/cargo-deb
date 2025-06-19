@@ -59,7 +59,7 @@ use crate::assets::{apply_compressed_assets, compressed_assets};
 use crate::deb::control::ControlArchiveBuilder;
 use crate::deb::tar::Tarball;
 use crate::listener::{Listener, PrefixedListener};
-use config::{BuildOptions, DebConfigOverrides, DebugSymbolOptions, Multiarch};
+use config::BuildOptions;
 use itertools::Itertools;
 use std::borrow::Cow;
 use std::ffi::OsStr;
@@ -75,24 +75,33 @@ const DEFAULT_TARGET: &str = env!("CARGO_DEB_DEFAULT_TARGET");
 pub const DBGSYM_DEFAULT: bool = cfg!(feature = "default_enable_dbgsym");
 pub const SEPARATE_DEBUG_SYMBOLS_DEFAULT: bool = cfg!(feature = "default_enable_separate_debug_symbols");
 
-pub struct CargoDeb {
-    options: CargoDebOptions,
+pub struct CargoDeb<'tmp> {
+    pub options: BuildOptions<'tmp>,
+    pub no_build: bool,
+    /// Don't compress heavily
+    pub fast: bool,
+    /// Build with --verbose
+    pub verbose: bool,
+    /// Run dpkg -i
+    pub install: bool,
+    pub install_without_dbgsym: bool,
+    pub cargo_build_cmd: String,
+    pub cargo_build_flags: Vec<String>,
+    pub compress_type: Format,
+    pub compress_system: bool,
+    pub rsyncable: bool,
 }
 
-impl CargoDeb {
-    #[must_use]
-    pub const fn new(options: CargoDebOptions) -> Self {
-        Self { options }
-    }
-
+impl CargoDeb<'_> {
     pub fn process(mut self, listener: &dyn Listener) -> CDResult<()> {
-        if self.options.install || self.options.target.is_none() {
+        if self.install || self.options.rust_target_triple.is_none() {
             warn_if_not_linux(listener); // compiling natively for non-linux = nope
         }
 
-        if self.options.generate_dbgsym_package == Some(true) {
-            let _ = self.options.separate_debug_symbols.get_or_insert(true);
+        if self.options.debug.generate_dbgsym_package == Some(true) {
+            let _ = self.options.debug.separate_debug_symbols.get_or_insert(true);
         }
+        let asked_for_dbgsym_package = self.options.debug.generate_dbgsym_package.unwrap_or(false);
 
         // The profile is selected based on the given ClI options and then passed to
         // cargo build accordingly. you could argue that the other way around is
@@ -104,35 +113,14 @@ impl CargoDeb {
             listener.warning("To enable debug symbols set `[profile.release] debug = 1` instead.".into());
         }
 
-        let (config, mut package_deb) = BuildEnvironment::from_manifest(
-            BuildOptions {
-                manifest_path: self.options.manifest_path.as_deref().map(Path::new),
-                selected_package_name: self.options.selected_package_name.as_deref(),
-                deb_output_path: self.options.output_path,
-                rust_target_triple: self.options.target.as_deref(),
-                config_variant: self.options.variant.as_deref(),
-                overrides: self.options.overrides,
-                build_profile: self.options.build_profile,
-                debug: DebugSymbolOptions {
-                    generate_dbgsym_package: self.options.generate_dbgsym_package,
-                    separate_debug_symbols: self.options.separate_debug_symbols,
-                    compress_debug_symbols: self.options.compress_debug_symbols,
-                    strip_override: self.options.strip_override,
-                },
-                cargo_locking_flags: self.options.cargo_locking_flags,
-                multiarch: self.options.multiarch,
-                ..Default::default()
-            },
-            listener,
-        )?;
+        let (config, mut package_deb) = BuildEnvironment::from_manifest(self.options, listener)?;
 
-
-        if !self.options.no_build {
-            let mut build_flags = self.options.cargo_build_flags.iter().map(|f| Cow::Borrowed(f.as_ref())).collect_vec();
+        if !self.no_build {
+            let mut build_flags = self.cargo_build_flags.iter().map(|f| Cow::Borrowed(f.as_ref())).collect_vec();
             let mut env = Vec::new();
 
             config.set_cargo_build_flags_for_package(&package_deb, &mut build_flags, &mut env);
-            cargo_build(&self.options.cargo_build_cmd, &build_flags, &config.cargo_run_current_dir, &env, self.options.verbose, listener)?;
+            cargo_build(&self.cargo_build_cmd, &build_flags, &config.cargo_run_current_dir, &env, self.verbose, listener)?;
         }
 
         package_deb.resolve_assets(listener)?;
@@ -144,8 +132,7 @@ impl CargoDeb {
         package_deb.resolved_depends = Some(depends?);
         apply_compressed_assets(&mut package_deb, compressed_assets?);
 
-        let asked_for_dbgsym_package = self.options.generate_dbgsym_package.unwrap_or(false);
-        strip_binaries(&config, &mut package_deb, self.options.target.as_deref(), asked_for_dbgsym_package, listener)?;
+        strip_binaries(&config, &mut package_deb, config.rust_target_triple.as_deref(), asked_for_dbgsym_package, listener)?;
 
         let generate_dbgsym_package = matches!(config.debug_symbols, DebugSymbols::Separate { generate_dbgsym_package: true, .. });
         let package_dbgsym_ddeb = generate_dbgsym_package.then(|| package_deb.split_dbgsym()).transpose()?.flatten();
@@ -155,10 +142,10 @@ impl CargoDeb {
         }
 
         let compress_config = CompressConfig {
-            fast: self.options.fast,
-            compress_type: self.options.compress_type,
-            compress_system: self.options.compress_system,
-            rsyncable: self.options.rsyncable,
+            fast: self.fast,
+            compress_type: self.compress_type,
+            compress_system: self.compress_system,
+            rsyncable: self.rsyncable,
         };
 
         let (generated_deb, generated_dbgsym_ddeb) = rayon::join(
@@ -189,10 +176,10 @@ impl CargoDeb {
         }
         listener.generated_archive(&generated_deb);
 
-        if self.options.install {
+        if self.install {
             install_deb(&generated_deb)?;
 
-            if !self.options.install_without_dbgsym {
+            if !self.install_without_dbgsym {
                 if let Some(dbgsym_ddeb) = &generated_dbgsym_ddeb {
                     install_deb(dbgsym_ddeb)?;
                 }
@@ -200,36 +187,6 @@ impl CargoDeb {
         }
         Ok(())
     }
-}
-
-pub struct CargoDebOptions {
-    pub no_build: bool,
-    pub strip_override: Option<bool>,
-    pub separate_debug_symbols: Option<bool>,
-    pub compress_debug_symbols: Option<bool>,
-    pub generate_dbgsym_package: Option<bool>,
-    /// Don't compress heavily
-    pub fast: bool,
-    /// Build with --verbose
-    pub verbose: bool,
-    /// Run dpkg -i
-    pub install: bool,
-    pub install_without_dbgsym: bool,
-    pub selected_package_name: Option<String>,
-    pub output_path: Option<String>,
-    pub variant: Option<String>,
-    pub target: Option<String>,
-    pub manifest_path: Option<String>,
-    pub cargo_build_cmd: String,
-    pub cargo_build_flags: Vec<String>,
-    pub overrides: DebConfigOverrides,
-    pub compress_type: Format,
-    pub compress_system: bool,
-    pub rsyncable: bool,
-    pub build_profile: BuildProfile,
-    pub cargo_locking_flags: CargoLockingFlags,
-    /// Use Debian's multiarch lib dirs
-    pub multiarch: Multiarch,
 }
 
 #[derive(Copy, Clone, Default, Debug)]
@@ -253,32 +210,20 @@ impl CargoLockingFlags {
     }
 }
 
-impl Default for CargoDebOptions {
+impl Default for CargoDeb<'_> {
     fn default() -> Self {
         Self {
+            options: BuildOptions::default(),
             no_build: false,
-            strip_override: None,
-            separate_debug_symbols: None,
-            compress_debug_symbols: None,
-            generate_dbgsym_package: None,
             fast: false,
             verbose: false,
             install: false,
             install_without_dbgsym: false,
-            selected_package_name: None,
-            output_path: None,
-            variant: None,
-            target: None,
-            manifest_path: None,
             cargo_build_cmd: "build".into(),
             cargo_build_flags: Vec::new(),
-            overrides: DebConfigOverrides::default(),
             compress_type: Format::Xz,
             compress_system: false,
             rsyncable: false,
-            build_profile: Default::default(),
-            cargo_locking_flags: CargoLockingFlags::default(),
-            multiarch: Multiarch::None,
         }
     }
 }

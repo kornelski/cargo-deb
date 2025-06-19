@@ -267,7 +267,7 @@ pub enum Multiarch {
     Foreign,
 }
 
-#[derive(Debug, Default)]
+#[derive(Debug, Clone, Default)]
 pub struct DebugSymbolOptions {
     pub generate_dbgsym_package: Option<bool>,
     pub separate_debug_symbols: Option<bool>,
@@ -275,10 +275,11 @@ pub struct DebugSymbolOptions {
     pub strip_override: Option<bool>,
 }
 
-#[derive(Debug, Default)]
+#[derive(Debug, Clone, Default)]
 pub struct BuildOptions<'a> {
     pub manifest_path: Option<&'a Path>,
     pub selected_package_name: Option<&'a str>,
+    /// Trailing slash is meaningful
     pub deb_output_path: Option<String>,
     pub rust_target_triple: Option<&'a str>,
     pub config_variant: Option<&'a str>,
