@@ -273,7 +273,15 @@ impl Default for CargoDebOptions {
 
 /// Run `dpkg` to install `deb` archive at the given path
 pub fn install_deb(path: &Path) -> CDResult<()> {
-    let status = Command::new("sudo").arg("dpkg").arg("-i").arg(path)
+    let args = ["dpkg".as_ref(), "-i".as_ref(), path.as_os_str()];
+    let is_root = std::env::var_os("EUID").or_else(|| std::env::var_os("UID")).is_some_and(|v| v == "0");
+    let (cmd, args) = if is_root {
+        (args[0], &args[1..])
+    } else {
+        ("sudo".as_ref(), &args[..])
+    };
+
+    let status = Command::new(cmd).args(args)
         .status()?;
     if !status.success() {
         return Err(CargoDebError::InstallFailed);
