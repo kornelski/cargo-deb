@@ -9,7 +9,6 @@ use crate::parse::cargo::CargoConfig;
 use crate::parse::manifest::{cargo_metadata, debug_flags, find_profile, manifest_version_string};
 use crate::parse::manifest::{CargoDeb, CargoDebAssetArrayOrTable, CargoMetadataTarget, CargoPackageMetadata, ManifestFound};
 use crate::parse::manifest::{DependencyList, SystemUnitsSingleOrMultiple, SystemdUnitsConfig, LicenseFile, ManifestDebugFlags};
-use crate::util::ok_or::OkOrThen;
 use crate::util::pathbytes::AsUnixPathBytes;
 use crate::util::wordsplit::WordSplit;
 use crate::{debian_architecture_from_rust_triple, debian_triple_from_rust_triple, CargoLockingFlags, DEFAULT_TARGET};
@@ -18,11 +17,10 @@ use std::borrow::Cow;
 use std::collections::{BTreeSet, HashMap, HashSet};
 use std::env::consts::{DLL_PREFIX, DLL_SUFFIX, EXE_SUFFIX};
 use std::ffi::{OsStr, OsString};
-use std::io::Write;
 use std::path::{Component, Path, PathBuf};
 use std::process::Command;
 use std::time::SystemTime;
-use std::{fs, io};
+use std::{fmt, fs, io, mem};
 
 pub(crate) fn is_glob_pattern(s: impl AsRef<Path> + Sized) -> bool {
     s.as_ref().to_bytes().iter().any(|&c| c == b'*' || c == b'[' || c == b']' || c == b'!')
@@ -131,13 +129,13 @@ pub struct PackageConfig {
     /// The version to give the Debian package; usually the same as the Cargo version
     pub deb_version: String,
     /// The software license of the project (SPDX format).
-    pub license: Option<String>,
+    pub license_identifier: Option<String>,
     /// The location of the license file
     pub license_file_rel_path: Option<PathBuf>,
     /// number of lines to skip when reading `license_file`
     pub license_file_skip_lines: usize,
-    /// The copyright of the project
-    /// (Debian's `copyright` file contents).
+    /// Names of copyright owners (credit in `Copyright` metadata)
+    /// Used in Debian's `copyright` file, which is *required* by Debian.
     pub copyright: Option<String>,
     pub changelog: Option<String>,
     /// The homepage URL of the project.
@@ -152,7 +150,7 @@ pub struct PackageConfig {
     pub extended_description: ExtendedDescription,
     /// The maintainer of the Debian package.
     /// In Debian `control` file `Maintainer` field format.
-    pub maintainer: String,
+    pub maintainer: Option<String>,
     /// Deps including `$auto`
     pub wildcard_depends: String,
     /// The Debian dependencies required to run the project.
@@ -252,6 +250,7 @@ pub struct BuildProfile {
 }
 
 impl BuildProfile {
+    #[must_use]
     pub fn profile_name(&self) -> &str {
         self.profile_name.as_deref().unwrap_or("release")
     }
@@ -510,7 +509,7 @@ impl BuildEnvironment {
 
     pub fn set_cargo_build_flags_for_package<'s>(&'s self, package_deb: &PackageConfig, flags: &mut Vec<Cow<'s, OsStr>>, env: &mut Vec<(Cow<'s, OsStr>, Cow<'s, OsStr>)>) {
         let flags_already_build_a_workspace = flags.iter().any(|f| &**f == "--workspace" || &**f == "--all");
-        fn s<'s>(s: &'s (impl AsRef<OsStr> + ?Sized)) -> Cow<'s, OsStr> {
+        fn s(s: &(impl AsRef<OsStr> + ?Sized)) -> Cow<'_, OsStr> {
             Cow::Borrowed(s.as_ref())
         }
         fn o<'s>(s: impl Into<String>) -> Cow<'s, OsStr> {
@@ -611,10 +610,18 @@ impl BuildEnvironment {
             return Ok(());
         }
 
-        let (source_path, copyright_file) = self.generate_copyright_asset(package_deb)?;
+        let (source_path, (copyright_file, incomplete)) = self.generate_copyright_asset(package_deb)?;
+        if incomplete {
+            listener.warning("Debian requires copyright information, but the Cargo package doesn't have it.\n\
+                Use --maintainer flag to skip this warning.\n\
+                Otherwise, edit Cargo.toml to add `[package] authors = [\"...\"]`, or \n\
+                `[package.metadata.deb] copyright = \"© copyright owner's name\"`.\n\
+                If the package is proprietary, add `[package] license = \"UNLICENSED\"` or `publish = false`.\n\
+                You can also specify `license-file = \"path\"` to a Debian-formatted `copyright` file.".into());
+        }
         log::debug!("added copyright via {}", source_path.display());
         package_deb.assets.resolved.push(Asset::new(
-            AssetSource::Data(copyright_file),
+            AssetSource::Data(copyright_file.into()),
             destination_path,
             0o644,
             IsBuilt::No,
@@ -624,33 +631,32 @@ impl BuildEnvironment {
     }
 
     /// Generates the copyright file from the license file and adds that to the tar archive.
-    fn generate_copyright_asset(&self, package_deb: &PackageConfig) -> CDResult<(PathBuf, Vec<u8>)> {
-        let mut copyright: Vec<u8> = Vec::new();
-        let source_path;
-        if let Some(path) = &package_deb.license_file_rel_path {
-            source_path = self.path_in_package(path);
+    fn generate_copyright_asset(&self, package_deb: &PackageConfig) -> CDResult<(PathBuf, (String, bool))> {
+        Ok(if let Some(path) = &package_deb.license_file_rel_path {
+            let source_path = self.path_in_package(path);
             let license_string = fs::read_to_string(&source_path)
                 .map_err(|e| CargoDebError::IoFile("unable to read license file", e, path.clone()))?;
-            if !has_copyright_metadata(&license_string) {
-                package_deb.append_copyright_metadata(&mut copyright)?;
-            }
+
+            let (mut copyright, incomplete) = if has_copyright_metadata(&license_string) {
+                (String::new(), false)
+            } else {
+                package_deb.write_copyright_metadata(true)?
+            };
 
             // Skip the first `A` number of lines and then iterate each line after that.
             for line in license_string.lines().skip(package_deb.license_file_skip_lines) {
                 // If the line is a space, add a dot, else write the line.
                 if line == " " {
-                    copyright.write_all(b" .\n")?;
+                    copyright.push_str(" .\n");
                 } else {
-                    copyright.write_all(line.as_bytes())?;
-                    copyright.write_all(b"\n")?;
+                    copyright.push_str(line);
+                    copyright.push('\n');
                 }
             }
+            (source_path, (copyright, incomplete))
         } else {
-            source_path = "Cargo.toml".into();
-            package_deb.append_copyright_metadata(&mut copyright)?;
-        }
-
-        Ok((source_path, copyright))
+            ("Cargo.toml".into(), package_deb.write_copyright_metadata(false)?)
+        })
     }
 
     fn add_changelog_asset(&self, package_deb: &mut PackageConfig) -> CDResult<()> {
@@ -818,18 +824,16 @@ impl PackageConfig {
         overrides: DebConfigOverrides, architecture: &str, multiarch: Multiarch,
     ) -> Result<Self, CargoDebError> {
         let (license_file_rel_path, license_file_skip_lines) = parse_license_file(cargo_package, deb.license_file.as_ref())?;
-        let mut license = cargo_package.license.take().map(|v| v.unwrap());
+        let mut license_identifier = cargo_package.license.take().and_then(|mut v| v.get_mut().ok().map(mem::take));
 
-        if license.is_none() && license_file_rel_path.is_none() {
+        if license_identifier.is_none() && license_file_rel_path.is_none() {
             if cargo_package.publish() == false {
-                license = Some("UNLICENSED".into());
+                license_identifier = Some("UNLICENSED".into());
                 listener.info("license field defaulted to UNLICENSED".into());
             } else {
                 listener.warning("license field is missing in Cargo.toml".into());
             }
         }
-
-        let has_maintainer_override = overrides.maintainer.is_some();
         let deb_version = overrides.deb_version.unwrap_or_else(|| manifest_version_string(cargo_package, overrides.deb_revision.or(deb.revision.take()).as_deref()).into_owned());
         if let Err(why) = check_debian_version(&deb_version) {
             return Err(CargoDebError::InvalidVersion(why, deb_version));
@@ -839,23 +843,11 @@ impl PackageConfig {
             default_timestamp,
             cargo_crate_name: cargo_package.name.clone(),
             deb_name: deb.name.take().unwrap_or_else(|| debian_package_name(&cargo_package.name)),
-            license,
+            license_identifier,
             license_file_rel_path,
             license_file_skip_lines,
-            maintainer: overrides.maintainer.or_else(|| deb.maintainer.take()).ok_or_then(|| {
-                Ok(cargo_package.authors().first()
-                    .ok_or("The package must have a maintainer specified (--maintainer works too) or have the authors property")?.to_owned())
-            })?,
-            copyright: match deb.copyright.take() {
-                ok @ Some(_) => ok,
-                _ if !cargo_package.authors().is_empty() => Some(cargo_package.authors().join(", ")),
-                _ if has_maintainer_override => {
-                    // generally we'd prefer to have real authors to credit copyright to, but this is now an optional field.
-                    // As a compromise if the maintainer is set on the command-line, assume they can't fix the metadata, and let it be missing.
-                    None
-                },
-                _ => return Err("The package must have a copyright or authors property".into()),
-            },
+            maintainer: overrides.maintainer.or_else(|| deb.maintainer.take()).or_else(|| cargo_package.authors().first().map(String::from)),
+            copyright: deb.copyright.take().or_else(|| (!cargo_package.authors().is_empty()).then_some(cargo_package.authors().join(", "))),
             homepage: cargo_package.homepage().map(From::from),
             documentation: cargo_package.documentation().map(From::from),
             repository: cargo_package.repository.take().map(|v| v.unwrap()),
@@ -1069,50 +1061,54 @@ impl PackageConfig {
     }
 
     /// Generates the control file that obtains all the important information about the package.
-    pub fn generate_control(&self, config: &BuildEnvironment) -> CDResult<Vec<u8>> {
+    pub fn generate_control(&self, config: &BuildEnvironment) -> CDResult<String> {
+        use fmt::Write;
+
         // Create and return the handle to the control file with write access.
-        let mut control: Vec<u8> = Vec::with_capacity(1024);
+        let mut control = String::with_capacity(1024);
 
         // Write all of the lines required by the control file.
-        writeln!(&mut control, "Package: {}", self.deb_name)?;
-        writeln!(&mut control, "Version: {}", self.deb_version)?;
-        writeln!(&mut control, "Architecture: {}", self.architecture)?;
+        writeln!(control, "Package: {}", self.deb_name)?;
+        writeln!(control, "Version: {}", self.deb_version)?;
+        writeln!(control, "Architecture: {}", self.architecture)?;
         let ma = match self.multiarch {
             Multiarch::None => "",
             Multiarch::Same => "same",
             Multiarch::Foreign => "foreign",
         };
         if !ma.is_empty() {
-            writeln!(&mut control, "Multi-Arch: {ma}")?;
+            writeln!(control, "Multi-Arch: {ma}")?;
         }
         if self.is_split_dbgsym_package {
-            writeln!(&mut control, "Auto-Built-Package: debug-symbols")?;
+            writeln!(control, "Auto-Built-Package: debug-symbols")?;
         }
         if let Some(homepage) = self.homepage.as_deref().or(self.documentation.as_deref()).or(self.repository.as_deref()) {
-            writeln!(&mut control, "Homepage: {homepage}")?;
+            writeln!(control, "Homepage: {homepage}")?;
         }
         if let Some(ref section) = self.section {
-            writeln!(&mut control, "Section: {section}")?;
+            writeln!(control, "Section: {section}")?;
         }
-        writeln!(&mut control, "Priority: {}", self.priority)?;
-        writeln!(&mut control, "Maintainer: {}", self.maintainer)?;
+        writeln!(control, "Priority: {}", self.priority)?;
+        if let Some(maintainer) = self.maintainer.as_deref() {
+            writeln!(control, "Maintainer: {maintainer}")?;
+        }
 
         let installed_size = self.assets.resolved
             .iter()
             .map(|m| (m.source.file_size().unwrap_or(0) + 2047) / 1024) // assume 1KB of fs overhead per file
             .sum::<u64>();
 
-        writeln!(&mut control, "Installed-Size: {installed_size}")?;
+        writeln!(control, "Installed-Size: {installed_size}")?;
 
         if let Some(deps) = &self.resolved_depends {
-            writeln!(&mut control, "Depends: {deps}")?;
+            writeln!(control, "Depends: {deps}")?;
         }
 
         if let Some(ref pre_depends) = self.pre_depends {
             let pre_depends_normalized = pre_depends.trim();
 
             if !pre_depends_normalized.is_empty() {
-                writeln!(&mut control, "Pre-Depends: {pre_depends_normalized}")?;
+                writeln!(control, "Pre-Depends: {pre_depends_normalized}")?;
             }
         }
 
@@ -1120,7 +1116,7 @@ impl PackageConfig {
             let recommends_normalized = recommends.trim();
 
             if !recommends_normalized.is_empty() {
-                writeln!(&mut control, "Recommends: {recommends_normalized}")?;
+                writeln!(control, "Recommends: {recommends_normalized}")?;
             }
         }
 
@@ -1128,7 +1124,7 @@ impl PackageConfig {
             let suggests_normalized = suggests.trim();
 
             if !suggests_normalized.is_empty() {
-                writeln!(&mut control, "Suggests: {suggests_normalized}")?;
+                writeln!(control, "Suggests: {suggests_normalized}")?;
             }
         }
 
@@ -1136,39 +1132,43 @@ impl PackageConfig {
             let enhances_normalized = enhances.trim();
 
             if !enhances_normalized.is_empty() {
-                writeln!(&mut control, "Enhances: {enhances_normalized}")?;
+                writeln!(control, "Enhances: {enhances_normalized}")?;
             }
         }
 
         if let Some(ref conflicts) = self.conflicts {
-            writeln!(&mut control, "Conflicts: {conflicts}")?;
+            writeln!(control, "Conflicts: {conflicts}")?;
         }
         if let Some(ref breaks) = self.breaks {
-            writeln!(&mut control, "Breaks: {breaks}")?;
+            writeln!(control, "Breaks: {breaks}")?;
         }
         if let Some(ref replaces) = self.replaces {
-            writeln!(&mut control, "Replaces: {replaces}")?;
+            writeln!(control, "Replaces: {replaces}")?;
         }
         if let Some(ref provides) = self.provides {
-            writeln!(&mut control, "Provides: {provides}")?;
+            writeln!(control, "Provides: {provides}")?;
         }
 
         write!(&mut control, "Description:")?;
         for line in self.description.split_by_chars(79) {
-            writeln!(&mut control, " {line}")?;
+            writeln!(control, " {line}")?;
         }
 
         if let Some(desc) = self.extended_description(config)? {
             for line in desc.split_by_chars(79) {
-                writeln!(&mut control, " {line}")?;
+                writeln!(control, " {line}")?;
             }
         }
-        control.push(b'\n');
+        control.push('\n');
 
         Ok(control)
     }
 
-    pub(crate) fn append_copyright_metadata(&self, copyright: &mut Vec<u8>) -> Result<(), CargoDebError> {
+    pub(crate) fn write_copyright_metadata(&self, has_full_text: bool) -> Result<(String, bool), fmt::Error> {
+        let mut copyright = String::new();
+        let mut incomplete = false;
+        use std::fmt::Write;
+
         writeln!(copyright, "Format: https://www.debian.org/doc/packaging-manuals/copyright-format/1.0/")?;
         writeln!(copyright, "Upstream-Name: {}", self.cargo_crate_name)?;
         if let Some(source) = self.repository.as_deref().or(self.homepage.as_deref()) {
@@ -1176,11 +1176,17 @@ impl PackageConfig {
         }
         if let Some(c) = self.copyright.as_deref() {
             writeln!(copyright, "Copyright: {c}")?;
+        } else if let Some(m) = self.maintainer.as_deref() {
+            writeln!(copyright, "Comment: Copyright information missing (maintainer: {m})")?;
+        } else if let Some(l) = self.license_identifier.as_deref().filter(|l| license_doesnt_need_author_info(l)) {
+            log::debug!("assuming the license {l} doesn't require copyright owner info");
+        } else {
+            incomplete = true;
         }
-        if let Some(license) = self.license.as_deref() {
+        if let Some(license) = self.license_identifier.as_deref().or(has_full_text.then_some("")) {
             writeln!(copyright, "License: {license}")?;
         }
-        Ok(())
+        Ok((copyright, incomplete))
     }
 
     pub(crate) fn conf_files(&self) -> Option<String> {
@@ -1204,7 +1210,7 @@ impl PackageConfig {
             cargo_crate_name: self.cargo_crate_name.clone(),
             deb_name: format!("{}-dbgsym", self.deb_name),
             deb_version: self.deb_version.clone(),
-            license: self.license.clone(),
+            license_identifier: self.license_identifier.clone(),
             license_file_rel_path: None,
             license_file_skip_lines: 0,
             copyright: None,
@@ -1241,6 +1247,11 @@ impl PackageConfig {
         }))
     }
 }
+
+fn license_doesnt_need_author_info(license_identifier: &str) -> bool {
+     ["UNLICENSED", "PROPRIETARY", "CC-PDDC", "CC0-1.0"].iter().any(|l| l.eq_ignore_ascii_case(license_identifier))
+}
+
 const EXPECTED: &str = "Expected items in `assets` to be either `[source, dest, mode]` array, or `{source, dest, mode}` object, or `\"$auto\"`";
 
 impl TryFrom<CargoDebAssetArrayOrTable> for RawAssetOrAuto {
@@ -1293,7 +1304,8 @@ fn is_trying_to_customize_target_path(p: &Path) -> Option<&'static str> {
         return None;
     };
     if subdir == "debug" {
-        return Some("Packaging of development-only binaries is intentionally unsupported in cargo-deb.\nTo add debug information or additional assertions use `[profile.release]` in `Cargo.toml` instead.");
+        return Some("Packaging of development-only binaries is intentionally unsupported in cargo-deb.\n\
+            To add debug information or additional assertions use `[profile.release]` in Cargo.toml instead.");
     }
     if subdir.to_str().unwrap_or_default().contains('-')
             && p.next() == Some(Component::Normal("release".as_ref())) {
@@ -1306,14 +1318,12 @@ fn parse_license_file(package: &cargo_toml::Package<CargoPackageMetadata>, licen
     Ok(match license_file {
         Some(LicenseFile::Vec(args)) => {
             let mut args = args.iter();
-            let file = args.next();
-            let lines = if let Some(lines) = args.next() {
-                lines.parse().map_err(|e| CargoDebError::NumParse("invalid number of lines", e))?
-            } else {0};
-            (file.map(|s|s.into()), lines)
+            let file = args.next().map(PathBuf::from);
+            let lines = args.next().map(|n| n.parse().map_err(|e| CargoDebError::NumParse("invalid number of lines", e))).transpose()?.unwrap_or(0);
+            (file, lines)
         },
         Some(LicenseFile::String(s)) => (Some(s.into()), 0),
-        None => (package.license_file().as_ref().map(|s| s.into()), 0),
+        None => (package.license_file().map(PathBuf::from), 0),
     })
 }
 

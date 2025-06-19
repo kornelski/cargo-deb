@@ -103,4 +103,10 @@ quick_error! {
     }
 }
 
+impl From<std::fmt::Error> for CargoDebError {
+    fn from(_: std::fmt::Error) -> Self {
+        Self::Str("fmt")
+    }
+}
+
 pub type CDResult<T> = Result<T, CargoDebError>;

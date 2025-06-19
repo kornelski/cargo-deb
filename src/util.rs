@@ -1,7 +1,6 @@
 use std::collections::BTreeSet;
 use std::path::Path;
 
-pub(crate) mod ok_or;
 pub(crate) mod pathbytes;
 pub(crate) mod wordsplit;
 

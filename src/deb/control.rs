@@ -24,7 +24,7 @@ impl<'l, W: Write> ControlArchiveBuilder<'l, W> {
 
     /// Generates an uncompressed tar archive with `control`, and others
     pub fn generate_archive(&mut self, config: &BuildEnvironment, package_deb: &PackageConfig) -> CDResult<()> {
-        self.add_control(&package_deb.generate_control(config)?)?;
+        self.add_control(package_deb.generate_control(config)?.as_bytes())?;
 
         if let Some(files) = package_deb.conf_files() {
             self.add_conf_files(&files)?;
