@@ -8,6 +8,7 @@ use tempfile::TempDir;
 
 /// file extension of the compression format cargo-deb uses unless explicitly specified.
 const DEFAULT_COMPRESSION_EXT: &str = "xz";
+const DEFAULT_STRIP: &str = if cfg!(all(target_family = "unix", not(target_os = "macos"))) { "--strip" } else { "--no-strip" };
 
 #[test]
 fn build_workspaces() {
@@ -73,14 +74,32 @@ fn build_with_command_line_compress_gz() {
 }
 
 #[test]
+#[cfg_attr(any(not(target_family = "unix"), target_os = "macos"), ignore = "needs linux strip command")]
 fn no_dbgsym() {
     let (_, ddir) = extract_built_package_from_manifest("tests/test-workspace/test-ws2/Cargo.toml", "xz", &["--no-dbgsym", "--fast"]);
     assert!(ddir.path().join("usr/bin/renamed2").exists());
 }
 
+#[test]
+fn no_dbgsym_strip() {
+    let (_, ddir) = extract_built_package_from_manifest("tests/test-workspace/test-ws2/Cargo.toml", "xz", &["--no-dbgsym", "--fast", DEFAULT_STRIP]);
+    assert!(ddir.path().join("usr/bin/renamed2").exists());
+}
+
+#[test]
+#[cfg_attr(any(not(target_family = "unix"), target_os = "macos"), ignore = "needs linux strip command")]
+fn no_symbols_for_dbgsym() {
+    let (_, ddir) = extract_built_package_from_manifest("tests/test-workspace/test-ws2/Cargo.toml", "xz", &["--dbgsym", "--override-debug=none", "--fast"]);
+    assert!(ddir.path().join("usr/bin/renamed2").exists());
+}
+
 #[track_caller]
 fn extract_built_package_from_manifest(manifest_path: &str, ext: &str, args: &[&str]) -> (TempDir, TempDir) {
-    let (_bdir, deb_path) = cargo_deb(manifest_path, args);
+    let (tmpdir, deb_path, ddeb) = cargo_deb(manifest_path, args);
+    if let Some(ddeb) = ddeb {
+        drop(tmpdir.keep());
+        panic!("{ddeb:?} built unexpectedly");
+    }
     extract_package(&deb_path, ext)
 }
 
@@ -182,11 +201,11 @@ fn extract_package(deb_path: &Path, ext: &str) -> (TempDir, TempDir) {
 }
 
 /// Run `cargo-deb` for the manifest with extra args, returns the `TempDir` holding the built package
-/// and the path to the built package.
+/// and the path to the built package, optional ddeb package.
 ///
 /// The `--manifest-path` and `--output` args are automatically set.
 #[track_caller]
-fn cargo_deb(manifest_path: &str, args: &[&str]) -> (TempDir, PathBuf) {
+fn cargo_deb(manifest_path: &str, args: &[&str]) -> (TempDir, PathBuf, Option<PathBuf>) {
     let _ = env_logger::builder().is_test(true).try_init();
 
     let cargo_dir = tempfile::tempdir().unwrap();
@@ -205,20 +224,23 @@ fn cargo_deb(manifest_path: &str, args: &[&str]) -> (TempDir, PathBuf) {
         .current_dir(workdir)
         .output()
         .unwrap();
-    assert!(
-        output.status.success(),
-        "Cmd failed: {}\n{}",
-        String::from_utf8_lossy(&output.stdout),
-        String::from_utf8_lossy(&output.stderr)
-    );
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    println!("{manifest_path} {args:?}: {stdout}");
+    eprintln!("{manifest_path} {args:?}: {stderr}");
+
+    assert!(output.status.success(), "Cmd failed {stdout}\n{stderr}");
 
     // prints deb path on the last line
-    let last_line = output.stdout[..output.stdout.len() - 1].split(|&c| c == b'\n').next_back().unwrap();
-    let printed_deb_path = Path::new(::std::str::from_utf8(last_line).unwrap());
+    let mut lines = stdout.lines();
+    let printed_deb_path = Path::new(lines.next_back().unwrap());
+    let before_last_line = lines.next_back().unwrap_or_default();
+    let maybe_ddeb_path = if before_last_line.ends_with(".ddeb") { Some(PathBuf::from(before_last_line)) } else { None };
     assert_eq!(printed_deb_path, deb_path);
     assert!(deb_path.exists());
 
-    (cargo_dir, deb_path)
+    (cargo_dir, deb_path, maybe_ddeb_path)
 }
 
 #[test]
@@ -247,7 +269,7 @@ fn run_cargo_deb_command_on_example_dir() {
 }
 
 #[test]
-#[cfg(all(target_family = "unix", not(target_os = "macos")))]
+#[cfg_attr(any(not(target_family = "unix"), target_os = "macos"), ignore = "needs linux strip command")]
 fn run_cargo_deb_command_on_example_dir_with_separate_debug_symbols() {
     let (_cdir, ddir) = extract_built_package_from_manifest("example/Cargo.toml", DEFAULT_COMPRESSION_EXT, &["--separate-debug-symbols", "--no-dbgsym"]);
 
@@ -273,10 +295,49 @@ fn run_cargo_deb_command_on_example_dir_with_separate_debug_symbols() {
 }
 
 #[test]
+#[cfg_attr(any(not(target_family = "unix"), target_os = "macos"), ignore = "needs linux strip command")]
+fn run_cargo_deb_command_on_example_dir_with_dbgsym() {
+    let (_bdir, deb_path, ddeb_path) = cargo_deb("example/Cargo.toml", &["--dbgsym", "--deb-revision=456", "--section=junk"]);
+    let ddeb_path = ddeb_path.expect("dbgsym option");
+
+    let (mainctrl, mainpkg) = extract_package(&deb_path, DEFAULT_COMPRESSION_EXT);
+    let (ddebctrl, ddebpkg) = extract_package(&ddeb_path, DEFAULT_COMPRESSION_EXT);
+
+    let stripped = mainpkg.path().join("usr/bin/example");
+    assert!(stripped.exists());
+
+    assert!(!mainpkg.path().join("usr/lib/debug/.build-id").exists());
+    assert!(ddebpkg.path().join("usr/lib/debug/.build-id").exists());
+
+    let debug = glob::glob(ddebpkg.path().join("usr/lib/debug/.build-id/*/*.debug").to_str().unwrap())
+        .unwrap().flatten().next().expect("can't find gnu-debuglink file in usr/lib/debug/.build-id/");
+
+    assert!(
+        debug.exists(),
+        "unable to find executable with debug symbols {} for stripped executable {}",
+        debug.display(),
+        stripped.display()
+    );
+
+    let mainctrl = std::fs::read_to_string(mainctrl.path().join("control")).unwrap();
+    assert!(mainctrl.contains("Package: example\n"), "{mainctrl}");
+    assert!(mainctrl.contains("Version: 0.1.0-456\n"), "{mainctrl}");
+    assert!(mainctrl.contains("Section: junk\n"), "{mainctrl}");
+
+    let ddebctrl = std::fs::read_to_string(ddebctrl.path().join("control")).unwrap();
+    assert!(ddebctrl.contains("Package: example-dbgsym\n"), "{ddebctrl}");
+    assert!(ddebctrl.contains("Version: 0.1.0-456\n"), "{ddebctrl}");
+    assert!(ddebctrl.contains("Auto-Built-Package: debug-symbols\n"), "{ddebctrl}");
+    assert!(ddebctrl.contains("Section: debug\n"), "{ddebctrl}");
+    assert!(ddebctrl.contains("Depends: example (= 0.1.0-456)\n"), "{ddebctrl}");
+    assert!(ddebctrl.contains("Description: Debug symbols for example"), "{ddebctrl}");
+}
+
+#[test]
 #[cfg(feature = "lzma")]
 fn run_cargo_deb_command_on_example_dir_with_variant() {
     let args = ["--variant=auto_assets", "--no-strip"];
-    let (_bdir, deb_path) = cargo_deb("example/Cargo.toml", &args);
+    let (_bdir, deb_path, _) = cargo_deb("example/Cargo.toml", &args);
 
     let ardir = tempfile::tempdir().unwrap();
     assert!(ardir.path().exists());
@@ -323,7 +384,7 @@ fn run_cargo_deb_command_on_example_dir_with_variant() {
 #[test]
 #[cfg(all(feature = "lzma", target_family = "unix"))]
 fn run_cargo_deb_command_on_example_dir_with_version() {
-    let (_bdir, deb_path) = cargo_deb("example/Cargo.toml", &["--deb-version=1my-custom-version", "--maintainer=alternative maintainer"]);
+    let (_bdir, deb_path, _) = cargo_deb("example/Cargo.toml", &["--deb-version=1my-custom-version", "--maintainer=alternative maintainer"]);
 
     let ardir = tempfile::tempdir().unwrap();
     assert!(ardir.path().exists());

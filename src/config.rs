@@ -344,9 +344,7 @@ impl BuildEnvironment {
                 Picking root ({}) over the package ({}) for compatibility with Cargo", workspace_root_manifest_path.display(), rel_path.display()));
         }
 
-        let manifest_debug = root_profile.or(package_profile)
-            .map(|profile_toml| debug_flags(profile_toml, &build_profile))
-            .unwrap_or(ManifestDebugFlags::Default);
+        let manifest_debug = debug_flags(root_profile.or(package_profile), &build_profile);
 
         drop(workspace_root_manifest_path);
         drop(root_manifest);
