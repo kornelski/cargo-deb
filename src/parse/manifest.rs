@@ -35,7 +35,7 @@ pub(crate) struct SystemdUnitsConfig {
     pub stop_on_upgrade: Option<bool>,
 }
 
-#[derive(PartialEq, Copy, Clone)]
+#[derive(PartialEq, Copy, Clone, Debug)]
 pub(crate) enum ManifestDebugFlags {
     /// Don't bother stripping again
     FullyStrippedByCargo,

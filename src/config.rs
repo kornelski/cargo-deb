@@ -406,15 +406,17 @@ impl BuildEnvironment {
         let allows_strip = strip_override != Some(false);
         let allows_separate_debug_symbols = separate_debug_symbols != Some(false);
 
-        let generate_dbgsym_package = generate_dbgsym_package
+        let generate_dbgsym_package = generate_dbgsym_package.inspect(|v| log::debug!("--dbgsym={v}"))
             .or((!allows_strip).then_some(false)) // --no-strip means not running the strip command, even to separate symbols
-            .or(deb.dbgsym)
+            .or(deb.dbgsym).inspect(|v| log::debug!("deb.dbgsym={v}"))
             .unwrap_or(allows_separate_debug_symbols && crate::DBGSYM_DEFAULT);
-        let wants_separate_debug_symbols = separate_debug_symbols
+        log::debug!("dbgsym? {generate_dbgsym_package} default={}", crate::DBGSYM_DEFAULT);
+        let wants_separate_debug_symbols = separate_debug_symbols.inspect(|v| log::debug!("--separate-debug-symbols={v}"))
             .or((!allows_strip).then_some(false)) // --no-strip means not running the strip command, even to separate symbols
-            .or(deb.separate_debug_symbols)
+            .or(deb.separate_debug_symbols).inspect(|v| log::debug!("deb.separate-debug-symbols={v}"))
             .unwrap_or(generate_dbgsym_package || (allows_separate_debug_symbols && crate::SEPARATE_DEBUG_SYMBOLS_DEFAULT));
         let separate_debug_symbols = generate_dbgsym_package || wants_separate_debug_symbols;
+        log::debug!("separate? {separate_debug_symbols} default={}", crate::SEPARATE_DEBUG_SYMBOLS_DEFAULT);
         let compress_debug_symbols = compress_debug_symbols.or(deb.compress_debug_symbols).unwrap_or(false);
 
         let separate_option_name = if generate_dbgsym_package { "dbgsym" } else { "separate-debug-symbols" };
@@ -473,6 +475,7 @@ impl BuildEnvironment {
                 keep_debug_symbols_default
             },
         };
+        log::debug!("manifest debug setting = {manifest_debug:?}; using {debug_symbols:?}");
         debug_symbols
     }
 

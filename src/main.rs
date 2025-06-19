@@ -30,14 +30,14 @@ fn main() -> ExitCode {
         .next_help_heading("Debug info")
         .arg(Arg::new("dbgsym").long("dbgsym").action(ArgAction::SetTrue)
             .hide_short_help(cargo_deb::DBGSYM_DEFAULT).help("Move debug symbols into a separate -dbgsym.ddeb package"))
-        .arg(Arg::new("no-dbgsym").long("no-dbgsym").action(ArgAction::SetFalse).conflicts_with("dbgsym")
+        .arg(Arg::new("no-dbgsym").long("no-dbgsym").action(ArgAction::SetTrue).conflicts_with("dbgsym")
             .hide_short_help(!cargo_deb::DBGSYM_DEFAULT).help("Don't make a dbgsym.ddeb package"))
         .arg(Arg::new("strip").long("strip").action(ArgAction::SetTrue).help("Always try to strip debug symbols").conflicts_with("dbgsym"))
-        .arg(Arg::new("no-strip").long("no-strip").action(ArgAction::SetFalse).conflicts_with_all(["separate-debug-symbols", "dbgsym"])
+        .arg(Arg::new("no-strip").long("no-strip").action(ArgAction::SetTrue).conflicts_with_all(["separate-debug-symbols", "dbgsym"])
             .hide_short_help(true).help("Do not run `strip` command if possible"))
         .arg(Arg::new("separate-debug-symbols").long("separate-debug-symbols").action(ArgAction::SetTrue)
             .hide_short_help(cargo_deb::SEPARATE_DEBUG_SYMBOLS_DEFAULT).help("Move debug symbols to a .debug file in the same package"))
-        .arg(Arg::new("no-separate-debug-symbols").long("no-separate-debug-symbols").action(ArgAction::SetFalse).conflicts_with_all(["separate-debug-symbols", "dbgsym"])
+        .arg(Arg::new("no-separate-debug-symbols").long("no-separate-debug-symbols").action(ArgAction::SetTrue).conflicts_with_all(["separate-debug-symbols", "dbgsym"])
             .hide_short_help(!cargo_deb::SEPARATE_DEBUG_SYMBOLS_DEFAULT).help("Do not strip debug symbols into a separate .debug file"))
         .arg(Arg::new("compress-debug-symbols").long("compress-debug-symbols").action(ArgAction::SetTrue).help("Apply `objcopy --compress-debug-sections`"))
         .next_help_heading("Metadata overrides")
@@ -53,7 +53,7 @@ fn main() -> ExitCode {
             .hide_short_help(true).help("Assume the project is already built. Use for complex projects that require non-Cargo build commands"))
         .arg(Arg::new("cargo-build").long("cargo-build").num_args(1).value_name("subcommand").default_value("build").conflicts_with("no-build")
             .hide_short_help(true).help("Override `build` in `cargo build`").hide_default_value(true))
-        .arg(Arg::new("override-debug").long("override-debug").num_args(1).value_name("Cargo.toml debug option").value_parser(["off", "line-tables-only", "limited", "full"])
+        .arg(Arg::new("override-debug").long("override-debug").num_args(1).value_name("Cargo.toml debug option").value_parser(["none", "line-tables-only", "limited", "full"])
             .hide_short_help(true).help("Override `[profile.release] debug` value using Cargo's env vars"))
         .arg(Arg::new("override-lto").long("override-lto").num_args(1).value_name("Cargo.toml lto option").value_parser(["thin", "fat"])
             .hide_short_help(true).help("Override `[profile.release] lto` value using Cargo's env vars"))
@@ -120,10 +120,10 @@ fn main() -> ExitCode {
 
     match CargoDeb::new(CargoDebOptions {
         no_build: matches.get_flag("no-build"),
-        strip_override: matches.get_one::<bool>("strip").copied(),
-        separate_debug_symbols: matches.get_one::<bool>("separate-debug-symbols").or(matches.get_one::<bool>("no-separate-debug-symbols")).copied(),
-        compress_debug_symbols: matches.get_one::<bool>("compress-debug-symbols").copied(),
-        generate_dbgsym_package: matches.get_one::<bool>("dbgsym").or(matches.get_one::<bool>("no-dbgsym")).copied(),
+        strip_override: if matches.get_flag("strip") { Some(true) } else if matches.get_flag("no-strip") { Some(false) } else { None },
+        separate_debug_symbols: if matches.get_flag("separate-debug-symbols") { Some(true) } else if matches.get_flag("no-separate-debug-symbols") { Some(false) } else { None },
+        compress_debug_symbols: if matches.get_flag("compress-debug-symbols") { Some(true) } else { None },
+        generate_dbgsym_package: if matches.get_flag("dbgsym") { Some(true) } else if matches.get_flag("no-dbgsym") { Some(false) } else { None },
         verbose,
         install,
         install_without_dbgsym: matches.get_flag("no-install-dbgsym"),

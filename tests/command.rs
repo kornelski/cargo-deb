@@ -72,6 +72,12 @@ fn build_with_command_line_compress_gz() {
     assert!(ddir.path().join("usr/bin/renamed2").exists());
 }
 
+#[test]
+fn no_dbgsym() {
+    let (_, ddir) = extract_built_package_from_manifest("tests/test-workspace/test-ws2/Cargo.toml", "xz", &["--no-dbgsym", "--fast"]);
+    assert!(ddir.path().join("usr/bin/renamed2").exists());
+}
+
 #[track_caller]
 fn extract_built_package_from_manifest(manifest_path: &str, ext: &str, args: &[&str]) -> (TempDir, TempDir) {
     let (_bdir, deb_path) = cargo_deb(manifest_path, args);
@@ -218,7 +224,7 @@ fn cargo_deb(manifest_path: &str, args: &[&str]) -> (TempDir, PathBuf) {
 #[test]
 #[cfg(all(feature = "lzma", target_family = "unix", not(target_os = "macos")))]
 fn run_cargo_deb_command_on_example_dir() {
-    let (cdir, ddir) = extract_built_package_from_manifest("example/Cargo.toml", DEFAULT_COMPRESSION_EXT, &[]);
+    let (cdir, ddir) = extract_built_package_from_manifest("example/Cargo.toml", DEFAULT_COMPRESSION_EXT, &["--no-separate-debug-symbols"]);
 
     let control = fs::read_to_string(cdir.path().join("control")).unwrap();
     assert!(control.contains("Package: example\n"));
@@ -243,7 +249,7 @@ fn run_cargo_deb_command_on_example_dir() {
 #[test]
 #[cfg(all(target_family = "unix", not(target_os = "macos")))]
 fn run_cargo_deb_command_on_example_dir_with_separate_debug_symbols() {
-    let (_cdir, ddir) = extract_built_package_from_manifest("example/Cargo.toml", DEFAULT_COMPRESSION_EXT, &["--separate-debug-symbols"]);
+    let (_cdir, ddir) = extract_built_package_from_manifest("example/Cargo.toml", DEFAULT_COMPRESSION_EXT, &["--separate-debug-symbols", "--no-dbgsym"]);
 
     let stripped = ddir.path().join("usr/bin/example");
     assert!(stripped.exists());
