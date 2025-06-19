@@ -3,12 +3,15 @@ For more details see https://github.com/kornelski/cargo-deb/commits/main/
 # 3.0.0
 
 * `--dbgsym` option to generate extra `-dbgsym.ddeb` package with separated debug info.
+  Install with `cargo install cargo-deb --features default_enable_dbgsym` to make it enabled by default.
 * Warnings for conflicting options, like `--separate-debug-symbols` and `--no-strip`.
 * Support for `CARGO_PROFILE_RELEASE_DEBUG` and `CARGO_PROFILE_RELEASE_STRIP`.
 * `[profile.release]` is read from the root of the workspace, matching Cargo's behavior.
 * `.cargo/config.toml` is searched relative to the current dir, rather than workspace root.
+* current dir is not changed when using `--manifest-path`. `cd` to the manifest's dir to get the previous behavior.
 * `"$auto"` can be explicitly added to `assets` to get the default assets in addition to custom ones.
 * Improved handling of `name` of config variants `[package.metadata.deb.variants.*]`
+* lack of `package.authors` and `copyright` is only a warning, not a fatal error.
 
 # 2.12
 

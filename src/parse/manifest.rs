@@ -399,9 +399,6 @@ pub(crate) struct ManifestFound {
     pub root_manifest: Option<cargo_toml::Manifest<CargoPackageMetadata>>,
     pub target_dir: PathBuf,
     pub manifest: cargo_toml::Manifest<CargoPackageMetadata>,
-    /// Cargo is sensitive to the current directory it's been invoked from - relative `CARGO_TARGET_DIR` and `.cargo` dir discovery
-    /// can significantly affect the build, and are disconnected from locations of the manifest and the workspace!
-    pub cargo_run_current_dir: PathBuf,
 }
 
 fn parse_metadata(mut metadata: CargoMetadata, selected_package_name: Option<&str>) -> Result<(CargoMetadataPackage, PathBuf, PathBuf), CargoDebError> {
@@ -461,7 +458,7 @@ fn parse_manifest_only(manifest_path: &Path) -> Result<cargo_toml::Manifest<Carg
 }
 
 pub(crate) fn cargo_metadata(initial_manifest_path: Option<&Path>, selected_package_name: Option<&str>, cargo_locking_flags: CargoLockingFlags) -> Result<ManifestFound, CargoDebError> {
-    let (metadata, cargo_run_current_dir) = run_cargo_metadata(initial_manifest_path, cargo_locking_flags)?;
+    let metadata = run_cargo_metadata(initial_manifest_path, cargo_locking_flags)?;
     let (target_package, target_dir, workspace_root) = parse_metadata(metadata, selected_package_name)?;
 
     let manifest_path = Path::new(&target_package.manifest_path);
@@ -482,33 +479,19 @@ pub(crate) fn cargo_metadata(initial_manifest_path: Option<&Path>, selected_pack
         root_manifest,
         target_dir,
         manifest,
-        cargo_run_current_dir,
     })
 }
 
 /// Returns the workspace metadata based on the `Cargo.toml` that we want to build,
 /// and directory that paths may be relative to
-fn run_cargo_metadata(manifest_rel_path: Option<&Path>, cargo_locking_flags: CargoLockingFlags) -> CDResult<(CargoMetadata, PathBuf)> {
+fn run_cargo_metadata(manifest_rel_path: Option<&Path>, cargo_locking_flags: CargoLockingFlags) -> CDResult<CargoMetadata> {
     let mut cmd = Command::new("cargo");
     cmd.args(["metadata", "--format-version=1", "--no-deps"]);
     cmd.args(cargo_locking_flags.flags());
 
-    let current_dir = if let Some(path) = manifest_rel_path {
-        // cargo will read ./.config relative to the current dir,
-        // so --manifest-path of another dir can end up finding a wrong config
-        // if the current dir isn't set to match.
-        let tmp;
-        let manifest_abs_path = if path.is_absolute() { path } else {
-            tmp = path.canonicalize().map_err(|e| CargoDebError::IoFile("bad manifest path", e, path.into()))?;
-            &*tmp
-        };
-        cmd.args(["--manifest-path".as_ref(), manifest_abs_path.as_os_str()]);
-
-        manifest_abs_path.parent().ok_or("bad manifest path")?.to_owned()
-    } else {
-        std::env::current_dir()?
-    };
-    cmd.current_dir(&current_dir);
+    if let Some(path) = manifest_rel_path {
+        cmd.args(["--manifest-path".as_ref(), path.as_os_str()]);
+    }
 
     let output = cmd.output()
         .map_err(|e| CargoDebError::CommandFailed(e, "cargo (is it in your PATH?)"))?;
@@ -516,8 +499,7 @@ fn run_cargo_metadata(manifest_rel_path: Option<&Path>, cargo_locking_flags: Car
         return Err(CargoDebError::CommandError("cargo", "metadata".to_owned(), output.stderr));
     }
 
-    let metadata = serde_json::from_slice(&output.stdout)?;
-    Ok((metadata, current_dir))
+    Ok(serde_json::from_slice(&output.stdout)?)
 }
 
 #[cfg(test)]

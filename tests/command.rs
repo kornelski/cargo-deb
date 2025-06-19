@@ -184,16 +184,19 @@ fn cargo_deb(manifest_path: &str, args: &[&str]) -> (TempDir, PathBuf) {
     let _ = env_logger::builder().is_test(true).try_init();
 
     let cargo_dir = tempfile::tempdir().unwrap();
+    assert!(cargo_dir.path().is_absolute());
     let deb_path = cargo_dir.path().join("test.deb");
 
     let root = PathBuf::from(env::var_os("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR"));
     let cmd_path = root.join(env!("CARGO_BIN_EXE_cargo-deb"));
     assert!(cmd_path.exists());
+
+    let workdir = root.join(Path::new(manifest_path).parent().unwrap());
     let output = Command::new(cmd_path)
         .env("CARGO_TARGET_DIR", cargo_dir.path()) // use isolated 'target' directories
-        .arg(format!("--manifest-path={}", root.join(manifest_path).display()))
         .arg(format!("--output={}", deb_path.display()))
         .args(args)
+        .current_dir(workdir)
         .output()
         .unwrap();
     assert!(

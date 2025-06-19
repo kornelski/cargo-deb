@@ -318,7 +318,6 @@ impl BuildEnvironment {
             mut manifest_path,
             mut target_dir,
             mut manifest,
-            cargo_run_current_dir,
         } = cargo_metadata(manifest_path, selected_package_name, cargo_locking_flags)?;
 
         let default_timestamp = if let Ok(source_date_epoch) = std::env::var("SOURCE_DATE_EPOCH") {
@@ -390,7 +389,7 @@ impl BuildEnvironment {
             build_profile,
             build_targets,
             cargo_locking_flags,
-            cargo_run_current_dir,
+            cargo_run_current_dir: std::env::current_dir().unwrap_or_default(),
         };
 
         let arch = debian_architecture_from_rust_triple(config.rust_target_triple());
