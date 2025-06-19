@@ -3,19 +3,20 @@ use crate::CDResult;
 use ar::{Builder, Header};
 use std::fs;
 use std::fs::File;
+use std::io::BufWriter;
 use std::path::PathBuf;
 
 /// The outermost `ar` archive that contains tarballs inside
 pub struct DebArchive {
     out_abspath: PathBuf,
-    ar_builder: Builder<File>,
+    ar_builder: Builder<BufWriter<File>>,
     mtime_timestamp: u64,
 }
 
 impl DebArchive {
     pub fn new(out_abspath: PathBuf, mtime_timestamp: u64) -> CDResult<Self> {
-        let _ = fs::create_dir_all(out_abspath.parent().ok_or("invalid dir")?);
-        let ar_builder = Builder::new(File::create(&out_abspath)?);
+        let _ = fs::create_dir_all(out_abspath.parent().ok_or("invalid output path")?);
+        let ar_builder = Builder::new(BufWriter::new(File::create(&out_abspath)?));
 
         let mut ar = Self {
             out_abspath,
