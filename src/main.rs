@@ -1,6 +1,6 @@
 use cargo_deb::compress::Format;
 use cargo_deb::config::Multiarch;
-use cargo_deb::{listener, BuildProfile, CargoDeb, CargoDebError, CargoDebOptions, CargoLockingFlags};
+use cargo_deb::{listener, BuildProfile, CargoDeb, CargoDebOptions, CargoLockingFlags};
 use clap::{Arg, ArgAction, Command};
 use std::env;
 use std::process::ExitCode;
@@ -49,6 +49,10 @@ fn main() -> ExitCode {
         .arg(Arg::new("section").long("section").num_args(1).value_name("section")
             .hide_short_help(true).help("Set the application category for this package"))
         .next_help_heading("Build overrides")
+        .arg(Arg::new("no-build").long("no-build").action(ArgAction::SetTrue)
+            .hide_short_help(true).help("Assume the project is already built. Use for complex projects that require non-Cargo build commands"))
+        .arg(Arg::new("cargo-build").long("cargo-build").num_args(1).value_name("subcommand").default_value("build").conflicts_with("no-build")
+            .hide_short_help(true).help("Override `build` in `cargo build`").hide_default_value(true))
         .arg(Arg::new("override-debug").long("override-debug").num_args(1).value_name("Cargo.toml debug option").value_parser(["off", "line-tables-only", "limited", "full"])
             .hide_short_help(true).help("Override `[profile.release] debug` value using Cargo's env vars"))
         .arg(Arg::new("override-lto").long("override-lto").num_args(1).value_name("Cargo.toml lto option").value_parser(["thin", "fat"])
@@ -56,19 +60,16 @@ fn main() -> ExitCode {
         .next_help_heading("Deb compression")
         .arg(Arg::new("fast").long("fast").action(ArgAction::SetTrue)
             .help("Use faster compression, which makes a larger deb file"))
-        .arg(Arg::new("compress-type").short('Z').long("compress-type").help("Compress with the given compression format").num_args(1).value_name("gz|xz"))
+        .arg(Arg::new("compress-type").short('Z').long("compress-type").num_args(1).value_name("gz|xz").value_parser(["xz", "gz", "gzip"]).default_value("xz")
+            .help("Compress with the given compression format").hide_possible_values(true))
         .arg(Arg::new("compress-system").long("compress-system").alias("system-xz").action(ArgAction::SetTrue)
             .help("Use the corresponding command-line tool for compression"))
         .arg(Arg::new("rsyncable").long("rsyncable").action(ArgAction::SetTrue).hide_short_help(true)
             .help("Use worse compression, but reduce differences between versions of packages"))
         .next_help_heading("Cargo")
-        .arg(Arg::new("features").short('F').long("features").num_args(1).value_name("list").help("Can also be set in Cargo.toml [package.metadata.deb]"))
-        .arg(Arg::new("no-default-features").long("no-default-features").action(ArgAction::SetTrue).help("Can also be set in Cargo.toml [package.metadata.deb]"))
-        .arg(Arg::new("all-features").long("all-features").action(ArgAction::SetTrue).help("Passed to Cargo"))
-        .arg(Arg::new("no-build").long("no-build").action(ArgAction::SetTrue)
-            .hide_short_help(true).help("Assume the project is already built. Use for complex projects that require non-Cargo build commands"))
-        .arg(Arg::new("cargo-build").long("cargo-build").num_args(1).value_name("subcommand").default_value("build").conflicts_with("no-build")
-            .hide_short_help(true).help("Override `build` in `cargo build`"))
+        .arg(Arg::new("features").short('F').long("features").num_args(1).value_name("list").help("Can also be set in Cargo.toml `[package.metadata.deb]`"))
+        .arg(Arg::new("no-default-features").long("no-default-features").action(ArgAction::SetTrue).help("Can also be set in Cargo.toml `[package.metadata.deb]`"))
+        .arg(Arg::new("all-features").long("all-features").action(ArgAction::SetTrue).conflicts_with("no-default-features").help("Passed to Cargo"))
         .arg(Arg::new("offline").long("offline").action(ArgAction::SetTrue).help("Use only cached registry and cached packages"))
         .arg(Arg::new("locked").long("locked").action(ArgAction::SetTrue).help("Require Cargo.lock to be up-to-date"))
         .arg(Arg::new("frozen").long("frozen").action(ArgAction::SetTrue).hide_short_help(true).help("Passed to Cargo"))
@@ -80,10 +81,7 @@ fn main() -> ExitCode {
     let compress_type = match matches.get_one::<String>("compress-type").map(|s| s.as_str()) {
         Some("gz" | "gzip") => Format::Gzip,
         Some("xz") | None => Format::Xz,
-        _ => {
-            print_error(&CargoDebError::Str("unrecognized compression format. Supported: gzip, xz"));
-            return ExitCode::FAILURE;
-        },
+        _ => Format::Xz,
     };
 
     let multiarch = match matches.get_one::<String>("multiarch").map_or("none", |s| s.as_str()) {
