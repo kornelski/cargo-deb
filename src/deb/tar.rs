@@ -136,7 +136,7 @@ fn log_asset(asset: &Asset, log_display_base_dir: &Path, listener: &dyn Listener
     };
     let mut log_line = format!("{operation} '{}' {}-> {}",
         asset.processed_from.as_ref().and_then(|p| p.original_path.as_deref()).or(asset.source.path())
-            .map(|p| p.strip_prefix(&log_display_base_dir).unwrap_or(p))
+            .map(|p| p.strip_prefix(log_display_base_dir).unwrap_or(p))
             .unwrap_or_else(|| Path::new("-")).display(),
         asset.processed_from.as_ref().map(|p| p.action).unwrap_or_default(),
         asset.c.target_path.display()
@@ -154,7 +154,7 @@ fn human_size(len: u64) -> (u64, &'static str) {
         return (len, "B");
     }
     if len < 1_000_000 {
-        return ((len + 999) / 1000, "KB");
+        return (len.div_ceil(1000), "KB");
     }
-    ((len + 999_999) / 1_000_000, "MB")
+    (len.div_ceil(1_000_000), "MB")
 }

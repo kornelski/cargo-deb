@@ -392,7 +392,7 @@ pub fn compressed_assets(package_deb: &PackageConfig, listener: &dyn Listener) -
             listener.info(format!("Compressing '{}'", new_path.display()));
             CDResult::Ok((idx, Asset::new(
                 crate::assets::AssetSource::Data(gzipped(&orig_asset.source.data()?)?),
-                new_path.into(),
+                new_path,
                 orig_asset.c.chmod,
                 IsBuilt::No,
                 AssetKind::Any,
@@ -407,7 +407,6 @@ pub fn apply_compressed_assets(package_deb: &mut PackageConfig, new_assets: Vec<
         package_deb.assets.resolved[idx] = asset;
     }
 }
-
 
 #[cfg(test)]
 mod tests {

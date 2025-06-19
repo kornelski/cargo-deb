@@ -13,7 +13,7 @@ fn ensure_success(status: ExitStatus) -> io::Result<()> {
     if status.success() {
         Ok(())
     } else {
-        Err(io::Error::new(io::ErrorKind::Other, status.to_string()))
+        Err(io::Error::other(status.to_string()))
     }
 }
 

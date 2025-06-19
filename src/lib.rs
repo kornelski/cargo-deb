@@ -55,7 +55,7 @@ mod dependencies;
 mod error;
 pub use debuginfo::strip_binaries;
 
-use crate::assets::{compressed_assets, apply_compressed_assets};
+use crate::assets::{apply_compressed_assets, compressed_assets};
 use crate::deb::control::ControlArchiveBuilder;
 use crate::deb::tar::Tarball;
 use crate::listener::{Listener, PrefixedListener};
@@ -304,7 +304,10 @@ pub fn write_deb(config: &BuildEnvironment, package_deb: &PackageConfig, &compre
             control_builder.generate_archive(config, package_deb)?;
             let control_compressed = control_builder.finish()?.finish()?;
 
-            let mut deb_contents = DebArchive::new(config.deb_output_path(package_deb), package_deb.default_timestamp)?;
+            let mut deb_contents = DebArchive::new(
+                config.deb_output_path(package_deb),
+                package_deb.default_timestamp,
+            )?;
             let compressed_control_size = control_compressed.len();
             deb_contents.add_control(control_compressed)?;
             Ok::<_, CargoDebError>((deb_contents, compressed_control_size))

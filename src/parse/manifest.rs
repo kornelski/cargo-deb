@@ -517,8 +517,8 @@ fn run_cargo_metadata(manifest_rel_path: Option<&Path>, cargo_locking_flags: Car
 
 #[cfg(test)]
 mod tests {
-    use itertools::Itertools;
     use crate::listener::NoOpListener;
+    use itertools::Itertools;
 
     use super::*;
 
