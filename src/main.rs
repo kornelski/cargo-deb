@@ -12,42 +12,60 @@ fn main() -> ExitCode {
         .version(env!("CARGO_PKG_VERSION"))
         .about("Create Debian packages from Cargo projects\nhttps://lib.rs/cargo-deb")
         .arg(Arg::new("output").short('o').long("output").help("Write .deb to this file or directory [default: target/debian]").num_args(1).value_name("path"))
-        .arg(Arg::new("package").short('p').long("package").help("Select which Cargo workspace package to use").num_args(1).value_name("name"))
+        .arg(Arg::new("package").short('p').long("package").help("Select which package to use in a Cargo workspace").num_args(1).value_name("name"))
         .arg(Arg::new("manifest-path").long("manifest-path").help("Select package by the path to Cargo.toml project file").num_args(1).value_name("./Cargo.toml"))
         .arg(Arg::new("target").long("target").help("Rust target platform for cross-compilation").num_args(1).value_name("triple"))
-        .arg(Arg::new("multiarch").long("multiarch").value_parser(["none", "same", "foreign"]).help("Put libs in /usr/lib/$arch-linux-gnu/").num_args(1).default_value("none").value_name("foreign"))
+        .arg(Arg::new("multiarch").long("multiarch")
+            .num_args(1).value_parser(["none", "same", "foreign"])
+            .help("Put libs in /usr/lib/$arch-linux-gnu/")
+            .long_help("If `same` or `foreign`, puts libs in /usr/lib/$arch-linux-gnu/ to support multiple architectures. `foreign` is for packages that don't run binaries on the host machine.\nSee https://wiki.debian.org/Multiarch/HOWTO")
+            .hide_possible_values(true)
+            .default_value("none").value_name("same|foreign"))
         .arg(Arg::new("profile").long("profile").help("Select which Cargo build profile to use").num_args(1).value_name("release|<custom>"))
-        .arg(Arg::new("install").long("install").help("Immediately install the created deb package").action(ArgAction::SetTrue))
-        .arg(Arg::new("cargo-build").long("cargo-build").help("Override cargo build subcommand").num_args(1).value_name("subcommand"))
-        .arg(Arg::new("no-build").long("no-build").help("Assume the project is already built").action(ArgAction::SetTrue))
-        .arg(Arg::new("quiet").short('q').long("quiet").help("Don't print warnings").action(ArgAction::SetTrue))
-        .arg(Arg::new("verbose").short('v').long("verbose").help("Print progress").action(ArgAction::SetTrue))
+        .arg(Arg::new("install").long("install").action(ArgAction::SetTrue).help("Immediately install the created deb package"))
+        .arg(Arg::new("quiet").short('q').long("quiet").action(ArgAction::SetTrue).help("Don't print warnings"))
+        .arg(Arg::new("verbose").short('v').long("verbose").action(ArgAction::SetTrue).conflicts_with("quiet").help("Print progress"))
         .next_help_heading("Debug info")
-        .arg(Arg::new("strip").long("strip").help("Always try to strip debug symbols").action(ArgAction::SetTrue))
-        .arg(Arg::new("no-strip").long("no-strip").help("Do not strip debug symbols from the binary").action(ArgAction::SetTrue))
-        .arg(Arg::new("dbgsym").long("dbgsym").help("Move debug symbols into a separate -dbgsym.ddeb package").action(ArgAction::SetTrue))
-        .arg(Arg::new("separate-debug-symbols").long("separate-debug-symbols").help("Move debug symbols to a .debug file in the same package").action(ArgAction::SetTrue))
-        .arg(Arg::new("no-separate-debug-symbols").long("no-separate-debug-symbols").help("Do not strip debug symbols into a separate .debug file").action(ArgAction::SetTrue))
-        .arg(Arg::new("compress-debug-symbols").long("compress-debug-symbols").help("Apply `objcopy --compress-debug-sections`").action(ArgAction::SetTrue))
+        .arg(Arg::new("dbgsym").long("dbgsym").action(ArgAction::SetTrue)
+            .help("Move debug symbols into a separate -dbgsym.ddeb package"))
+        .arg(Arg::new("strip").long("strip").action(ArgAction::SetTrue).help("Always try to strip debug symbols").conflicts_with("dbgsym"))
+        .arg(Arg::new("no-strip").long("no-strip").action(ArgAction::SetFalse).conflicts_with_all(["separate-debug-symbols", "dbgsym"])
+            .hide_short_help(true).help("Do not run `strip` command if possible"))
+        .arg(Arg::new("separate-debug-symbols").long("separate-debug-symbols").action(ArgAction::SetTrue)
+            .help("Move debug symbols to a .debug file in the same package"))
+        .arg(Arg::new("no-separate-debug-symbols").long("no-separate-debug-symbols").action(ArgAction::SetFalse).conflicts_with_all(["separate-debug-symbols", "dbgsym"])
+            .hide_short_help(true).help("Do not strip debug symbols into a separate .debug file"))
+        .arg(Arg::new("compress-debug-symbols").long("compress-debug-symbols").action(ArgAction::SetTrue).help("Apply `objcopy --compress-debug-sections`"))
         .next_help_heading("Metadata overrides")
-        .arg(Arg::new("variant").long("variant").help("Alternative Cargo.toml configuration section to use").num_args(1).value_name("name"))
-        .arg(Arg::new("deb-version").long("deb-version").help("Override version string for the package").num_args(1).value_name("version"))
-        .arg(Arg::new("deb-revision").long("deb-revision").help("Override revision suffix string for the package").num_args(1).value_name("num"))
-        .arg(Arg::new("maintainer").long("maintainer").help("Override Maintainer field").num_args(1).value_name("name"))
-        .arg(Arg::new("section").long("section").help("Set the application category for this package").num_args(1).value_name("section"))
+        .arg(Arg::new("variant").long("variant").num_args(1).value_name("name").help("Alternative `[package.metadata.deb.variants.*]` config section to use"))
+        .arg(Arg::new("deb-version").long("deb-version").num_args(1).value_name("version").help("Override version string of the package (including revision)"))
+        .arg(Arg::new("deb-revision").long("deb-revision").num_args(1).value_name("num").conflicts_with("deb-version")
+            .help("Override revision suffix string of the package [default: 1]"))
+        .arg(Arg::new("maintainer").long("maintainer").num_args(1).value_name("name").help("Override Maintainer field"))
+        .arg(Arg::new("section").long("section").num_args(1).value_name("section")
+            .hide_short_help(true).help("Set the application category for this package"))
         .next_help_heading("Deb compression")
-        .arg(Arg::new("fast").long("fast").help("Use faster compression, which makes a larger deb file").action(ArgAction::SetTrue))
+        .arg(Arg::new("fast").long("fast").action(ArgAction::SetTrue)
+            .help("Use faster compression, which makes a larger deb file"))
         .arg(Arg::new("compress-type").short('Z').long("compress-type").help("Compress with the given compression format").num_args(1).value_name("gz|xz"))
-        .arg(Arg::new("compress-system").long("compress-system").alias("system-xz").help("Use the corresponding command-line tool for compression").action(ArgAction::SetTrue))
-        .arg(Arg::new("rsyncable").long("rsyncable").help("Use worse compression, but reduce differences between versions of packages").action(ArgAction::SetTrue))
+        .arg(Arg::new("compress-system").long("compress-system").alias("system-xz").action(ArgAction::SetTrue)
+            .help("Use the corresponding command-line tool for compression"))
+        .arg(Arg::new("rsyncable").long("rsyncable").action(ArgAction::SetTrue).hide_short_help(true)
+            .help("Use worse compression, but reduce differences between versions of packages"))
         .next_help_heading("Cargo")
-        .arg(Arg::new("offline").long("offline").help("Passed to Cargo").action(ArgAction::SetTrue))
-        .arg(Arg::new("locked").long("locked").help("Passed to Cargo").action(ArgAction::SetTrue))
-        .arg(Arg::new("frozen").long("frozen").help("Passed to Cargo").action(ArgAction::SetTrue))
-        .arg(Arg::new("features").short('F').long("features").num_args(1).value_name("list").help("Can also be set in Cargo.toml package.metadata.deb"))
-        .arg(Arg::new("all-features").long("all-features").help("Passed to Cargo").action(ArgAction::SetTrue))
-        .arg(Arg::new("no-default-features").long("no-default-features").help("Can also be set in Cargo.toml package.metadata.deb").action(ArgAction::SetTrue))
-        .arg(Arg::new("-- other cargo arguments").help("Free arguments passed to cargo build").num_args(0..))
+        .arg(Arg::new("features").short('F').long("features").num_args(1).value_name("list").help("Can also be set in Cargo.toml [package.metadata.deb]"))
+        .arg(Arg::new("no-default-features").long("no-default-features").action(ArgAction::SetTrue).help("Can also be set in Cargo.toml [package.metadata.deb]"))
+        .arg(Arg::new("all-features").long("all-features").action(ArgAction::SetTrue).help("Passed to Cargo"))
+        .arg(Arg::new("no-build").long("no-build").action(ArgAction::SetTrue)
+            .hide_short_help(true).help("Assume the project is already built. Use for complex projects that require non-Cargo build commands"))
+        .arg(Arg::new("cargo-build").long("cargo-build").num_args(1).value_name("subcommand").default_value("build").conflicts_with("no-build")
+            .hide_short_help(true).help("Override `build` in `cargo build`"))
+        .arg(Arg::new("offline").long("offline").action(ArgAction::SetTrue).help("Use only cached registry and cached packages"))
+        .arg(Arg::new("locked").long("locked").action(ArgAction::SetTrue).help("Require Cargo.lock to be up-to-date"))
+        .arg(Arg::new("frozen").long("frozen").action(ArgAction::SetTrue).hide_short_help(true).help("Passed to Cargo"))
+        .arg(Arg::new("-- other cargo arguments").num_args(0..).help("Free arguments passed to cargo build"))
+        .after_help("Use --help to show more options")
+        .after_long_help("See https://lib.rs/crates/cargo-deb for more info")
         .get_matches();
 
     let install = matches.get_flag("install");
@@ -62,13 +80,9 @@ fn main() -> ExitCode {
     };
 
     let multiarch = match matches.get_one::<String>("multiarch").map_or("none", |s| s.as_str()) {
-        "none" => Multiarch::None,
         "same" => Multiarch::Same,
         "foreign" => Multiarch::Foreign,
-        _ => {
-            print_error(&CargoDebError::Str("multiarch must be 'none', 'same', or 'foreign'. https://wiki.debian.org/Multiarch/HOWTO"));
-            return ExitCode::FAILURE;
-        },
+        _ => Multiarch::None,
     };
 
     // `cargo deb` invocation passes the `deb` arg through.
@@ -99,10 +113,10 @@ fn main() -> ExitCode {
 
     match CargoDeb::new(CargoDebOptions {
         no_build: matches.get_flag("no-build"),
-        strip_override: if matches.get_flag("strip") { Some(true) } else if matches.get_flag("no-strip") { Some(false) } else { None },
-        separate_debug_symbols: if matches.get_flag("separate-debug-symbols") { Some(true) } else if matches.get_flag("no-separate-debug-symbols") { Some(false) } else { None },
-        compress_debug_symbols: if matches.get_flag("compress-debug-symbols") { Some(true) } else { None },
-        generate_dbgsym_package: if matches.get_flag("dbgsym") { Some(true) } else { None },
+        strip_override: matches.get_one::<bool>("strip").copied(),
+        separate_debug_symbols: matches.get_one::<bool>("separate-debug-symbols").or(matches.get_one::<bool>("no-separate-debug-symbols")).copied(),
+        compress_debug_symbols: matches.get_one::<bool>("compress-debug-symbols").copied(),
+        generate_dbgsym_package: matches.get_one::<bool>("dbgsym").copied(),
         verbose,
         install,
         // when installing locally it won't be transferred anywhere, so allow faster compression
