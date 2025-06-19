@@ -518,6 +518,13 @@ impl BuildEnvironment {
         }
 
         let profile_name = self.build_profile.profile_name();
+
+        for (name, val) in [("DEBUG", &self.build_profile.override_debug), ("LTO", &self.build_profile.override_lto)] {
+            if let Some(val) = val {
+                env.push((o(format!("CARGO_PROFILE_{}_{name}", profile_name.to_ascii_uppercase())), s(val)));
+            }
+        }
+
         flags.push(if profile_name == "release" { s("--release") } else { o(format!("--profile={profile_name}")) });
         flags.extend(self.cargo_locking_flags.flags().map(|f| s(f)));
 

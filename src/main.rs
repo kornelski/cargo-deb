@@ -48,6 +48,11 @@ fn main() -> ExitCode {
         .arg(Arg::new("maintainer").long("maintainer").num_args(1).value_name("name").help("Override Maintainer field"))
         .arg(Arg::new("section").long("section").num_args(1).value_name("section")
             .hide_short_help(true).help("Set the application category for this package"))
+        .next_help_heading("Build overrides")
+        .arg(Arg::new("override-debug").long("override-debug").num_args(1).value_name("Cargo.toml debug option").value_parser(["off", "line-tables-only", "limited", "full"])
+            .hide_short_help(true).help("Override `[profile.release] debug` value using Cargo's env vars"))
+        .arg(Arg::new("override-lto").long("override-lto").num_args(1).value_name("Cargo.toml lto option").value_parser(["thin", "fat"])
+            .hide_short_help(true).help("Override `[profile.release] lto` value using Cargo's env vars"))
         .next_help_heading("Deb compression")
         .arg(Arg::new("fast").long("fast").action(ArgAction::SetTrue)
             .help("Use faster compression, which makes a larger deb file"))
@@ -148,6 +153,8 @@ fn main() -> ExitCode {
         rsyncable: matches.get_flag("rsyncable"),
         build_profile: BuildProfile {
             profile_name: matches.get_one::<String>("profile").filter(|&n| n != "release").cloned(),
+            override_debug: matches.get_one::<String>("override-debug").cloned(),
+            override_lto: matches.get_one::<String>("override-lto").cloned(),
         },
         cargo_build_cmd: matches.get_one::<String>("cargo-build").map_or("build", |s| s.as_str()).into(),
         cargo_locking_flags: CargoLockingFlags {

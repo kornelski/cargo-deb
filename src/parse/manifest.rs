@@ -1,10 +1,11 @@
-use crate::config::BuildProfile;
 use crate::assets::{RawAsset, RawAssetOrAuto};
+use crate::CargoLockingFlags;
+use crate::config::BuildProfile;
 use crate::error::{CDResult, CargoDebError};
 use crate::listener::Listener;
-use crate::CargoLockingFlags;
 use cargo_toml::{DebugSetting, StripSetting};
 use log::debug;
+use serde::de::DeserializeOwned;
 use serde::Deserialize;
 use std::borrow::Cow;
 use std::collections::{BTreeMap, HashMap};
@@ -55,6 +56,14 @@ pub(crate) fn find_profile<'a>(manifest: &'a cargo_toml::Manifest<CargoPackageMe
     }
 }
 
+fn from_toml_value<T: DeserializeOwned>(toml: &str) -> Option<T> {
+    // support parsing `true` as bool, but other values as strings
+    T::deserialize(toml::de::ValueDeserializer::new(toml)).ok().or_else(|| {
+        T::deserialize(toml::de::ValueDeserializer::new(&format!("\"{toml}\"")))
+            .inspect_err(|e| log::warn!("error parsing profile override: {toml}\n{e}")).ok()
+    })
+}
+
 pub(crate) fn debug_flags(manifest_profile: &cargo_toml::Profile, profile_override: &BuildProfile) -> ManifestDebugFlags {
     let profile_uppercase = profile_override.profile_name().to_ascii_uppercase();
     let cargo_var = |name| {
@@ -62,20 +71,15 @@ pub(crate) fn debug_flags(manifest_profile: &cargo_toml::Profile, profile_overri
         std::env::var(&name).ok().inspect(|v| log::debug!("{name} = {v}"))
     };
 
-    let strip = cargo_var("STRIP").and_then(|var| {
-            StripSetting::deserialize(toml::de::ValueDeserializer::new(&var)).inspect_err(|e| log::warn!("{e}")).ok()
-        })
-        .or(manifest_profile.strip.clone())
-        .inspect(|v| log::debug!("strip={v:?}"));
+    let strip = cargo_var("STRIP").and_then(|var| from_toml_value::<StripSetting>(&var))
+        .or(manifest_profile.strip.clone()).inspect(|v| log::debug!("strip={v:?}"));
     if strip == Some(StripSetting::Symbols) {
         return ManifestDebugFlags::FullyStrippedByCargo;
     }
 
-    let debug = cargo_var("DEBUG").and_then(|var| {
-            DebugSetting::deserialize(toml::de::ValueDeserializer::new(&var)).inspect_err(|e| log::warn!("{e}")).ok()
-        })
-        .or(manifest_profile.debug.clone())
-        .inspect(|v| log::debug!("debug={v:?}"));
+    let debug = profile_override.override_debug.clone().or_else(|| cargo_var("DEBUG"))
+        .and_then(|var| from_toml_value::<DebugSetting>(&var))
+        .or(manifest_profile.debug.clone()).inspect(|v| log::debug!("debug={v:?}"));
     match debug {
         None => ManifestDebugFlags::Default,
         Some(DebugSetting::None) => ManifestDebugFlags::SymbolsDisabled,
