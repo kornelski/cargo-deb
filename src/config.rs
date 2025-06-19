@@ -500,7 +500,7 @@ impl BuildEnvironment {
             }
         }
 
-        self.add_copyright_asset(package_deb)?;
+        self.add_copyright_asset(package_deb, listener)?;
         self.add_changelog_asset(package_deb)?;
         self.add_systemd_assets(package_deb, listener)?;
 
@@ -604,12 +604,18 @@ impl BuildEnvironment {
         }
     }
 
-    fn add_copyright_asset(&self, package_deb: &mut PackageConfig) -> CDResult<()> {
+    fn add_copyright_asset(&self, package_deb: &mut PackageConfig, listener: &dyn Listener) -> CDResult<()> {
+        let destination_path = Path::new("usr/share/doc").join(&package_deb.deb_name).join("copyright");
+        if package_deb.assets.iter().any(|a| a.target_path == destination_path) {
+            listener.info(format!("Not generating a default copyright, because asset for {} exists", destination_path.display()));
+            return Ok(());
+        }
+
         let (source_path, copyright_file) = self.generate_copyright_asset(package_deb)?;
         log::debug!("added copyright via {}", source_path.display());
         package_deb.assets.resolved.push(Asset::new(
             AssetSource::Data(copyright_file),
-            Path::new("usr/share/doc").join(&package_deb.deb_name).join("copyright"),
+            destination_path,
             0o644,
             IsBuilt::No,
             AssetKind::Any,
