@@ -1,6 +1,6 @@
 use cargo_deb::compress::Format;
 use cargo_deb::config::Multiarch;
-use cargo_deb::{listener, CargoDeb, CargoDebError, CargoDebOptions, CargoLockingFlags};
+use cargo_deb::{listener, BuildProfile, CargoDeb, CargoDebError, CargoDebOptions, CargoLockingFlags};
 use clap::{Arg, ArgAction, Command};
 use std::env;
 use std::process::ExitCode;
@@ -146,7 +146,9 @@ fn main() -> ExitCode {
         compress_type,
         compress_system: matches.get_flag("compress-system"),
         rsyncable: matches.get_flag("rsyncable"),
-        profile: matches.get_one::<String>("profile").cloned(),
+        build_profile: BuildProfile {
+            profile_name: matches.get_one::<String>("profile").filter(|&n| n != "release").cloned(),
+        },
         cargo_build_cmd: matches.get_one::<String>("cargo-build").map_or("build", |s| s.as_str()).into(),
         cargo_locking_flags: CargoLockingFlags {
             offline: matches.get_flag("offline"),

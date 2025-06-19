@@ -17,6 +17,7 @@ use rayon::prelude::*;
 use std::borrow::Cow;
 use std::collections::{BTreeSet, HashMap, HashSet};
 use std::env::consts::{DLL_PREFIX, DLL_SUFFIX, EXE_SUFFIX};
+use std::ffi::{OsStr, OsString};
 use std::io::Write;
 use std::path::{Component, Path, PathBuf};
 use std::process::Command;
@@ -105,8 +106,7 @@ pub struct BuildEnvironment {
     /// Should the binary be stripped from debug symbols?
     pub debug_symbols: DebugSymbols,
 
-    /// "release" if None
-    build_profile_override: Option<String>,
+    build_profile: BuildProfile,
 
     /// Products available in the package
     build_targets: Vec<CargoMetadataTarget>,
@@ -242,6 +242,21 @@ pub struct DebConfigOverrides {
     pub(crate) maintainer_scripts_rel_path: Option<PathBuf>,
 }
 
+#[derive(Debug, Clone, Default)]
+pub struct BuildProfile {
+    /// "release" by default
+    pub profile_name: Option<String>,
+    /// Cargo setting
+    pub override_debug: Option<String>,
+    pub override_lto: Option<String>,
+}
+
+impl BuildProfile {
+    pub fn profile_name(&self) -> &str {
+        self.profile_name.as_deref().unwrap_or("release")
+    }
+}
+
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Default)]
 pub enum Multiarch {
     /// Not supported
@@ -269,7 +284,7 @@ pub struct BuildOptions<'a> {
     pub rust_target_triple: Option<&'a str>,
     pub config_variant: Option<&'a str>,
     pub overrides: DebConfigOverrides,
-    pub build_profile_override: Option<String>,
+    pub build_profile: BuildProfile,
     pub debug: DebugSymbolOptions,
     pub cargo_locking_flags: CargoLockingFlags,
     pub multiarch: Multiarch,
@@ -287,7 +302,7 @@ impl BuildEnvironment {
             rust_target_triple,
             config_variant,
             overrides,
-            build_profile_override,
+            build_profile,
             debug,
             cargo_locking_flags,
             multiarch,
@@ -321,7 +336,7 @@ impl BuildEnvironment {
             target_dir.push(rust_target_triple);
         }
 
-        let selected_profile = build_profile_override.as_deref().unwrap_or("release");
+        let selected_profile = build_profile.profile_name();
 
         let package_profile = find_profile(&manifest, selected_profile);
         let root_profile = root_manifest.as_ref().and_then(|m| find_profile(m, selected_profile));
@@ -332,7 +347,7 @@ impl BuildEnvironment {
         }
 
         let manifest_debug = root_profile.or(package_profile)
-            .map(|profile_toml| debug_flags(profile_toml, selected_profile))
+            .map(|profile_toml| debug_flags(profile_toml, &build_profile))
             .unwrap_or(ManifestDebugFlags::Default);
 
         drop(workspace_root_manifest_path);
@@ -373,7 +388,7 @@ impl BuildEnvironment {
             all_features: overrides.all_features,
             default_features: if overrides.no_default_features { false } else { deb.default_features.unwrap_or(true) },
             debug_symbols,
-            build_profile_override,
+            build_profile,
             build_targets,
             cargo_locking_flags,
             cargo_run_current_dir,
@@ -493,21 +508,48 @@ impl BuildEnvironment {
         Ok(())
     }
 
-    pub fn set_cargo_build_flags_for_package(&self, package_deb: &PackageConfig, flags: &mut Vec<String>) {
-        flags.push(
-            self.build_profile_override.as_deref().map(|p| format!("--profile={p}"))
-                .unwrap_or("--release".into()),
-        );
-        flags.extend(self.cargo_locking_flags.flags().map(String::from));
+    pub fn set_cargo_build_flags_for_package<'s>(&'s self, package_deb: &PackageConfig, flags: &mut Vec<Cow<'s, OsStr>>, env: &mut Vec<(Cow<'s, OsStr>, Cow<'s, OsStr>)>) {
+        let flags_already_build_a_workspace = flags.iter().any(|f| &**f == "--workspace" || &**f == "--all");
+        fn s<'s>(s: &'s (impl AsRef<OsStr> + ?Sized)) -> Cow<'s, OsStr> {
+            Cow::Borrowed(s.as_ref())
+        }
+        fn o<'s>(s: impl Into<String>) -> Cow<'s, OsStr> {
+            Cow::Owned(OsString::from(s.into()))
+        }
 
-        if flags.iter().any(|f| f == "--workspace" || f == "--all") {
+        let profile_name = self.build_profile.profile_name();
+        flags.push(if profile_name == "release" { s("--release") } else { o(format!("--profile={profile_name}")) });
+        flags.extend(self.cargo_locking_flags.flags().map(|f| s(f)));
+
+        if let Some(rust_target_triple) = self.rust_target_triple.as_deref() {
+            flags.extend([s("--target"), o(rust_target_triple)]);
+            // Set helpful defaults for cross-compiling
+            if std::env::var_os("PKG_CONFIG_ALLOW_CROSS").is_none() && std::env::var_os("PKG_CONFIG_PATH").is_none() {
+                let pkg_config_path = format!("/usr/lib/{}/pkgconfig", debian_triple_from_rust_triple(rust_target_triple));
+                if Path::new(&pkg_config_path).exists() {
+                    env.push((s("PKG_CONFIG_ALLOW_CROSS"), s("1")));
+                    env.push((s("PKG_CONFIG_PATH"), o(pkg_config_path)));
+                }
+            }
+        }
+
+        if self.all_features {
+            flags.push(s("--all-features"));
+        } else  if !self.default_features {
+            flags.push(s("--no-default-features"));
+        }
+        if !self.features.is_empty() {
+            flags.extend([s("--features"), o(self.features.join(","))]);
+        }
+
+        if flags_already_build_a_workspace {
             return;
         }
 
         for a in package_deb.assets.unresolved.iter().filter(|a| a.c.is_built()) {
             if is_glob_pattern(&a.source_path) {
                 log::debug!("building entire workspace because of glob {}", a.source_path.display());
-                flags.push("--workspace".into());
+                flags.push(s("--workspace"));
                 return;
             }
         }
@@ -540,18 +582,18 @@ impl BuildEnvironment {
         }
 
         if !same_package {
-            flags.push("--workspace".into());
+            flags.push(s("--workspace"));
         }
-        flags.extend(build_bins.iter().map(|name| {
+        flags.extend(build_bins.iter().map(|&name| {
             log::debug!("building bin for {name}");
-            format!("--bin={name}")
+            o(format!("--bin={name}"))
         }));
-        flags.extend(build_examples.iter().map(|name| {
+        flags.extend(build_examples.iter().map(|&name| {
             log::debug!("building example for {name}");
-            format!("--example={name}")
+            o(format!("--example={name}"))
         }));
         if build_libs {
-            flags.push("--lib".into());
+            flags.push(s("--lib"));
         }
     }
 
@@ -679,13 +721,10 @@ impl BuildEnvironment {
     }
 
     pub(crate) fn path_in_build_(&self, rel_path: &Path) -> PathBuf {
-        let profile = match self.build_profile_override.as_deref() {
-            None => "release",
-            Some("dev") => "debug",
-            Some(p) => p,
-        };
-
-        let mut path = self.target_dir.join(profile);
+        let mut path = self.target_dir.join(match self.build_profile.profile_name() {
+            "dev" => "debug",
+            p => p,
+        });
         path.push(rel_path);
         path
     }
@@ -1280,7 +1319,7 @@ fn debian_package_name(crate_name: &str) -> String {
 
 impl BuildEnvironment {
     fn explicit_assets(&self, package_deb: &PackageConfig, assets: Vec<RawAssetOrAuto>, listener: &dyn Listener) -> CDResult<Assets> {
-        let custom_profile_target_dir = self.build_profile_override.as_deref().map(|profile| format!("target/{profile}"));
+        let custom_profile_target_dir = self.build_profile.profile_name.as_deref().map(|profile| format!("target/{profile}"));
 
         let mut has_auto = false;
 

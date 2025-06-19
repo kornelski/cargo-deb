@@ -1,3 +1,4 @@
+use crate::config::BuildProfile;
 use crate::assets::{RawAsset, RawAssetOrAuto};
 use crate::error::{CDResult, CargoDebError};
 use crate::listener::Listener;
@@ -54,8 +55,8 @@ pub(crate) fn find_profile<'a>(manifest: &'a cargo_toml::Manifest<CargoPackageMe
     }
 }
 
-pub(crate) fn debug_flags(profile: &cargo_toml::Profile, selected_profile: &str) -> ManifestDebugFlags {
-    let profile_uppercase = selected_profile.to_ascii_uppercase();
+pub(crate) fn debug_flags(manifest_profile: &cargo_toml::Profile, profile_override: &BuildProfile) -> ManifestDebugFlags {
+    let profile_uppercase = profile_override.profile_name().to_ascii_uppercase();
     let cargo_var = |name| {
         let name = format!("CARGO_PROFILE_{profile_uppercase}_{name}");
         std::env::var(&name).ok().inspect(|v| log::debug!("{name} = {v}"))
@@ -64,7 +65,7 @@ pub(crate) fn debug_flags(profile: &cargo_toml::Profile, selected_profile: &str)
     let strip = cargo_var("STRIP").and_then(|var| {
             StripSetting::deserialize(toml::de::ValueDeserializer::new(&var)).inspect_err(|e| log::warn!("{e}")).ok()
         })
-        .or(profile.strip.clone())
+        .or(manifest_profile.strip.clone())
         .inspect(|v| log::debug!("strip={v:?}"));
     if strip == Some(StripSetting::Symbols) {
         return ManifestDebugFlags::FullyStrippedByCargo;
@@ -73,13 +74,13 @@ pub(crate) fn debug_flags(profile: &cargo_toml::Profile, selected_profile: &str)
     let debug = cargo_var("DEBUG").and_then(|var| {
             DebugSetting::deserialize(toml::de::ValueDeserializer::new(&var)).inspect_err(|e| log::warn!("{e}")).ok()
         })
-        .or(profile.debug.clone())
+        .or(manifest_profile.debug.clone())
         .inspect(|v| log::debug!("debug={v:?}"));
     match debug {
         None => ManifestDebugFlags::Default,
         Some(DebugSetting::None) => ManifestDebugFlags::SymbolsDisabled,
-        Some(_) if profile.split_debuginfo.as_deref().is_some_and(|p| p != "off") => ManifestDebugFlags::SymbolsPackedExternally,
-        Some(DebugSetting::Full) if profile.strip != Some(StripSetting::Debuginfo) => ManifestDebugFlags::FullSymbolsAdded,
+        Some(_) if manifest_profile.split_debuginfo.as_deref().is_some_and(|p| p != "off") => ManifestDebugFlags::SymbolsPackedExternally,
+        Some(DebugSetting::Full) if manifest_profile.strip != Some(StripSetting::Debuginfo) => ManifestDebugFlags::FullSymbolsAdded,
         Some(_) => ManifestDebugFlags::SomeSymbolsAdded,
     }
 }

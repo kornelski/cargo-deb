@@ -42,7 +42,7 @@ pub(crate) mod parse {
     pub(crate) mod cargo;
     pub(crate) mod manifest;
 }
-pub use crate::config::{BuildEnvironment, DebugSymbols, PackageConfig};
+pub use crate::config::{BuildEnvironment, BuildProfile, DebugSymbols, PackageConfig};
 pub use crate::deb::ar::DebArchive;
 pub use crate::error::*;
 pub use crate::util::compress;
@@ -61,6 +61,8 @@ use crate::deb::tar::Tarball;
 use crate::listener::{Listener, PrefixedListener};
 use config::{BuildOptions, DebConfigOverrides, DebugSymbolOptions, Multiarch};
 use itertools::Itertools;
+use std::borrow::Cow;
+use std::ffi::OsStr;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::{env, fs};
@@ -96,8 +98,7 @@ impl CargoDeb {
         // cargo build accordingly. you could argue that the other way around is
         // more desirable. However for now we want all commands coming in via the
         // same `interface`
-        let selected_profile = self.options.profile;
-        if selected_profile.as_deref() == Some("dev") {
+        if self.options.build_profile.profile_name() == "dev" {
             listener.warning("dev profile is not supported and will be a hard error in the future. \
                 cargo-deb is for making releases, and it doesn't make sense to use it with dev profiles.".into());
             listener.warning("To enable debug symbols set `[profile.release] debug = 1` instead.".into());
@@ -111,7 +112,7 @@ impl CargoDeb {
                 rust_target_triple: self.options.target.as_deref(),
                 config_variant: self.options.variant.as_deref(),
                 overrides: self.options.overrides,
-                build_profile_override: selected_profile,
+                build_profile: self.options.build_profile,
                 debug: DebugSymbolOptions {
                     generate_dbgsym_package: self.options.generate_dbgsym_package,
                     separate_debug_symbols: self.options.separate_debug_symbols,
@@ -125,9 +126,13 @@ impl CargoDeb {
             listener,
         )?;
 
+
         if !self.options.no_build {
-            config.set_cargo_build_flags_for_package(&package_deb, &mut self.options.cargo_build_flags);
-            cargo_build(&config, self.options.target.as_deref(), &self.options.cargo_build_cmd, &self.options.cargo_build_flags, self.options.verbose, listener)?;
+            let mut build_flags = self.options.cargo_build_flags.iter().map(|f| Cow::Borrowed(f.as_ref())).collect_vec();
+            let mut env = Vec::new();
+
+            config.set_cargo_build_flags_for_package(&package_deb, &mut build_flags, &mut env);
+            cargo_build(&self.options.cargo_build_cmd, &build_flags, &config.cargo_run_current_dir, &env, self.options.verbose, listener)?;
         }
 
         package_deb.resolve_assets(listener)?;
@@ -221,7 +226,7 @@ pub struct CargoDebOptions {
     pub compress_type: Format,
     pub compress_system: bool,
     pub rsyncable: bool,
-    pub profile: Option<String>,
+    pub build_profile: BuildProfile,
     pub cargo_locking_flags: CargoLockingFlags,
     /// Use Debian's multiarch lib dirs
     pub multiarch: Multiarch,
@@ -271,7 +276,7 @@ impl Default for CargoDebOptions {
             compress_type: Format::Xz,
             compress_system: false,
             rsyncable: false,
-            profile: None,
+            build_profile: Default::default(),
             cargo_locking_flags: CargoLockingFlags::default(),
             multiarch: Multiarch::None,
         }
@@ -342,39 +347,22 @@ pub fn write_deb(config: &BuildEnvironment, package_deb: &PackageConfig, &compre
 }
 
 /// Builds a binary with `cargo build`
-pub fn cargo_build(config: &BuildEnvironment, rust_target_triple: Option<&str>, build_command: &str, build_flags: &[String], verbose: bool, listener: &dyn Listener) -> CDResult<()> {
+pub fn cargo_build(
+    build_command: &str,
+    build_flags: &[Cow<'_, OsStr>],
+    cwd: &Path, env: &[(Cow<'_, OsStr>, Cow<'_, OsStr>)],
+    verbose: bool, listener: &dyn Listener
+) -> CDResult<()> {
     let mut cmd = Command::new("cargo");
-    cmd.current_dir(&config.cargo_run_current_dir);
+    cmd.current_dir(cwd);
     cmd.args(build_command.split(' ')
         .filter(|cmd| if !cmd.starts_with('-') { true } else {
             log::error!("unexpected flag in build command name: {cmd}");
             false
         }));
 
-    cmd.args(build_flags);
-
-    if let Some(rust_target_triple) = rust_target_triple {
-        cmd.args(["--target", rust_target_triple]);
-        // Set helpful defaults for cross-compiling
-        if env::var_os("PKG_CONFIG_ALLOW_CROSS").is_none() && env::var_os("PKG_CONFIG_PATH").is_none() {
-            let pkg_config_path = format!("/usr/lib/{}/pkgconfig", debian_triple_from_rust_triple(rust_target_triple));
-            if Path::new(&pkg_config_path).exists() {
-                cmd.env("PKG_CONFIG_ALLOW_CROSS", "1");
-                cmd.env("PKG_CONFIG_PATH", pkg_config_path);
-            }
-        }
-    }
-
-    if config.all_features {
-        cmd.arg("--all-features");
-    } else {
-        if !config.default_features {
-            cmd.arg("--no-default-features");
-        }
-        if !config.features.is_empty() {
-            cmd.args(["--features", &config.features.join(",")]);
-        }
-    }
+    cmd.envs(env.iter().map(|(k, v)| (&**k, &**v)));
+    cmd.args(build_flags.iter().map(|f| &**f));
 
     if verbose {
         cmd.arg("--verbose");
