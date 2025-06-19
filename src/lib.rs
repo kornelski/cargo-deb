@@ -89,13 +89,6 @@ impl CargoDeb {
             let _ = self.options.separate_debug_symbols.get_or_insert(true);
         }
 
-        if self.options.system_xz {
-            listener.warning("--system-xz is deprecated, use --compress-system instead.".into());
-
-            self.options.compress_type = Format::Xz;
-            self.options.compress_system = true;
-        }
-
         // The profile is selected based on the given ClI options and then passed to
         // cargo build accordingly. you could argue that the other way around is
         // more desirable. However for now we want all commands coming in via the
@@ -221,7 +214,6 @@ pub struct CargoDebOptions {
     pub overrides: DebConfigOverrides,
     pub compress_type: Format,
     pub compress_system: bool,
-    pub system_xz: bool,
     pub rsyncable: bool,
     pub profile: Option<String>,
     pub cargo_locking_flags: CargoLockingFlags,
@@ -271,7 +263,6 @@ impl Default for CargoDebOptions {
             overrides: DebConfigOverrides::default(),
             compress_type: Format::Xz,
             compress_system: false,
-            system_xz: false,
             rsyncable: false,
             profile: None,
             cargo_locking_flags: CargoLockingFlags::default(),

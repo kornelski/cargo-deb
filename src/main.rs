@@ -126,7 +126,6 @@ fn main() -> ExitCode {
         },
         compress_type,
         compress_system: matches.get_flag("compress-system"),
-        system_xz: false,
         rsyncable: matches.get_flag("rsyncable"),
         profile: matches.get_one::<String>("profile").cloned(),
         cargo_build_cmd: matches.get_one::<String>("cargo-build").map_or("build", |s| s.as_str()).into(),
