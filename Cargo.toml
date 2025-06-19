@@ -11,7 +11,7 @@ repository = "https://github.com/kornelski/cargo-deb"
 readme = "README.md"
 version = "3.0.0"
 edition = "2021"
-rust-version = "1.71"
+rust-version = "1.76"
 
 [package.metadata.deb]
 maintainer = "Kornel Lesiński <kornel@geekhood.net>"
