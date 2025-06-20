@@ -168,22 +168,17 @@ mod tests {
     //         Cargo.toml
 
     use super::*;
-    use crate::config::DebugSymbolOptions;
     use crate::assets::{Asset, AssetSource, IsBuilt};
+    use crate::config::DebugSymbolOptions;
     use crate::listener::MockListener;
     use crate::parse::manifest::SystemdUnitsConfig;
     use crate::util::tests::{add_test_fs_paths, set_test_fs_path_content};
-
     use std::collections::HashMap;
     use std::io::prelude::Read;
     use std::path::PathBuf;
 
     fn filename_from_path_str(path: &str) -> String {
-        Path::new(path)
-            .file_name()
-            .unwrap()
-            .to_string_lossy()
-            .to_string()
+        Path::new(path).file_name().unwrap().to_string_lossy().to_string()
     }
 
     fn decode_name<R>(entry: &tar::Entry<'_, R>) -> String where R: Read {

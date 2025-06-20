@@ -11,11 +11,11 @@ use crate::parse::manifest::{CargoDeb, CargoDebAssetArrayOrTable, CargoMetadataT
 use crate::parse::manifest::{DependencyList, SystemUnitsSingleOrMultiple, SystemdUnitsConfig, LicenseFile, ManifestDebugFlags};
 use crate::util::wordsplit::WordSplit;
 use crate::{debian_architecture_from_rust_triple, debian_triple_from_rust_triple, CargoLockingFlags, DEFAULT_TARGET};
+use itertools::Itertools;
 use rayon::prelude::*;
 use std::borrow::Cow;
 use std::collections::{BTreeSet, HashMap, HashSet};
 use std::env::consts::{DLL_PREFIX, DLL_SUFFIX, EXE_SUFFIX};
-use std::ffi::{OsStr, OsString};
 use std::path::{Component, Path, PathBuf};
 use std::process::Command;
 use std::time::SystemTime;
@@ -23,7 +23,7 @@ use std::{fmt, fs, io, mem};
 
 pub(crate) fn is_glob_pattern(s: impl AsRef<Path>) -> bool {
     // glob crate requires str anyway ;(
-    s.as_ref().to_str().map_or(false, |s| s.as_bytes().iter().any(|&c| c == b'*' || c == b'[' || c == b']' || c == b'!'))
+    s.as_ref().to_str().is_some_and(|s| s.as_bytes().iter().any(|&c| c == b'*' || c == b'[' || c == b']' || c == b'!'))
 }
 
 /// Match the official `dh_installsystemd` defaults and rename the confusing
@@ -91,8 +91,6 @@ pub struct BuildEnvironment {
     pub package_manifest_dir: PathBuf,
     /// Run `cargo` commands from this dir, or things may subtly break
     pub cargo_run_current_dir: PathBuf,
-    /// User-configured output path for *.deb
-    pub deb_output_path: Option<String>,
     /// Triple. `None` means current machine architecture.
     pub rust_target_triple: Option<String>,
     /// `CARGO_TARGET_DIR`
@@ -105,6 +103,8 @@ pub struct BuildEnvironment {
     pub debug_symbols: DebugSymbols,
 
     build_profile: BuildProfile,
+    cargo_build_cmd: String,
+    cargo_build_flags: Vec<String>,
 
     /// Products available in the package
     build_targets: Vec<CargoMetadataTarget>,
@@ -280,7 +280,6 @@ pub struct BuildOptions<'a> {
     pub manifest_path: Option<&'a Path>,
     pub selected_package_name: Option<&'a str>,
     /// Trailing slash is meaningful
-    pub deb_output_path: Option<String>,
     pub rust_target_triple: Option<&'a str>,
     pub config_variant: Option<&'a str>,
     pub overrides: DebConfigOverrides,
@@ -288,6 +287,8 @@ pub struct BuildOptions<'a> {
     pub debug: DebugSymbolOptions,
     pub cargo_locking_flags: CargoLockingFlags,
     pub multiarch: Multiarch,
+    pub cargo_build_cmd: Option<String>,
+    pub cargo_build_flags: Vec<String>,
 }
 
 impl BuildEnvironment {
@@ -298,7 +299,6 @@ impl BuildEnvironment {
         BuildOptions {
             manifest_path,
             selected_package_name,
-            deb_output_path,
             rust_target_triple,
             config_variant,
             overrides,
@@ -306,6 +306,8 @@ impl BuildEnvironment {
             debug,
             cargo_locking_flags,
             multiarch,
+            cargo_build_cmd,
+            cargo_build_flags,
         }: BuildOptions,
         listener: &dyn Listener,
     ) -> CDResult<(Self, PackageConfig)> {
@@ -378,7 +380,6 @@ impl BuildEnvironment {
 
         let config = Self {
             package_manifest_dir: manifest_dir,
-            deb_output_path,
             rust_target_triple: rust_target_triple.map(|t| t.to_string()),
             target_dir,
             features,
@@ -387,6 +388,8 @@ impl BuildEnvironment {
             debug_symbols,
             build_profile,
             build_targets,
+            cargo_build_cmd: cargo_build_cmd.unwrap_or_else(|| "build".into()),
+            cargo_build_flags,
             cargo_locking_flags,
             cargo_run_current_dir: std::env::current_dir().unwrap_or_default(),
         };
@@ -508,50 +511,78 @@ impl BuildEnvironment {
         Ok(())
     }
 
-    pub fn set_cargo_build_flags_for_package<'s>(&'s self, package_deb: &PackageConfig, flags: &mut Vec<Cow<'s, OsStr>>, env: &mut Vec<(Cow<'s, OsStr>, Cow<'s, OsStr>)>) {
-        let flags_already_build_a_workspace = flags.iter().any(|f| &**f == "--workspace" || &**f == "--all");
-        fn s(s: &(impl AsRef<OsStr> + ?Sized)) -> Cow<'_, OsStr> {
-            Cow::Borrowed(s.as_ref())
-        }
-        fn o<'s>(s: impl Into<OsString>) -> Cow<'s, OsStr> {
-            Cow::Owned(s.into())
+    pub(crate) fn cargo_build(&self, package_deb: &PackageConfig, verbose: bool, listener: &dyn Listener) -> CDResult<()> {
+        let mut cmd = Command::new("cargo");
+        cmd.current_dir(&self.cargo_run_current_dir);
+        cmd.args(self.cargo_build_cmd.split(' ')
+            .filter(|cmd| if !cmd.starts_with('-') { true } else {
+                log::error!("unexpected flag in build command name: {cmd}");
+                false
+            }));
+
+        self.set_cargo_build_flags_for_package(package_deb, &mut cmd);
+
+        if verbose {
+            cmd.arg("--verbose");
+            listener.info(format!("cargo {}", cmd.get_args().map(|arg| {
+                let arg = arg.to_string_lossy();
+                if arg.as_bytes().iter().any(|b| b.is_ascii_whitespace()) {
+                    format!("'{}'", arg.escape_default()).into()
+                } else {
+                    arg
+                }
+            }).join(" ")));
+        } else {
+            log::debug!("cargo {:?}", cmd.get_args());
         }
 
+        let status = cmd.status()
+            .map_err(|e| CargoDebError::CommandFailed(e, "cargo"))?;
+        if !status.success() {
+            return Err(CargoDebError::BuildFailed);
+        }
+        Ok(())
+    }
+
+    pub fn set_cargo_build_flags_for_package(&self, package_deb: &PackageConfig, cmd: &mut Command) {
         let manifest_path = self.manifest_path();
         debug_assert!(manifest_path.exists());
-        flags.extend([s("--manifest-path"), o(manifest_path)]);
+        cmd.arg("--manifest-path").arg(manifest_path);
 
         let profile_name = self.build_profile.profile_name();
 
         for (name, val) in [("DEBUG", &self.build_profile.override_debug), ("LTO", &self.build_profile.override_lto)] {
             if let Some(val) = val {
-                env.push((o(format!("CARGO_PROFILE_{}_{name}", profile_name.to_ascii_uppercase())), s(val)));
+                cmd.env(format!("CARGO_PROFILE_{}_{name}", profile_name.to_ascii_uppercase()), val);
             }
         }
 
-        flags.push(if profile_name == "release" { s("--release") } else { o(format!("--profile={profile_name}")) });
-        flags.extend(self.cargo_locking_flags.flags().map(|f| s(f)));
+        if profile_name == "release" { cmd.arg("--release"); } else { cmd.arg(format!("--profile={profile_name}")); }
+        cmd.args(self.cargo_locking_flags.flags());
 
         if let Some(rust_target_triple) = self.rust_target_triple.as_deref() {
-            flags.extend([s("--target"), o(rust_target_triple)]);
+            cmd.args(["--target", (rust_target_triple)]);
             // Set helpful defaults for cross-compiling
             if std::env::var_os("PKG_CONFIG_ALLOW_CROSS").is_none() && std::env::var_os("PKG_CONFIG_PATH").is_none() {
                 let pkg_config_path = format!("/usr/lib/{}/pkgconfig", debian_triple_from_rust_triple(rust_target_triple));
                 if Path::new(&pkg_config_path).exists() {
-                    env.push((s("PKG_CONFIG_ALLOW_CROSS"), s("1")));
-                    env.push((s("PKG_CONFIG_PATH"), o(pkg_config_path)));
+                    cmd.env("PKG_CONFIG_ALLOW_CROSS", "1");
+                    cmd.env("PKG_CONFIG_PATH", pkg_config_path);
                 }
             }
         }
 
         if self.all_features {
-            flags.push(s("--all-features"));
-        } else  if !self.default_features {
-            flags.push(s("--no-default-features"));
+            cmd.arg("--all-features");
+        } else if !self.default_features {
+            cmd.arg("--no-default-features");
         }
         if !self.features.is_empty() {
-            flags.extend([s("--features"), o(self.features.join(","))]);
+            cmd.arg("--features").arg(self.features.join(","));
         }
+
+        cmd.args(&self.cargo_build_flags);
+        let flags_already_build_a_workspace = self.cargo_build_flags.iter().any(|f| f == "--workspace" || f == "--all");
 
         if flags_already_build_a_workspace {
             return;
@@ -560,7 +591,7 @@ impl BuildEnvironment {
         for a in package_deb.assets.unresolved.iter().filter(|a| a.c.is_built()) {
             if is_glob_pattern(&a.source_path) {
                 log::debug!("building entire workspace because of glob {}", a.source_path.display());
-                flags.push(s("--workspace"));
+                cmd.arg("--workspace");
                 return;
             }
         }
@@ -593,18 +624,18 @@ impl BuildEnvironment {
         }
 
         if !same_package {
-            flags.push(s("--workspace"));
+            cmd.arg("--workspace");
         }
-        flags.extend(build_bins.iter().map(|&name| {
+        cmd.args(build_bins.iter().map(|&name| {
             log::debug!("building bin for {name}");
-            o(format!("--bin={name}"))
+            format!("--bin={name}")
         }));
-        flags.extend(build_examples.iter().map(|&name| {
+        cmd.args(build_examples.iter().map(|&name| {
             log::debug!("building example for {name}");
-            o(format!("--example={name}"))
+            format!("--example={name}")
         }));
         if build_libs {
-            flags.push(s("--lib"));
+            cmd.arg("--lib");
         }
     }
 
@@ -764,34 +795,6 @@ impl BuildEnvironment {
     /// Store intermediate files here
     pub(crate) fn deb_temp_dir(&self, package_deb: &PackageConfig) -> PathBuf {
         self.target_dir.join("debian").join(&package_deb.cargo_crate_name)
-    }
-
-    /// Save final .deb here
-    pub(crate) fn deb_output_path(&self, package_deb: &PackageConfig) -> PathBuf {
-        let filename = format!(
-            "{}_{}_{}.{}",
-            package_deb.deb_name,
-            package_deb.deb_version,
-            package_deb.architecture,
-            if package_deb.is_split_dbgsym_package {
-                "ddeb"
-            } else {
-                "deb"
-            }
-        );
-
-        if let Some(ref path_str) = self.deb_output_path {
-            let path = Path::new(path_str);
-            if path_str.ends_with('/') || path.is_dir() {
-                path.join(filename)
-            } else if package_deb.is_split_dbgsym_package {
-                path.with_extension("ddeb")
-            } else {
-                path.to_owned()
-            }
-        } else {
-            self.default_deb_output_dir().join(filename)
-        }
     }
 
     pub(crate) fn default_deb_output_dir(&self) -> PathBuf {
@@ -1208,6 +1211,23 @@ impl PackageConfig {
             return None;
         }
         Some(format_conffiles(&self.conf_files))
+    }
+
+    /// Save final .deb here
+    pub(crate) fn deb_output_path(&self, base_path: &Path, is_dir: bool) -> PathBuf {
+        if is_dir {
+            base_path.join(format!(
+                "{}_{}_{}.{}",
+                self.deb_name,
+                self.deb_version,
+                self.architecture,
+                if self.is_split_dbgsym_package { "ddeb" } else { "deb" }
+            ))
+        } else if self.is_split_dbgsym_package {
+            base_path.with_extension("ddeb")
+        } else {
+            base_path.to_owned()
+        }
     }
 
     pub(crate) fn split_dbgsym(&mut self) -> Result<Option<Self>, CargoDebError> {

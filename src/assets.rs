@@ -179,8 +179,7 @@ impl UnresolvedAsset {
         let source_prefix_len = is_glob_pattern(source_path.as_os_str()).then(|| {
             let file_name_is_glob = source_path
                 .file_name()
-                .map(is_glob_pattern)
-                .unwrap_or(false);
+                .is_some_and(is_glob_pattern);
 
             if file_name_is_glob {
                 // skip to the component before the glob
@@ -251,7 +250,7 @@ pub struct AssetCommon {
     is_built: IsBuilt,
 }
 
-pub(crate) struct AssetFmt<'a>{
+pub(crate) struct AssetFmt<'a> {
     c: &'a AssetCommon,
     cwd: &'a Path,
     source: Option<&'a Path>,
@@ -264,22 +263,22 @@ impl<'a> AssetFmt<'a> {
             c: &asset.c,
             source: asset.source.path(),
             processed_from: asset.processed_from.as_ref(),
-            cwd
+            cwd,
         }
     }
+
     pub fn unresolved(asset: &'a UnresolvedAsset, cwd: &'a Path) -> Self {
         Self {
             c: &asset.c,
             source: Some(&asset.source_path),
             processed_from: None,
-            cwd
+            cwd,
         }
     }
 }
 
 impl fmt::Display for AssetFmt<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-
         let mut src = self.source;
         let action = self.processed_from.map(|proc| {
             src = proc.original_path.as_deref().or(src);
@@ -289,7 +288,7 @@ impl fmt::Display for AssetFmt<'_> {
             write!(f, "{} ", src.strip_prefix(self.cwd).unwrap_or(src).display())?;
         }
         if let Some(action) = action {
-            write!(f, "({action}{}) ", if self.c.is_built() {"; built"} else {""})?;
+            write!(f, "({action}{}) ", if self.c.is_built() { "; built" } else { "" })?;
         } else if self.c.is_built() {
             write!(f, "(built) ")?;
         }
@@ -377,7 +376,6 @@ impl AssetCommon {
 }
 
 /// Adds `.debug` to the end of a path to a filename
-///
 fn debug_filename(path: &Path) -> PathBuf {
     let mut debug_filename = path.as_os_str().to_os_string();
     debug_filename.push(".debug");

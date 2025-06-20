@@ -1,8 +1,8 @@
 use crate::assets::{RawAsset, RawAssetOrAuto};
-use crate::CargoLockingFlags;
 use crate::config::BuildProfile;
 use crate::error::{CDResult, CargoDebError};
 use crate::listener::Listener;
+use crate::CargoLockingFlags;
 use cargo_toml::{DebugSetting, StripSetting};
 use log::debug;
 use serde::de::DeserializeOwned;
@@ -148,7 +148,6 @@ impl DependencyList {
 }
 
 /// Type-alias for list of assets
-///
 pub(crate) type RawAssetList = Vec<RawAssetOrAuto>;
 
 #[derive(Default)]
@@ -211,20 +210,16 @@ pub(crate) struct CargoDeb {
 }
 
 /// Struct containing merge configuration
-///
 #[derive(Clone, Debug, Deserialize, Default)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct MergeAssets {
     /// Merge assets by appending this list,
-    ///
     pub append: Option<RawAssetList>,
     /// Merge assets using the src as the key,
-    ///
     pub by: Option<MergeByKey>,
 }
 
 /// Enumeration of merge by key strategies
-///
 #[derive(Clone, Debug, Deserialize)]
 pub(crate) enum MergeByKey {
     #[serde(rename = "src")]
@@ -235,7 +230,6 @@ pub(crate) enum MergeByKey {
 
 impl MergeByKey {
     /// Merges w/ a parent asset list
-    ///
     fn merge(self, parent: &RawAssetList) -> RawAssetList {
         let mut merge_map = MergeMap::default();
         for asset in parent {
@@ -504,10 +498,9 @@ fn run_cargo_metadata(manifest_rel_path: Option<&Path>, cargo_locking_flags: Car
 
 #[cfg(test)]
 mod tests {
+    use super::*;
     use crate::listener::NoOpListener;
     use itertools::Itertools;
-
-    use super::*;
 
     #[test]
     fn test_merge_assets() {

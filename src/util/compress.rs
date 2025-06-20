@@ -8,6 +8,7 @@ use std::{io, ops};
 use zopfli::{BlockType, GzipEncoder, Options};
 
 pub struct CompressConfig {
+    /// Don't compress heavily
     pub fast: bool,
     pub compress_type: Format,
     pub compress_system: bool,

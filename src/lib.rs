@@ -60,9 +60,6 @@ use crate::deb::control::ControlArchiveBuilder;
 use crate::deb::tar::Tarball;
 use crate::listener::{Listener, PrefixedListener};
 use config::BuildOptions;
-use itertools::Itertools;
-use std::borrow::Cow;
-use std::ffi::OsStr;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::{env, fs};
@@ -78,18 +75,14 @@ pub const SEPARATE_DEBUG_SYMBOLS_DEFAULT: bool = cfg!(feature = "default_enable_
 pub struct CargoDeb<'tmp> {
     pub options: BuildOptions<'tmp>,
     pub no_build: bool,
-    /// Don't compress heavily
-    pub fast: bool,
     /// Build with --verbose
     pub verbose: bool,
     /// Run dpkg -i
     pub install: bool,
     pub install_without_dbgsym: bool,
-    pub cargo_build_cmd: String,
-    pub cargo_build_flags: Vec<String>,
-    pub compress_type: Format,
-    pub compress_system: bool,
-    pub rsyncable: bool,
+    pub compress_config: CompressConfig,
+    /// User-configured output path for *.deb
+    pub deb_output_path: Option<String>,
 }
 
 impl CargoDeb<'_> {
@@ -116,11 +109,7 @@ impl CargoDeb<'_> {
         let (config, mut package_deb) = BuildEnvironment::from_manifest(self.options, listener)?;
 
         if !self.no_build {
-            let mut build_flags = self.cargo_build_flags.iter().map(|f| Cow::Borrowed(f.as_ref())).collect_vec();
-            let mut env = Vec::new();
-
-            config.set_cargo_build_flags_for_package(&package_deb, &mut build_flags, &mut env);
-            cargo_build(&self.cargo_build_cmd, &build_flags, &config.cargo_run_current_dir, &env, self.verbose, listener)?;
+            config.cargo_build(&package_deb, self.verbose, listener)?;
         }
 
         package_deb.resolve_assets(listener)?;
@@ -141,11 +130,13 @@ impl CargoDeb<'_> {
             listener.warning("No debug symbols found. Skipping dbgsym.ddeb".into());
         }
 
-        let compress_config = CompressConfig {
-            fast: self.fast,
-            compress_type: self.compress_type,
-            compress_system: self.compress_system,
-            rsyncable: self.rsyncable,
+        let tmp;
+        let (deb_output_path, output_path_is_dir) = if let Some(path_str) = self.deb_output_path.as_deref() {
+            let path = Path::new(path_str);
+            (path, path_str.ends_with('/') || path.is_dir())
+        } else {
+            tmp = config.default_deb_output_dir();
+            (tmp.as_path(), true)
         };
 
         let (generated_deb, generated_dbgsym_ddeb) = rayon::join(
@@ -153,8 +144,9 @@ impl CargoDeb<'_> {
                 package_deb.sort_assets_by_type();
                 write_deb(
                     &config,
+                    package_deb.deb_output_path(deb_output_path, output_path_is_dir),
                     &package_deb,
-                    &compress_config,
+                    &self.compress_config,
                     listener,
                 )
             },
@@ -162,8 +154,9 @@ impl CargoDeb<'_> {
                 ddeb.sort_assets_by_type();
                 write_deb(
                     &config,
+                    ddeb.deb_output_path(deb_output_path, output_path_is_dir),
                     &ddeb,
-                    &compress_config,
+                    &self.compress_config,
                     &PrefixedListener("ddeb: ", listener),
                 )
             }),
@@ -215,15 +208,16 @@ impl Default for CargoDeb<'_> {
         Self {
             options: BuildOptions::default(),
             no_build: false,
-            fast: false,
+            deb_output_path: None,
             verbose: false,
             install: false,
             install_without_dbgsym: false,
-            cargo_build_cmd: "build".into(),
-            cargo_build_flags: Vec::new(),
-            compress_type: Format::Xz,
-            compress_system: false,
-            rsyncable: false,
+            compress_config: CompressConfig {
+                fast: false,
+                compress_type: Format::Xz,
+                compress_system: false,
+                rsyncable: false,
+            },
         }
     }
 }
@@ -246,7 +240,7 @@ pub fn install_deb(path: &Path) -> CDResult<()> {
     Ok(())
 }
 
-pub fn write_deb(config: &BuildEnvironment, package_deb: &PackageConfig, &compress::CompressConfig { fast, compress_type, compress_system, rsyncable }: &compress::CompressConfig, listener: &dyn Listener) -> Result<PathBuf, CargoDebError> {
+pub fn write_deb(config: &BuildEnvironment, deb_output_path: PathBuf, package_deb: &PackageConfig, &CompressConfig { fast, compress_type, compress_system, rsyncable }: &CompressConfig, listener: &dyn Listener) -> Result<PathBuf, CargoDebError> {
     let (deb_contents, data_result) = rayon::join(
         move || {
             // The control archive is the metadata for the package manager
@@ -254,10 +248,7 @@ pub fn write_deb(config: &BuildEnvironment, package_deb: &PackageConfig, &compre
             control_builder.generate_archive(config, package_deb)?;
             let control_compressed = control_builder.finish()?.finish()?;
 
-            let mut deb_contents = DebArchive::new(
-                config.deb_output_path(package_deb),
-                package_deb.default_timestamp,
-            )?;
+            let mut deb_contents = DebArchive::new(deb_output_path, package_deb.default_timestamp)?;
             let compressed_control_size = control_compressed.len();
             deb_contents.add_control(control_compressed)?;
             Ok::<_, CargoDebError>((deb_contents, compressed_control_size))
@@ -289,46 +280,6 @@ pub fn write_deb(config: &BuildEnvironment, package_deb: &PackageConfig, &compre
     let _ = fs::remove_dir(deb_temp_dir);
 
     Ok(generated)
-}
-
-/// Builds a binary with `cargo build`
-pub fn cargo_build(
-    build_command: &str,
-    build_flags: &[Cow<'_, OsStr>],
-    cwd: &Path, env: &[(Cow<'_, OsStr>, Cow<'_, OsStr>)],
-    verbose: bool, listener: &dyn Listener
-) -> CDResult<()> {
-    let mut cmd = Command::new("cargo");
-    cmd.current_dir(cwd);
-    cmd.args(build_command.split(' ')
-        .filter(|cmd| if !cmd.starts_with('-') { true } else {
-            log::error!("unexpected flag in build command name: {cmd}");
-            false
-        }));
-
-    cmd.envs(env.iter().map(|(k, v)| (&**k, &**v)));
-    cmd.args(build_flags.iter().map(|f| &**f));
-
-    if verbose {
-        cmd.arg("--verbose");
-        listener.info(format!("cargo {}", cmd.get_args().map(|arg| {
-            let arg = arg.to_string_lossy();
-            if arg.as_bytes().iter().any(|b| b.is_ascii_whitespace()) {
-                format!("'{}'", arg.escape_default()).into()
-            } else {
-                arg
-            }
-        }).join(" ")));
-    } else {
-        log::debug!("cargo {:?}", cmd.get_args());
-    }
-
-    let status = cmd.status()
-        .map_err(|e| CargoDebError::CommandFailed(e, "cargo"))?;
-    if !status.success() {
-        return Err(CargoDebError::BuildFailed);
-    }
-    Ok(())
 }
 
 // Maps Rust's blah-unknown-linux-blah to Debian's blah-linux-blah. This is debian's multiarch.

@@ -12,7 +12,6 @@
 /// Ubuntu 20.04 `dh_installsystemd` man page (online HTML version):
 /// <http://manpages.ubuntu.com/manpages/focal/en/man1/dh_installsystemd.1.html>
 use itertools::Itertools; // for .next_tuple()
-
 use std::collections::{BTreeSet, HashMap};
 use std::io::prelude::*;
 use std::path::{Path, PathBuf};

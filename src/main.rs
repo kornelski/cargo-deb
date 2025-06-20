@@ -1,9 +1,8 @@
-use cargo_deb::compress::Format;
+use cargo_deb::compress::{CompressConfig, Format};
 use cargo_deb::config::{BuildOptions, DebugSymbolOptions, Multiarch};
 use cargo_deb::{listener, BuildProfile, CargoDeb, CargoLockingFlags};
 use clap::{Arg, ArgAction, Command};
 use std::env;
-use std::path::PathBuf;
 use std::process::ExitCode;
 
 fn main() -> ExitCode {
@@ -92,7 +91,7 @@ fn main() -> ExitCode {
     };
 
     // `cargo deb` invocation passes the `deb` arg through.
-    let mut free_args: Vec<String> = matches.get_many::<String>("-- other cargo arguments").unwrap_or_default().cloned().collect();
+    let mut free_args: Vec<String> = matches.get_many("-- other cargo arguments").unwrap_or_default().cloned().collect();
     if free_args.first().is_some_and(|arg| arg == "deb") {
         free_args.remove(0);
     }
@@ -120,19 +119,26 @@ fn main() -> ExitCode {
     let install = matches.get_flag("install");
 
     match (CargoDeb {
+        deb_output_path: matches.get_one::<String>("output").cloned(),
         no_build: matches.get_flag("no-build"),
         verbose,
         install,
         install_without_dbgsym: matches.get_flag("no-install-dbgsym"),
-        // when installing locally it won't be transferred anywhere, so allow faster compression
-        fast: install || matches.get_flag("fast"),
+        compress_config: CompressConfig {
+            // when installing locally it won't be transferred anywhere, so allow faster compression
+            fast: install || matches.get_flag("fast"),
+            compress_type,
+            compress_system: matches.get_flag("compress-system"),
+            rsyncable: matches.get_flag("rsyncable"),
+        },
         options: BuildOptions {
             config_variant: matches.get_one::<String>("variant").map(|x| x.as_str()),
             rust_target_triple: matches.get_one::<String>("target").cloned().or_else(|| std::env::var("CARGO_BUILD_TARGET").ok()).as_deref(),
             multiarch,
-            deb_output_path: matches.get_one::<String>("output").cloned(),
             selected_package_name: matches.get_one::<String>("package").map(|x| x.as_str()),
-            manifest_path: matches.get_one::<PathBuf>("manifest-path").map(|v| &**v),
+            manifest_path: matches.get_one::<String>("manifest-path").map(|v| v.as_ref()),
+            cargo_build_cmd: matches.get_one::<String>("cargo-build").cloned(),
+            cargo_build_flags: free_args,
             debug: DebugSymbolOptions {
                 strip_override: if matches.get_flag("strip") { Some(true) } else if matches.get_flag("no-strip") { Some(false) } else { None },
                 separate_debug_symbols: if matches.get_flag("separate-debug-symbols") { Some(true) } else if matches.get_flag("no-separate-debug-symbols") { Some(false) } else { None },
@@ -161,11 +167,6 @@ fn main() -> ExitCode {
                 locked: matches.get_flag("locked"),
             },
         },
-        compress_type,
-        compress_system: matches.get_flag("compress-system"),
-        rsyncable: matches.get_flag("rsyncable"),
-        cargo_build_cmd: matches.get_one::<String>("cargo-build").map_or("build", |s| s.as_str()).into(),
-        cargo_build_flags: free_args,
     }).process(listener) {
         Ok(()) => ExitCode::SUCCESS,
         Err(err) => {
