@@ -12,6 +12,8 @@ For more details see https://github.com/kornelski/cargo-deb/commits/main/
 * `"$auto"` can be explicitly added to `assets` to get the default assets in addition to custom ones.
 * Improved handling of `name` of config variants `[package.metadata.deb.variants.*]`
 * lack of `package.authors` and `copyright` is only a warning, not a fatal error.
+* Support for default custom release profiles, like `[package.metadata.deb] profile = "dist"`
+* `-vv` is now used to print `rustc` invocations during build
 
 # 2.12
 

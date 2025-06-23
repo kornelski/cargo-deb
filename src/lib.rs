@@ -76,6 +76,8 @@ pub struct CargoDeb<'tmp> {
     pub options: BuildOptions<'tmp>,
     pub no_build: bool,
     /// Build with --verbose
+    pub verbose_cargo_build: bool,
+    /// More info from cargo deb
     pub verbose: bool,
     /// Run dpkg -i
     pub install: bool,
@@ -109,7 +111,7 @@ impl CargoDeb<'_> {
         let (config, mut package_deb) = BuildEnvironment::from_manifest(self.options, listener)?;
 
         if !self.no_build {
-            config.cargo_build(&package_deb, self.verbose, listener)?;
+            config.cargo_build(&package_deb, self.verbose, self.verbose_cargo_build, listener)?;
         }
 
         package_deb.resolve_assets(listener)?;
@@ -210,6 +212,7 @@ impl Default for CargoDeb<'_> {
             no_build: false,
             deb_output_path: None,
             verbose: false,
+            verbose_cargo_build: false,
             install: false,
             install_without_dbgsym: false,
             compress_config: CompressConfig {

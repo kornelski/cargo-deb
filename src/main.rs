@@ -6,8 +6,6 @@ use std::env;
 use std::process::ExitCode;
 
 fn main() -> ExitCode {
-    env_logger::init();
-
     let matches = Command::new("cargo-deb")
         .version(env!("CARGO_PKG_VERSION"))
         .about("Create Debian packages from Cargo projects\nhttps://lib.rs/cargo-deb")
@@ -26,7 +24,7 @@ fn main() -> ExitCode {
         .arg(Arg::new("no-install-dbgsym").long("no-install-dbgsym").action(ArgAction::SetTrue).requires("install").requires("dbgsym")
             .hide_short_help(true).help("Immediately install the created deb package, but without dbgsym package"))
         .arg(Arg::new("quiet").short('q').long("quiet").action(ArgAction::SetTrue).help("Don't print warnings"))
-        .arg(Arg::new("verbose").short('v').long("verbose").action(ArgAction::SetTrue).conflicts_with("quiet").help("Print progress"))
+        .arg(Arg::new("verbose").short('v').long("verbose").action(ArgAction::Count).conflicts_with("quiet").help("Print progress; -vv for verbose Cargo builds"))
         .next_help_heading("Debug info")
         .arg(Arg::new("dbgsym").long("dbgsym").action(ArgAction::SetTrue)
             .hide_short_help(cargo_deb::DBGSYM_DEFAULT).help("Move debug symbols into a separate -dbgsym.ddeb package"))
@@ -78,6 +76,15 @@ fn main() -> ExitCode {
         .after_long_help("See https://lib.rs/crates/cargo-deb for more info")
         .get_matches();
 
+    let verbose_count = matches.get_count("verbose");
+    {
+        let mut logger = env_logger::builder();
+        if verbose_count > 3 {
+            logger.filter_level(log::LevelFilter::max());
+        }
+        logger.init();
+    }
+
     let compress_type = match matches.get_one::<String>("compress-type").map(|s| s.as_str()) {
         Some("gz" | "gzip") => Format::Gzip,
         Some("xz") | None => Format::Xz,
@@ -97,7 +104,8 @@ fn main() -> ExitCode {
     }
 
     let quiet = matches.get_flag("quiet");
-    let verbose = matches.get_flag("verbose") || env::var_os("RUST_LOG").is_some_and(|v| v == "debug");
+    let verbose_cargo_build = verbose_count > 1 || env::var_os("RUST_LOG").is_some_and(|v| v == "debug");
+    let verbose = verbose_cargo_build || verbose_count > 0;
 
     // Listener conditionally prints warnings
     let (listener_tmp1, listener_tmp2);
@@ -122,6 +130,7 @@ fn main() -> ExitCode {
         deb_output_path: matches.get_one::<String>("output").cloned(),
         no_build: matches.get_flag("no-build"),
         verbose,
+        verbose_cargo_build,
         install,
         install_without_dbgsym: matches.get_flag("no-install-dbgsym"),
         compress_config: CompressConfig {

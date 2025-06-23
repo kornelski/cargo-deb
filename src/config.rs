@@ -514,7 +514,7 @@ impl BuildEnvironment {
         Ok(())
     }
 
-    pub(crate) fn cargo_build(&self, package_deb: &PackageConfig, verbose: bool, listener: &dyn Listener) -> CDResult<()> {
+    pub(crate) fn cargo_build(&self, package_deb: &PackageConfig, verbose: bool, verbose_cargo: bool, listener: &dyn Listener) -> CDResult<()> {
         let mut cmd = Command::new("cargo");
         cmd.current_dir(&self.cargo_run_current_dir);
         cmd.args(self.cargo_build_cmd.split(' ')
@@ -525,18 +525,25 @@ impl BuildEnvironment {
 
         self.set_cargo_build_flags_for_package(package_deb, &mut cmd);
 
-        if verbose {
+        if verbose_cargo {
             cmd.arg("--verbose");
-            listener.info(format!("cargo {}", cmd.get_args().map(|arg| {
-                let arg = arg.to_string_lossy();
-                if arg.as_bytes().iter().any(|b| b.is_ascii_whitespace()) {
-                    format!("'{}'", arg.escape_default()).into()
-                } else {
-                    arg
-                }
-            }).join(" ")));
+        }
+        if verbose {
+            listener.info(format!("cargo {}{}",
+                cmd.get_args().map(|arg| {
+                    let arg = arg.to_string_lossy();
+                    if arg.as_bytes().iter().any(|b| b.is_ascii_whitespace()) {
+                        format!("'{}'", arg.escape_default()).into()
+                    } else {
+                        arg
+                    }
+                }).join(" "),
+                cmd.get_envs().map(|(k, v)| {
+                    format!(" {}='{}'", k.to_string_lossy(), v.map(|v| v.to_string_lossy()).as_deref().unwrap_or(""))
+                }).join(" "),
+            ));
         } else {
-            log::debug!("cargo {:?}", cmd.get_args());
+            log::debug!("cargo {:?} {:?}", cmd.get_args(), cmd.get_envs());
         }
 
         let status = cmd.status()
@@ -560,7 +567,12 @@ impl BuildEnvironment {
             }
         }
 
-        if profile_name == "release" { cmd.arg("--release"); } else { cmd.arg(format!("--profile={profile_name}")); }
+        if profile_name == "release" {
+            cmd.arg("--release");
+        } else {
+            log::debug!("building profile {profile_name}");
+            cmd.arg(format!("--profile={profile_name}"));
+        }
         cmd.args(self.cargo_locking_flags.flags());
 
         if let Some(rust_target_triple) = self.rust_target_triple.as_deref() {

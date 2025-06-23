@@ -245,7 +245,8 @@ Overrides the version string generated from the Cargo manifest, including revisi
 For maximum logging, use:
 
 ```sh
-RUST_LOG=debug cargo deb --verbose
+cargo deb -vv
+RUST_LOG=debug cargo deb -vv
 ```
 
 ### Undefined reference to `lzma_stream_encoder_mt` error
