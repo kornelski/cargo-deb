@@ -157,7 +157,7 @@ fn main() -> ExitCode {
                 tmp
             },
             build_profile: BuildProfile {
-                profile_name: matches.get_one::<String>("profile").filter(|&n| n != "release").cloned(),
+                profile_name: matches.get_one::<String>("profile").cloned(),
                 override_debug: matches.get_one::<String>("override-debug").cloned(),
                 override_lto: matches.get_one::<String>("override-lto").cloned(),
             },

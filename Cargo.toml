@@ -28,6 +28,7 @@ assets = [
     { source = "target/release/cargo-deb", dest = "usr/bin/", mode = "755" },
     ["README.md", "usr/share/doc/cargo-deb/README", "644"],
 ]
+profile = "dist"
 
 [lib]
 name = "cargo_deb"
@@ -85,9 +86,12 @@ zopfli = { opt-level = 2 }
 miniz_oxide = { opt-level = 2 }
 
 [profile.release]
+debug = false
+
+[profile.dist]
+inherits = "release"
 lto = true
 opt-level = 3
-debug = false
 
 [dev-dependencies]
 mockall = "0.13.1"

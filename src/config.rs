@@ -302,7 +302,7 @@ impl BuildEnvironment {
             rust_target_triple,
             config_variant,
             overrides,
-            build_profile,
+            mut build_profile,
             debug,
             cargo_locking_flags,
             multiarch,
@@ -337,21 +337,6 @@ impl BuildEnvironment {
             target_dir.push(rust_target_triple);
         }
 
-        let selected_profile = build_profile.profile_name();
-
-        let package_profile = find_profile(&manifest, selected_profile);
-        let root_profile = root_manifest.as_ref().and_then(|m| find_profile(m, selected_profile));
-        if package_profile.is_some() && root_profile.is_some() {
-            let rel_path = workspace_root_manifest_path.parent().and_then(|base| manifest_path.strip_prefix(base).ok()).unwrap_or(&manifest_path);
-            listener.warning(format!("The [profile.{selected_profile}] is in both the package and the root workspace.\n\
-                Picking root ({}) over the package ({}) for compatibility with Cargo", workspace_root_manifest_path.display(), rel_path.display()));
-        }
-
-        let manifest_debug = debug_flags(root_profile.or(package_profile), &build_profile);
-
-        drop(workspace_root_manifest_path);
-        drop(root_manifest);
-
         let cargo_package = manifest.package.as_mut().ok_or("Cargo.toml is a workspace, not a package")?;
 
         // If we build against a variant use that config and change the package name
@@ -369,6 +354,23 @@ impl BuildEnvironment {
         } else {
             cargo_package.metadata.take().and_then(|m| m.deb).unwrap_or_default()
         };
+
+        if build_profile.profile_name.is_none() {
+            build_profile.profile_name = deb.profile.take();
+        }
+        let selected_profile = build_profile.profile_name();
+
+        let package_profile = find_profile(&manifest, selected_profile);
+        let root_profile = root_manifest.as_ref().and_then(|m| find_profile(m, selected_profile));
+        if package_profile.is_some() && root_profile.is_some() {
+            let rel_path = workspace_root_manifest_path.parent().and_then(|base| manifest_path.strip_prefix(base).ok()).unwrap_or(&manifest_path);
+            listener.warning(format!("The [profile.{selected_profile}] is in both the package and the root workspace.\n\
+                Picking root ({}) over the package ({}) for compatibility with Cargo", workspace_root_manifest_path.display(), rel_path.display()));
+        }
+        drop(workspace_root_manifest_path);
+
+        let manifest_debug = debug_flags(root_profile.or(package_profile), &build_profile);
+        drop(root_manifest);
 
         let debug_symbols = Self::configure_debug_symbols(debug, &deb, manifest_debug, selected_profile, listener);
 
@@ -396,6 +398,7 @@ impl BuildEnvironment {
 
         let arch = debian_architecture_from_rust_triple(config.rust_target_triple());
         let assets = deb.assets.take().unwrap_or_else(|| vec![RawAssetOrAuto::Auto]);
+        let cargo_package = manifest.package.as_mut().ok_or("Cargo.toml is a workspace, not a package")?;
         let mut package_deb = PackageConfig::new(deb, cargo_package, listener, default_timestamp, overrides, arch, multiarch)?;
 
         config.add_assets(&mut package_deb, assets, listener)?;
