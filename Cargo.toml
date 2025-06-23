@@ -82,10 +82,22 @@ debug = 1
 
 [profile.dev.package]
 xz2 = { opt-level = 2 }
+lzma-sys = { opt-level = 2 }
 zopfli = { opt-level = 2 }
 miniz_oxide = { opt-level = 2 }
 
+[profile.release.package]
+adler2 = { opt-level = 2 }
+flate2 = { opt-level = 2 }
+lzma-sys = { opt-level = 2 }
+miniz_oxide = { opt-level = 2 }
+serde_json = { opt-level = 2 }
+xz2 = { opt-level = 2 }
+zopfli = { opt-level = 2 }
+
 [profile.release]
+# quicker build for one-off cargo install
+opt-level = 1
 debug = false
 
 [profile.dist]
