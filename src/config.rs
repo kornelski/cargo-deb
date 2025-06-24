@@ -102,7 +102,7 @@ pub struct BuildEnvironment {
     /// Should the binary be stripped from debug symbols?
     pub debug_symbols: DebugSymbols,
 
-    build_profile: BuildProfile,
+    pub(crate) build_profile: BuildProfile,
     cargo_build_cmd: String,
     cargo_build_flags: Vec<String>,
 
@@ -358,8 +358,8 @@ impl BuildEnvironment {
         if build_profile.profile_name.is_none() {
             build_profile.profile_name = deb.profile.take();
         }
-        let selected_profile = build_profile.profile_name();
 
+        let selected_profile = build_profile.profile_name();
         let package_profile = find_profile(&manifest, selected_profile);
         let root_profile = root_manifest.as_ref().and_then(|m| find_profile(m, selected_profile));
         if package_profile.is_some() && root_profile.is_some() {
@@ -372,7 +372,7 @@ impl BuildEnvironment {
         let manifest_debug = debug_flags(root_profile.or(package_profile), &build_profile);
         drop(root_manifest);
 
-        let debug_symbols = Self::configure_debug_symbols(debug, &deb, manifest_debug, selected_profile, listener);
+        let debug_symbols = Self::configure_debug_symbols(&mut build_profile, debug, &deb, manifest_debug, listener);
 
         let mut features = deb.features.take().unwrap_or_default();
         features.extend(overrides.features.iter().cloned());
@@ -406,7 +406,7 @@ impl BuildEnvironment {
         Ok((config, package_deb))
     }
 
-    fn configure_debug_symbols(debug: DebugSymbolOptions, deb: &CargoDeb, manifest_debug: ManifestDebugFlags, selected_profile: &str, listener: &dyn Listener) -> DebugSymbols {
+    fn configure_debug_symbols(build_profile: &mut BuildProfile, debug: DebugSymbolOptions, deb: &CargoDeb, manifest_debug: ManifestDebugFlags, listener: &dyn Listener) -> DebugSymbols {
         let DebugSymbolOptions { generate_dbgsym_package, separate_debug_symbols, compress_debug_symbols, strip_override } = debug;
         let allows_strip = strip_override != Some(false);
         let allows_separate_debug_symbols = separate_debug_symbols != Some(false);
@@ -450,23 +450,32 @@ impl BuildEnvironment {
             ManifestDebugFlags::SomeSymbolsAdded => keep_debug_symbols_default,
             ManifestDebugFlags::FullSymbolsAdded => {
                 if !separate_debug_symbols {
-                    listener.warning(format!("the debug symbols may be bloated\nUse `[profile.{selected_profile}] debug = \"line-tables-only\"` or --separate-debug-symbols or --dbgsym options"));
+                    listener.warning(format!("the debug symbols may be bloated\n\
+                        Use `[profile.{}] debug = \"line-tables-only\"` or --separate-debug-symbols or --dbgsym options",
+                        build_profile.profile_name()));
                 }
                 keep_debug_symbols_default
             },
             ManifestDebugFlags::Default if separate_debug_symbols => {
-                listener.warning(format!("debug info hasn't been explicitly enabled, so {separate_option_name} may not work\nAdd `[profile.{selected_profile}] debug = 1` to Cargo.toml"));
+                listener.warning(format!("debug info hasn't been explicitly enabled\n\
+                    Add `[profile.{}] debug = 1` to Cargo.toml", build_profile.profile_name()));
+                if strip_override != Some(true) {
+                    build_profile.override_debug = Some(if generate_dbgsym_package { "1" } else { "line-tables-only" }.into());
+                    log::debug!("adding some debug symbols {:?}", build_profile.override_debug);
+                }
                 keep_debug_symbols_default
             },
             ManifestDebugFlags::FullyStrippedByCargo => {
                 if separate_debug_symbols || compress_debug_symbols {
-                    listener.warning(format!("{separate_option_name} won't have any effect when Cargo is configured to strip the symbols first.\nRemove `strip` from `[profile.{selected_profile}]`"));
+                    listener.warning(format!("{separate_option_name} won't have any effect when Cargo is configured to strip the symbols first.\n\
+                        Remove `strip` from `[profile.{}]`", build_profile.profile_name()));
                 }
                 strip_override_default.unwrap_or(DebugSymbols::Keep) // no need to launch strip
             },
             ManifestDebugFlags::SymbolsDisabled => {
                 if separate_debug_symbols || generate_dbgsym_package {
-                    listener.warning(format!("{separate_option_name} won't have any effect when debug symbols are disabled\nAdd `[profile.{selected_profile}] debug = \"line-tables-only\"` to Cargo.toml"));
+                    listener.warning(format!("{separate_option_name} won't have any effect when debug symbols are disabled\n\
+                        Add `[profile.{}] debug = \"line-tables-only\"` to Cargo.toml", build_profile.profile_name()));
                 }
                 // Rust still adds debug bloat from the libstd
                 strip_override_default.unwrap_or(DebugSymbols::Strip)

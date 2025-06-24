@@ -82,7 +82,7 @@ pub fn strip_binaries(config: &BuildEnvironment, package_deb: &mut PackageConfig
                 return Err(CargoDebError::StripFailed(path.to_owned(), format!("{} command failed to create output '{}'", strip_cmd.display(), stripped_temp_path.display())));
             }
 
-            let new_debug_asset = if separate_debug_symbols && asset.c.is_built() {
+            let new_debug_asset = if separate_debug_symbols {
                 log::debug!("extracting debug info with {} from {}", objcopy_cmd.display(), path.display());
 
                 // parse the ELF and use debug-id-based path if available
