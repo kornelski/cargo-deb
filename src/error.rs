@@ -1,5 +1,6 @@
 use quick_error::quick_error;
 use std::path::PathBuf;
+use std::process::ExitStatus;
 use std::{io, num, time};
 
 quick_error! {
@@ -37,8 +38,8 @@ quick_error! {
         InvalidVersion(msg: &'static str, ver: String) {
             display("Version '{}' is invalid: {}", ver, msg)
         }
-        InstallFailed {
-            display("Installation failed, because dpkg -i returned error")
+        InstallFailed(status: ExitStatus) {
+            display("Installation failed, because dpkg -i returned error {status}")
         }
         BuildFailed {
             display("Build failed")
