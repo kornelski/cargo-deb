@@ -1,6 +1,5 @@
 use crate::error::{CDResult, CargoDebError};
 use std::io::{BufWriter, Read};
-use std::num::NonZeroU64;
 #[cfg(feature = "lzma")]
 use std::num::NonZeroUsize;
 use std::process::{Child, ChildStdin, Command, Stdio};
@@ -48,6 +47,7 @@ impl Format {
 enum Writer {
     #[cfg(feature = "lzma")]
     Xz(xz2::write::XzEncoder<Vec<u8>>),
+    #[cfg(feature = "gzip")]
     Gz(flate2::write::GzEncoder<Vec<u8>>),
     ZopfliGz(BufWriter<GzipEncoder<Vec<u8>>>),
     StdIn {
@@ -73,6 +73,7 @@ impl Writer {
                 child.wait()?;
                 handle.join().unwrap().map(|data| Compressed { compress_format, data })
             }
+            #[cfg(feature = "gzip")]
             Self::Gz(w) => w.finish().map(|data| Compressed { compress_format: Format::Gzip, data }),
             Self::ZopfliGz(w) => w.into_inner()?.finish().map(|data| Compressed { compress_format: Format::Gzip, data }),
         }
@@ -89,6 +90,7 @@ impl io::Write for Compressor {
         match &mut self.writer {
             #[cfg(feature = "lzma")]
             Writer::Xz(w) => w.flush(),
+            #[cfg(feature = "gzip")]
             Writer::Gz(w) => w.flush(),
             Writer::ZopfliGz(w) => w.flush(),
             Writer::StdIn { stdin, .. } => stdin.flush(),
@@ -99,6 +101,7 @@ impl io::Write for Compressor {
         let len = match &mut self.writer {
             #[cfg(feature = "lzma")]
             Writer::Xz(w) => w.write(buf),
+            #[cfg(feature = "gzip")]
             Writer::Gz(w) => w.write(buf),
             Writer::ZopfliGz(w) => w.write(buf),
             Writer::StdIn { stdin, .. } => stdin.write(buf),
@@ -111,6 +114,7 @@ impl io::Write for Compressor {
         match &mut self.writer {
             #[cfg(feature = "lzma")]
             Writer::Xz(w) => w.write_all(buf),
+            #[cfg(feature = "gzip")]
             Writer::Gz(w) => w.write_all(buf),
             Writer::ZopfliGz(w) => w.write_all(buf),
             Writer::StdIn { stdin, .. } => stdin.write_all(buf),
@@ -190,29 +194,28 @@ pub fn select_compressor(fast: bool, compress_format: Format, use_system: bool) 
         #[cfg(not(feature = "lzma"))]
         Format::Xz => system_compressor(compress_format, fast),
         Format::Gzip => {
-            use flate2::write::GzEncoder;
-            use flate2::Compression;
+            #[cfg(feature = "gzip")]
+            if fast {
+                let level = flate2::Compression::new(compress_format.level(fast));
+                let inner_writer = flate2::write::GzEncoder::new(Vec::new(), level);
+                return Ok(Compressor::new(Writer::Gz(inner_writer)));
+            }
 
-            let writer = if !fast {
-                let inner_writer = GzipEncoder::new_buffered(Options {
-                    iteration_count: NonZeroU64::new(7).unwrap(),
-                    ..Options::default()
-                }, BlockType::Dynamic, Vec::new()).unwrap();
-                Writer::ZopfliGz(inner_writer)
-            } else {
-                let inner_writer = GzEncoder::new(Vec::new(), Compression::new(compress_format.level(fast)));
-                Writer::Gz(inner_writer)
-            };
-            Ok(Compressor::new(writer))
+            let inner_writer = GzipEncoder::new_buffered(Options {
+                iteration_count: (if fast { 1 } else { 7 }).try_into().unwrap(),
+                ..Options::default()
+            }, BlockType::Dynamic, Vec::new()).unwrap();
+            Ok(Compressor::new(Writer::ZopfliGz(inner_writer)))
         },
     }
 }
 
 pub(crate) fn gzipped(mut content: &[u8]) -> io::Result<Vec<u8>> {
-    let mut compressed = Vec::with_capacity(content.len() * 2 / 3);
+    let mut compressed = Vec::new();
+    compressed.try_reserve(content.len() * 2 / 3)?;
     let mut encoder = GzipEncoder::new(
         Options {
-            iteration_count: NonZeroU64::new(7).unwrap(),
+            iteration_count: 7.try_into().unwrap(),
             ..Options::default()
         },
         BlockType::Dynamic,
