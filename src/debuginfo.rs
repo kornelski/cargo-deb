@@ -62,25 +62,26 @@ pub fn strip_binaries(config: &BuildEnvironment, package_deb: &mut PackageConfig
             let stripped_temp_path = stripped_binaries_output_dir.join(format!("{file_name}.tmp{i}-stripped"));
             let _ = fs::remove_file(&stripped_temp_path);
 
-            log::debug!("stripping with {} from {} into {}", strip_cmd.display(), path.display(), stripped_temp_path.display());
-            Command::new(strip_cmd)
-               // same as dh_strip
-               .args(["--strip-unneeded", "--remove-section=.comment", "--remove-section=.note"])
-               .arg("-o").arg(&stripped_temp_path)
-               .arg(path)
-               .status()
-               .and_then(ensure_success)
-               .map_err(|err| {
-                    if let Some(target) = rust_target_triple {
-                        CargoDebError::StripFailed(path.to_owned(), format!("{}: {}.\nTarget-specific strip commands are configured in [target.{}] strip = {{ path = \"{}\" }} in {}\nYou can also add strip=true to [profile.release] or --no-strip", strip_cmd.display(), err, target, strip_cmd.display(), cargo_config_path.display()))
-                    } else {
-                        CargoDebError::CommandFailed(err, "strip")
+            run_strip(strip_cmd, &stripped_temp_path, path, &["--strip-unneeded", "--remove-section=.comment", "--remove-section=.note"])
+                .or_else(|err| {
+                    let msg = err.map(|err| {
+                        use std::fmt::Write;
+                        let mut msg = format!("{}: {err}", strip_cmd.display());
+                        if let Some(target) = rust_target_triple {
+                            write!(&mut msg, "\nTarget-specific strip commands are configured in {}: `[target.{target}] strip = {{ path = \"{}\" }}`", cargo_config_path.display(), strip_cmd.display()).unwrap();
+                        }
+                        if !separate_debug_symbols {
+                            write!(&mut msg, "\nYou can add `[profile.{}] strip=true` or run with --no-strip", config.build_profile.profile_name()).unwrap();
+                        }
+                        msg
+                    })
+                    .unwrap_or_else(|| format!("{} command failed to create output '{}'", strip_cmd.display(), stripped_temp_path.display()));
+
+                    match run_strip(strip_cmd, &stripped_temp_path, path, &[]) {
+                        Ok(()) => Ok(listener.warning(format!("strip didn't support additional arguments: {msg}"))),
+                        Err(_) => Err(CargoDebError::StripFailed(path.to_owned(), msg)),
                     }
                 })?;
-
-            if !stripped_temp_path.exists() {
-                return Err(CargoDebError::StripFailed(path.to_owned(), format!("{} command failed to create output '{}'", strip_cmd.display(), stripped_temp_path.display())));
-            }
 
             let new_debug_asset = if separate_debug_symbols {
                 log::debug!("extracting debug info with {} from {}", objcopy_cmd.display(), path.display());
@@ -168,6 +169,24 @@ pub fn strip_binaries(config: &BuildEnvironment, package_deb: &mut PackageConfig
     package_deb.assets.resolved
         .extend(added_debug_assets.into_iter().flatten());
 
+    Ok(())
+}
+
+fn run_strip(strip_cmd: &Path, stripped_temp_path: &PathBuf, path: &Path, args: &[&str]) -> Result<(), Option<io::Error>> {
+    log::debug!("stripping with {} from {} into {}; {args:?}", strip_cmd.display(), path.display(), stripped_temp_path.display());
+    Command::new(strip_cmd)
+       // same as dh_strip
+       .args(args)
+       .arg("-o").arg(stripped_temp_path)
+       .arg(path)
+       .status()
+       .and_then(ensure_success)
+       .map_err(|err| {
+            Some(err)
+        })?;
+    if !stripped_temp_path.exists() {
+        return Err(None);
+    }
     Ok(())
 }
 

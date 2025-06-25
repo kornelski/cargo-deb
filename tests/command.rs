@@ -74,7 +74,6 @@ fn build_with_command_line_compress_gz() {
 }
 
 #[test]
-#[cfg_attr(any(not(target_family = "unix"), target_os = "macos"), ignore = "needs linux strip command")]
 fn no_dbgsym() {
     let (_, ddir) = extract_built_package_from_manifest("tests/test-workspace/test-ws2/Cargo.toml", "xz", &["--no-dbgsym", "--fast"]);
     assert!(ddir.path().join("usr/bin/renamed2").exists());
@@ -87,7 +86,6 @@ fn no_dbgsym_strip() {
 }
 
 #[test]
-#[cfg_attr(any(not(target_family = "unix"), target_os = "macos"), ignore = "needs linux strip command")]
 fn no_symbols_for_dbgsym() {
     let (_, ddir) = extract_built_package_from_manifest("tests/test-workspace/test-ws2/Cargo.toml", "xz", &["--dbgsym", "--override-debug=none", "--fast"]);
     assert!(ddir.path().join("usr/bin/renamed2").exists());
@@ -269,9 +267,10 @@ fn run_cargo_deb_command_on_example_dir() {
 }
 
 #[test]
-#[cfg_attr(any(not(target_family = "unix"), target_os = "macos"), ignore = "needs linux strip command")]
+#[cfg_attr(any(not(target_family = "unix"), target_os = "macos"), ignore = "needs linux objcopy")]
 fn run_cargo_deb_command_on_example_dir_with_separate_debug_symbols() {
-    let (_cdir, ddir) = extract_built_package_from_manifest("example/Cargo.toml", DEFAULT_COMPRESSION_EXT, &["--separate-debug-symbols", "--no-dbgsym"]);
+    let (_cdir, ddir) = extract_built_package_from_manifest("example/Cargo.toml", DEFAULT_COMPRESSION_EXT,
+        &["--separate-debug-symbols", "--no-dbgsym", "--compress-debug-symbols=zlib"]);
 
     let stripped = ddir.path().join("usr/bin/example");
     assert!(stripped.exists());
@@ -295,7 +294,7 @@ fn run_cargo_deb_command_on_example_dir_with_separate_debug_symbols() {
 }
 
 #[test]
-#[cfg_attr(any(not(target_family = "unix"), target_os = "macos"), ignore = "needs linux strip command")]
+#[cfg_attr(any(not(target_family = "unix"), target_os = "macos"), ignore = "needs linux objcopy")]
 fn run_cargo_deb_command_on_example_dir_with_dbgsym() {
     let (_bdir, deb_path, ddeb_path) = cargo_deb("example/Cargo.toml", &["--dbgsym", "--deb-revision=456", "--section=junk"]);
     let ddeb_path = ddeb_path.expect("dbgsym option");

@@ -109,8 +109,8 @@ fn main() -> ExitCode {
     }
 
     let quiet = matches.get_flag("quiet");
-    let verbose_cargo_build = verbose_count > 1 || env::var_os("RUST_LOG").is_some_and(|v| v == "debug");
-    let verbose = verbose_cargo_build || verbose_count > 0;
+    let verbose = verbose_count > 0 || (!quiet && env::var_os("RUST_LOG").is_some_and(|v| v == "debug"));
+    let verbose_cargo_build = verbose_count > 1;
 
     // Listener conditionally prints warnings
     let (listener_tmp1, listener_tmp2);
