@@ -96,6 +96,9 @@ pub fn strip_binaries(config: &BuildEnvironment, package_deb: &mut PackageConfig
                 let mut cmd = Command::new(objcopy_cmd);
                 cmd.arg("--only-keep-debug");
 
+                if config.reproducible {
+                    cmd.arg("--enable-deterministic-archives");
+                }
                 match compress_debug_symbols {
                     CompressDebugSymbols::No => {},
                     CompressDebugSymbols::Zstd => { cmd.arg("--compress-debug-sections=zstd"); },

@@ -101,6 +101,8 @@ pub struct BuildEnvironment {
     pub all_features: bool,
     /// Should the binary be stripped from debug symbols?
     pub debug_symbols: DebugSymbols,
+    /// try to be deterministic
+    pub reproducible: bool,
 
     pub(crate) build_profile: BuildProfile,
     cargo_build_cmd: String,
@@ -331,7 +333,9 @@ impl BuildEnvironment {
             mut manifest,
         } = cargo_metadata(manifest_path, selected_package_name, cargo_locking_flags)?;
 
+        let mut reproducible = false;
         let default_timestamp = if let Ok(source_date_epoch) = std::env::var("SOURCE_DATE_EPOCH") {
+            reproducible = true;
             source_date_epoch.parse().map_err(|e| CargoDebError::NumParse("SOURCE_DATE_EPOCH", e))?
         } else {
             let manifest_mdate = fs::metadata(&manifest_path)?.modified().unwrap_or_else(|_| SystemTime::now());
@@ -389,6 +393,7 @@ impl BuildEnvironment {
         let manifest_dir = manifest_path;
 
         let config = Self {
+            reproducible,
             package_manifest_dir: manifest_dir,
             rust_target_triple: rust_target_triple.map(|t| t.to_string()),
             target_dir,
