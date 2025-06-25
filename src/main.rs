@@ -1,5 +1,5 @@
 use cargo_deb::compress::{CompressConfig, Format};
-use cargo_deb::config::{BuildOptions, DebugSymbolOptions, Multiarch};
+use cargo_deb::config::{BuildOptions, CompressDebugSymbols, DebugSymbolOptions, Multiarch};
 use cargo_deb::{listener, BuildProfile, CargoDeb, CargoLockingFlags};
 use clap::{Arg, ArgAction, Command};
 use std::env;
@@ -37,7 +37,12 @@ fn main() -> ExitCode {
             .hide_short_help(cargo_deb::SEPARATE_DEBUG_SYMBOLS_DEFAULT).help("Move debug symbols to a .debug file in the same package"))
         .arg(Arg::new("no-separate-debug-symbols").long("no-separate-debug-symbols").action(ArgAction::SetTrue).conflicts_with_all(["separate-debug-symbols", "dbgsym"])
             .hide_short_help(!cargo_deb::SEPARATE_DEBUG_SYMBOLS_DEFAULT).help("Do not strip debug symbols into a separate .debug file"))
-        .arg(Arg::new("compress-debug-symbols").long("compress-debug-symbols").action(ArgAction::SetTrue).help("Apply `objcopy --compress-debug-sections`"))
+        .arg(Arg::new("compress-debug-symbols").long("compress-debug-symbols").alias("compress-debug-sections").action(ArgAction::Set)
+            .require_equals(true).num_args(0..=1).default_missing_value("auto").value_name("zstd|zlib").value_parser(["zstd", "zlib", "auto"])
+            .help("Apply `objcopy --compress-debug-sections`").hide_possible_values(true)
+            .long_help("Apply `objcopy --compress-debug-sections` when creating separate debug symbols or dbgsym. zlib is compatible with Rust's backtraces, zstd is smaller."))
+        .arg(Arg::new("no-compress-debug-symbols").long("no-compress-debug-symbols").action(ArgAction::SetTrue).conflicts_with("compress-debug-symbols")
+            .hide_short_help(!cargo_deb::COMPRESS_DEBUG_SYMBOLS_DEFAULT))
         .next_help_heading("Metadata overrides")
         .arg(Arg::new("variant").long("variant").num_args(1).value_name("name").help("Alternative `[package.metadata.deb.variants.*]` config section to use"))
         .arg(Arg::new("deb-version").long("deb-version").num_args(1).value_name("version").help("Override version string of the package (including revision)"))
@@ -126,6 +131,14 @@ fn main() -> ExitCode {
 
     let install = matches.get_flag("install");
 
+    let compress_debug_symbols = matches.get_one::<String>("compress-debug-symbols").map(|s| match &**s {
+        "zlib" => CompressDebugSymbols::Zlib,
+        "zstd" => CompressDebugSymbols::Zstd,
+        _ => CompressDebugSymbols::Auto,
+    }).or_else(|| {
+        matches.get_flag("no-compress-debug-symbols").then_some(CompressDebugSymbols::No)
+    });
+
     match (CargoDeb {
         deb_output_path: matches.get_one::<String>("output").cloned(),
         no_build: matches.get_flag("no-build"),
@@ -149,10 +162,13 @@ fn main() -> ExitCode {
             cargo_build_cmd: matches.get_one::<String>("cargo-build").cloned(),
             cargo_build_flags: free_args,
             debug: DebugSymbolOptions {
-                strip_override: if matches.get_flag("strip") { Some(true) } else if matches.get_flag("no-strip") { Some(false) } else { None },
-                separate_debug_symbols: if matches.get_flag("separate-debug-symbols") { Some(true) } else if matches.get_flag("no-separate-debug-symbols") { Some(false) } else { None },
-                compress_debug_symbols: if matches.get_flag("compress-debug-symbols") { Some(true) } else { None },
-                generate_dbgsym_package: if matches.get_flag("dbgsym") { Some(true) } else if matches.get_flag("no-dbgsym") { Some(false) } else { None },
+                strip_override: matches.get_flag("strip").then_some(true)
+                    .or_else(|| matches.get_flag("no-strip").then_some(false)),
+                separate_debug_symbols: matches.get_flag("separate-debug-symbols").then_some(true)
+                    .or_else(|| matches.get_flag("no-separate-debug-symbols").then_some(false)),
+                compress_debug_symbols,
+                generate_dbgsym_package: matches.get_flag("dbgsym").then_some(true)
+                    .or_else(|| matches.get_flag("no-dbgsym").then_some(false)),
             },
             overrides: {
                 let mut tmp = cargo_deb::config::DebConfigOverrides::default();

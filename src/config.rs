@@ -219,10 +219,18 @@ pub enum DebugSymbols {
     /// Should the debug symbols be moved to a separate file included in the package? (implies `strip:true`)
     Separate {
         /// Should the debug symbols be compressed
-        compress: bool,
+        compress: CompressDebugSymbols,
         /// Generate dbgsym.ddeb package
         generate_dbgsym_package: bool,
     },
+}
+
+#[derive(Debug, Copy, Clone, Eq, PartialEq)]
+pub enum CompressDebugSymbols {
+    No,
+    Zstd,
+    Zlib,
+    Auto,
 }
 
 /// Replace config values via command-line
@@ -271,7 +279,7 @@ pub enum Multiarch {
 pub struct DebugSymbolOptions {
     pub generate_dbgsym_package: Option<bool>,
     pub separate_debug_symbols: Option<bool>,
-    pub compress_debug_symbols: Option<bool>,
+    pub compress_debug_symbols: Option<CompressDebugSymbols>,
     pub strip_override: Option<bool>,
 }
 
@@ -422,7 +430,13 @@ impl BuildEnvironment {
             .unwrap_or(generate_dbgsym_package || (allows_separate_debug_symbols && crate::SEPARATE_DEBUG_SYMBOLS_DEFAULT));
         let separate_debug_symbols = generate_dbgsym_package || wants_separate_debug_symbols;
         log::debug!("separate? {separate_debug_symbols} default={}", crate::SEPARATE_DEBUG_SYMBOLS_DEFAULT);
-        let compress_debug_symbols = compress_debug_symbols.or(deb.compress_debug_symbols).unwrap_or(false);
+
+        let compress_debug_symbols = compress_debug_symbols.unwrap_or_else(|| {
+            let v = deb.compress_debug_symbols.inspect(|v| log::debug!("deb.compress-debug-symbols={v}"))
+                .unwrap_or(separate_debug_symbols && allows_strip && crate::COMPRESS_DEBUG_SYMBOLS_DEFAULT);
+            if v { CompressDebugSymbols::Auto } else { CompressDebugSymbols::No }
+        });
+        log::debug!("compress? {compress_debug_symbols:?} default={}", crate::COMPRESS_DEBUG_SYMBOLS_DEFAULT);
 
         let separate_option_name = if generate_dbgsym_package { "dbgsym" } else { "separate-debug-symbols" };
         if !allows_strip && separate_debug_symbols {
@@ -431,7 +445,7 @@ impl BuildEnvironment {
         else if generate_dbgsym_package && !wants_separate_debug_symbols {
             listener.warning("separate-debug-symbols can't be disabled when generating dbgsym".into());
         }
-        else if !separate_debug_symbols && compress_debug_symbols {
+        else if !separate_debug_symbols && compress_debug_symbols != CompressDebugSymbols::No {
             listener.warning("--separate-debug-symbols or --dbgsym is required to compresss symbols".into());
         }
 
@@ -439,7 +453,9 @@ impl BuildEnvironment {
 
         let keep_debug_symbols_default = if separate_debug_symbols {
             DebugSymbols::Separate {
-                compress: compress_debug_symbols,
+                compress: if compress_debug_symbols != CompressDebugSymbols::Auto { compress_debug_symbols }
+                    else if manifest_debug == ManifestDebugFlags::FullSymbolsAdded { CompressDebugSymbols::Zstd } // assuming it's for lldb, not gimli
+                    else { CompressDebugSymbols::Zlib }, // panics in Rust can decompress zlib, but not zstd
                 generate_dbgsym_package,
             }
         } else {
@@ -466,7 +482,7 @@ impl BuildEnvironment {
                 keep_debug_symbols_default
             },
             ManifestDebugFlags::FullyStrippedByCargo => {
-                if separate_debug_symbols || compress_debug_symbols {
+                if separate_debug_symbols || compress_debug_symbols != CompressDebugSymbols::No {
                     listener.warning(format!("{separate_option_name} won't have any effect when Cargo is configured to strip the symbols first.\n\
                         Remove `strip` from `[profile.{}]`", build_profile.profile_name()));
                 }

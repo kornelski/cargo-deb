@@ -1,5 +1,5 @@
 use crate::assets::{Asset, AssetSource, IsBuilt, ProcessedFrom};
-use crate::config::{BuildEnvironment, DebugSymbols, PackageConfig};
+use crate::config::{BuildEnvironment, CompressDebugSymbols, DebugSymbols, PackageConfig};
 use crate::error::{CDResult, CargoDebError};
 use crate::listener::Listener;
 use crate::parse::cargo::CargoConfig;
@@ -21,7 +21,7 @@ fn ensure_success(status: ExitStatus) -> io::Result<()> {
 pub fn strip_binaries(config: &BuildEnvironment, package_deb: &mut PackageConfig, rust_target_triple: Option<&str>, asked_for_dbgsym_package: bool, listener: &dyn Listener) -> CDResult<()> {
     let (separate_debug_symbols, compress_debug_symbols) = match config.debug_symbols {
         DebugSymbols::Keep => return Ok(()),
-        DebugSymbols::Strip => (false, false),
+        DebugSymbols::Strip => (false, CompressDebugSymbols::No),
         DebugSymbols::Separate { compress, .. } => (true, compress),
     };
 
@@ -57,7 +57,7 @@ pub fn strip_binaries(config: &BuildEnvironment, package_deb: &mut PackageConfig
                 return Err(CargoDebError::StripFailed(path.to_owned(), "The file doesn't exist".into()));
             }
 
-            let conf_path = cargo_config.as_ref().map_or(Path::new(".cargo/config"), |c| c.path());
+            let cargo_config_path = cargo_config.as_ref().map_or(Path::new(".cargo/config.toml"), |c| c.path());
             let file_name = path.file_stem().ok_or(CargoDebError::Str("bad path"))?.to_string_lossy();
             let stripped_temp_path = stripped_binaries_output_dir.join(format!("{file_name}.tmp{i}-stripped"));
             let _ = fs::remove_file(&stripped_temp_path);
@@ -72,7 +72,7 @@ pub fn strip_binaries(config: &BuildEnvironment, package_deb: &mut PackageConfig
                .and_then(ensure_success)
                .map_err(|err| {
                     if let Some(target) = rust_target_triple {
-                        CargoDebError::StripFailed(path.to_owned(), format!("{}: {}.\nTarget-specific strip commands are configured in [target.{}] strip = {{ path = \"{}\" }} in {}\nYou can also add strip=true to [profile.release] or --no-strip", strip_cmd.display(), err, target, strip_cmd.display(), conf_path.display()))
+                        CargoDebError::StripFailed(path.to_owned(), format!("{}: {}.\nTarget-specific strip commands are configured in [target.{}] strip = {{ path = \"{}\" }} in {}\nYou can also add strip=true to [profile.release] or --no-strip", strip_cmd.display(), err, target, strip_cmd.display(), cargo_config_path.display()))
                     } else {
                         CargoDebError::CommandFailed(err, "strip")
                     }
@@ -90,25 +90,30 @@ pub fn strip_binaries(config: &BuildEnvironment, package_deb: &mut PackageConfig
 
                 // --add-gnu-debuglink reads the file path given, so it can't get to-be-installed target path
                 // and the recommended fallback solution is to give it relative path in the same dir
-                let debug_temp_path = stripped_temp_path.with_file_name(debug_target_path.file_name().ok_or(CargoDebError::Str("bad path"))?);
-
+                let debug_temp_path = stripped_temp_path.with_file_name(debug_target_path.file_name().ok_or("bad .debug")?);
                 let _ = fs::remove_file(&debug_temp_path);
-                let mut args: &[_] = &["--only-keep-debug", "--compress-debug-sections=zstd"];
-                if !compress_debug_symbols {
-                    args = &args[..1];
+
+                let mut cmd = Command::new(objcopy_cmd);
+                cmd.arg("--only-keep-debug");
+
+                match compress_debug_symbols {
+                    CompressDebugSymbols::No => {},
+                    CompressDebugSymbols::Zstd => { cmd.arg("--compress-debug-sections=zstd"); },
+                    CompressDebugSymbols::Zlib | CompressDebugSymbols::Auto => { cmd.arg("--compress-debug-sections=zlib"); },
                 }
-                Command::new(objcopy_cmd)
-                    .args(args)
-                    .arg(path)
-                    .arg(&debug_temp_path)
+
+                cmd.arg(path).arg(&debug_temp_path)
                     .status()
                     .and_then(ensure_success)
                     .map_err(|err| {
+                        use std::fmt::Write;
+                        let mut msg = format!("{}: {err}", objcopy_cmd.display());
+
                         if let Some(target) = rust_target_triple {
-                            CargoDebError::StripFailed(path.to_owned(), format!("{}: {}.\nTarget-specific strip commands are configured in [target.{}] objcopy = {{ path =\"{}\" }} in {}\nAvoid --separate-debug-symbols if you don't have objcopy", objcopy_cmd.display(), err, target, objcopy_cmd.display(), conf_path.display()))
-                        } else {
-                            CargoDebError::CommandFailed(err, "objcopy")
+                            write!(&mut msg, "\nTarget-specific objcopy commands are configured in {}: `[target.{target}] objcopy = {{ path =\"{}\" }}`", cargo_config_path.display(), objcopy_cmd.display()).unwrap();
                         }
+                        msg.push_str("\nUse --no-separate-debug-symbols if you don't have objcopy");
+                        CargoDebError::StripFailed(path.to_owned(), msg)
                     })?;
 
                 let relative_debug_temp_path = debug_temp_path.file_name().ok_or(CargoDebError::Str("bad path"))?;
@@ -129,7 +134,7 @@ pub fn strip_binaries(config: &BuildEnvironment, package_deb: &mut PackageConfig
                     0o644,
                     IsBuilt::No,
                     crate::assets::AssetKind::SeparateDebugSymbols,
-                ).processed(if compress_debug_symbols {"compress"} else {"separate"}, path.to_path_buf()))
+                ).processed(if compress_debug_symbols != CompressDebugSymbols::No {"compress"} else {"separate"}, path.to_path_buf()))
             } else {
                 None // no new asset
             };

@@ -78,6 +78,8 @@ static-lzma = ["lzma", "xz2?/static"]
 default_enable_dbgsym = []
 # Assume `--separate-debug-symbols` by default (change with `--no-separate-debug-symbols`)
 default_enable_separate_debug_symbols = []
+# Assume `--compress-debug-symbols` by default (change with `--no-compress-debug-symbols`)
+default_enable_compress_debug_symbols = []
 
 [profile.dev]
 debug = 1
