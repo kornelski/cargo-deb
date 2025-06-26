@@ -71,7 +71,8 @@ pub fn strip_binaries(config: &BuildEnvironment, package_deb: &mut PackageConfig
                             write!(&mut msg, "\nTarget-specific strip commands are configured in {}: `[target.{target}] strip = {{ path = \"{}\" }}`", cargo_config_path.display(), strip_cmd.display()).unwrap();
                         }
                         if !separate_debug_symbols {
-                            write!(&mut msg, "\nYou can add `[profile.{}] strip=true` or run with --no-strip", config.build_profile.profile_name()).unwrap();
+                            write!(&mut msg, "\nYou can add `[profile.{}] strip=true` or run with --no-strip",
+                                config.build_profile.example_profile_name()).unwrap();
                         }
                         msg
                     })

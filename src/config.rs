@@ -264,6 +264,19 @@ impl BuildProfile {
     pub fn profile_name(&self) -> &str {
         self.profile_name.as_deref().unwrap_or("release")
     }
+
+    #[must_use]
+    pub fn example_profile_name(&self) -> &str {
+        self.profile_name.as_deref().filter(|&p| p != "dev" && p != "debug").unwrap_or("release")
+    }
+
+    #[must_use]
+    fn profile_dir(&self) -> &Path {
+        Path::new(self.profile_name.as_deref().map(|p| match p {
+            "dev" => "debug",
+            p => p,
+        }).unwrap_or("release"))
+    }
 }
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Default)]
@@ -376,11 +389,12 @@ impl BuildEnvironment {
         let root_profile = root_manifest.as_ref().and_then(|m| find_profile(m, selected_profile));
         if package_profile.is_some() && workspace_root_manifest_path != manifest_path {
             let rel_path = workspace_root_manifest_path.parent().and_then(|base| manifest_path.strip_prefix(base).ok()).unwrap_or(&manifest_path);
+            let profile_name = build_profile.example_profile_name();
             if root_profile.is_some() {
-                listener.warning(format!("The [profile.{selected_profile}] is in both the package and the root workspace.\n\
+                listener.warning(format!("The [profile.{profile_name}] is in both the package and the root workspace.\n\
                     Picking root ({}) over the package ({}) for compatibility with Cargo", workspace_root_manifest_path.display(), rel_path.display()));
             } else if root_manifest.is_some() {
-                listener.warning(format!("The [profile.{selected_profile}] should be defined in {}, not in {}\n\
+                listener.warning(format!("The [profile.{profile_name}] should be defined in {}, not in {}\n\
                     Cargo only uses profiles from the workspace root. See --override-debug and --override-lto options.",
                     workspace_root_manifest_path.display(), rel_path.display()));
             }
@@ -479,13 +493,13 @@ impl BuildEnvironment {
                 if !separate_debug_symbols {
                     listener.warning(format!("the debug symbols may be bloated\n\
                         Use `[profile.{}] debug = \"line-tables-only\"` or --separate-debug-symbols or --dbgsym options",
-                        build_profile.profile_name()));
+                        build_profile.example_profile_name()));
                 }
                 keep_debug_symbols_default
             },
             ManifestDebugFlags::Default if separate_debug_symbols => {
                 listener.warning(format!("debug info hasn't been explicitly enabled\n\
-                    Add `[profile.{}] debug = 1` to Cargo.toml", build_profile.profile_name()));
+                    Add `[profile.{}] debug = 1` to Cargo.toml", build_profile.example_profile_name()));
                 if strip_override != Some(true) {
                     build_profile.override_debug = Some(if generate_dbgsym_package { "1" } else { "line-tables-only" }.into());
                     log::debug!("adding some debug symbols {:?}", build_profile.override_debug);
@@ -495,14 +509,14 @@ impl BuildEnvironment {
             ManifestDebugFlags::FullyStrippedByCargo => {
                 if separate_debug_symbols || compress_debug_symbols != CompressDebugSymbols::No {
                     listener.warning(format!("{separate_option_name} won't have any effect when Cargo is configured to strip the symbols first.\n\
-                        Remove `strip` from `[profile.{}]`", build_profile.profile_name()));
+                        Remove `strip` from `[profile.{}]`", build_profile.example_profile_name()));
                 }
                 strip_override_default.unwrap_or(DebugSymbols::Keep) // no need to launch strip
             },
             ManifestDebugFlags::SymbolsDisabled => {
                 if separate_debug_symbols || generate_dbgsym_package {
                     listener.warning(format!("{separate_option_name} won't have any effect when debug symbols are disabled\n\
-                        Add `[profile.{}] debug = \"line-tables-only\"` to Cargo.toml", build_profile.profile_name()));
+                        Add `[profile.{}] debug = \"line-tables-only\"` to Cargo.toml", build_profile.example_profile_name()));
                 }
                 // Rust still adds debug bloat from the libstd
                 strip_override_default.unwrap_or(DebugSymbols::Strip)
@@ -827,10 +841,10 @@ impl BuildEnvironment {
     }
 
     pub(crate) fn path_in_build_(&self, rel_path: &Path) -> PathBuf {
-        let mut path = self.target_dir.join(match self.build_profile.profile_name() {
-            "dev" => "debug",
-            p => p,
-        });
+        let profile = self.build_profile.profile_dir();
+        let mut path = PathBuf::with_capacity(2 + self.target_dir.as_os_str().len() + profile.as_os_str().len() + rel_path.as_os_str().len());
+        path.push(&self.target_dir);
+        path.push(profile);
         path.push(rel_path);
         path
     }
@@ -1427,7 +1441,9 @@ fn debian_package_name(crate_name: &str) -> String {
 
 impl BuildEnvironment {
     fn explicit_assets(&self, package_deb: &PackageConfig, assets: Vec<RawAssetOrAuto>, listener: &dyn Listener) -> CDResult<Assets> {
-        let custom_profile_target_dir = self.build_profile.profile_name.as_deref().map(|profile| format!("target/{profile}"));
+        let custom_profile_dir = self.build_profile.profile_dir();
+        let custom_profile_target_dir = (custom_profile_dir.as_os_str() != "release")
+            .then(|| Path::new("target").join(custom_profile_dir));
 
         let mut has_auto = false;
 
@@ -1443,7 +1459,7 @@ impl BuildEnvironment {
         }).map(|RawAsset { source_path, mut target_path, chmod }| {
             // target/release is treated as a magic prefix that resolves to any profile
             let target_artifact_rel_path = source_path.strip_prefix("target/release").ok()
-                .or_else(|| source_path.strip_prefix(custom_profile_target_dir.as_ref()?).ok());
+                .or_else(|| source_path.strip_prefix(custom_profile_target_dir.as_deref()?).ok());
             let (is_built, source_path, is_example) = if let Some(rel_path) = target_artifact_rel_path {
                 let is_example = rel_path.starts_with("examples");
                 (self.find_is_built_file_in_package(rel_path, if is_example { "example" } else { "bin" }), self.path_in_build(rel_path), is_example)

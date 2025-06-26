@@ -103,10 +103,11 @@ impl CargoDeb<'_> {
         // cargo build accordingly. you could argue that the other way around is
         // more desirable. However for now we want all commands coming in via the
         // same `interface`
-        if self.options.build_profile.profile_name() == "dev" {
+        if matches!(self.options.build_profile.profile_name(), "debug" | "dev") {
             listener.warning("dev profile is not supported and will be a hard error in the future. \
-                cargo-deb is for making releases, and it doesn't make sense to use it with dev profiles.".into());
-            listener.warning("To enable debug symbols set `[profile.release] debug = 1` instead.".into());
+                cargo-deb is for making releases, and it doesn't make sense to use it with dev profiles.\n\
+                To enable debug symbols set `[profile.release] debug = 1` instead, or use --debug-override. \
+                Cargo also supports custom profiles, you can make `[profile.dist]`, etc.".into());
         }
 
         let (config, mut package_deb) = BuildEnvironment::from_manifest(self.options, listener)?;
