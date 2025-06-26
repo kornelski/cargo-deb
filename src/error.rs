@@ -25,7 +25,7 @@ quick_error! {
             source(err)
         }
         CommandError(msg: &'static str, arg: String, reason: Vec<u8>) {
-            display("{} ({}): {}", msg, arg, String::from_utf8_lossy(reason))
+            display("{} ({}): {}", msg, arg, String::from_utf8_lossy(reason).trim_start_matches("error: "))
         }
         Str(msg: &'static str) {
             display("{}", msg)

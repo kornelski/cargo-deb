@@ -1,4 +1,7 @@
-use std::io::Write;
+use anstream::{AutoStream, ColorChoice};
+use anstyle::{Style, AnsiColor};
+use std::error::Error;
+use std::io::{Write, StderrLock};
 use std::path::Path;
 
 #[cfg_attr(test, mockall::automock)]
@@ -8,6 +11,11 @@ pub trait Listener: Send + Sync {
 
     fn progress(&self, operation: &str, detail: String) {
         self.info(format!("{operation}: {detail}"))
+    }
+
+    fn error(&self, error: &dyn Error) {
+        let mut out = std::io::stderr().lock();
+        let _ = writeln!(out, "cargo-deb: {error}");
     }
 
     /// Notified when finished writing .deb file (possibly before install)
@@ -26,28 +34,67 @@ impl Listener for NoOpListener {
 
 pub struct StdErrListener {
     pub verbose: bool,
+    pub quiet: bool,
+    pub color: ColorChoice,
 }
+
+impl StdErrListener {
+    fn label(&self, label: &str, style: Style, text: &str) {
+        let mut out = AutoStream::new(std::io::stderr(), self.color).lock();
+        self.label_locked(&mut out, label, style, text);
+    }
+
+    fn label_locked(&self, out: &mut AutoStream<StderrLock<'static>>, label: &str, style: Style, text: &str) {
+        let text = text.strip_prefix(label).and_then(|t| t.strip_prefix(": ")).unwrap_or(text);
+        let mut lines = text.lines();
+        if let Some(line) = lines.next() {
+            let _ = writeln!(*out, "{style}{label}{style:#}: {line}");
+        }
+        for line in lines {
+            let _ = writeln!(*out, "{:width$}{line}", "", width = label.len() + 2);
+        }
+    }
+}
+
 impl Listener for StdErrListener {
     fn warning(&self, s: String) {
-        let mut out = std::io::stderr().lock();
-        for (i, line) in s.lines().enumerate() {
-            let _ = writeln!(out, "{}{line}", if i == 0 { "warning: " } else { "         " });
+        if !self.quiet {
+            self.label("warning", Style::new().bold().fg_color(Some(AnsiColor::Yellow.into())), &s);
         }
     }
 
     fn info(&self, s: String) {
         if self.verbose {
-            let mut out = std::io::stderr().lock();
-            for (i, line) in s.lines().enumerate() {
-                let _ = writeln!(out, "{}{line}", if i == 0 { "info: " } else { "      " });
-            }
+            self.label("info", Style::new().bold().fg_color(Some(AnsiColor::Cyan.into())), &s);
         }
+    }
+
+    fn error(&self, err: &dyn Error) {
+        let mut cause = err.source();
+        let mut causes = String::new();
+        let mut max_causes = 3;
+        while let Some(err) = cause {
+            max_causes -= 1;
+            if max_causes == 0 {
+                break;
+            }
+            causes = format!("{err}\n\n{causes}");
+            cause = err.source();
+        }
+        let causes = causes.trim_end();
+
+        let mut out = AutoStream::new(std::io::stderr(), self.color).lock();
+        if !causes.is_empty() {
+            self.label_locked(&mut out, "error", Style::new().fg_color(Some(AnsiColor::Red.into())), causes);
+        }
+        self.label_locked(&mut out, "error", Style::new().bold().fg_color(Some(AnsiColor::Red.into())), &err.to_string());
     }
 
     fn progress(&self, operation: &str, detail: String) {
         if self.verbose {
-            let mut out = std::io::stderr().lock();
-            let _ = writeln!(out, "{operation:>12} {detail}");
+            let mut out = AutoStream::new(std::io::stderr(), self.color).lock();
+            let style = Style::new().bold().fg_color(Some(AnsiColor::Green.into()));
+            let _ = writeln!(out, "{style}{operation:>12}{style:#} {detail}");
         }
     }
 }
@@ -59,8 +106,17 @@ impl Listener for PrefixedListener<'_> {
         self.1.warning(s);
     }
 
+    fn error(&self, err: &dyn Error) {
+        self.1.error(err);
+    }
+
     fn info(&self, mut s: String) {
         s.insert_str(0, self.0);
         self.1.info(s);
+    }
+
+    fn progress(&self, operation: &str, mut s: String) {
+        s.insert_str(0, self.0);
+        self.1.progress(operation, s);
     }
 }

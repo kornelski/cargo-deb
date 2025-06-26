@@ -1,3 +1,4 @@
+use anstream::{AutoStream, ColorChoice};
 use cargo_deb::compress::{CompressConfig, Format};
 use cargo_deb::config::{BuildOptions, CompressDebugSymbols, DebugSymbolOptions, Multiarch};
 use cargo_deb::{listener, BuildProfile, CargoDeb, CargoLockingFlags};
@@ -25,6 +26,8 @@ fn main() -> ExitCode {
             .hide_short_help(true).help("Immediately install the created deb package, but without dbgsym package"))
         .arg(Arg::new("quiet").short('q').long("quiet").action(ArgAction::SetTrue).help("Don't print warnings"))
         .arg(Arg::new("verbose").short('v').long("verbose").action(ArgAction::Count).conflicts_with("quiet").help("Print progress; -vv for verbose Cargo builds"))
+        .arg(Arg::new("color").long("color").action(ArgAction::Set).value_parser(["auto", "always", "never"])
+            .hide_short_help(true).help("ANSI formatting of verbose messages"))
         .next_help_heading("Debug info")
         .arg(Arg::new("dbgsym").long("dbgsym").action(ArgAction::SetTrue)
             .hide_short_help(cargo_deb::DBGSYM_DEFAULT).help("Move debug symbols into a separate -dbgsym.ddeb package"))
@@ -111,15 +114,15 @@ fn main() -> ExitCode {
     let quiet = matches.get_flag("quiet");
     let verbose = verbose_count > 0 || (!quiet && env::var_os("RUST_LOG").is_some_and(|v| v == "debug"));
     let verbose_cargo_build = verbose_count > 1;
+    let color = matches.get_one::<String>("color").and_then(|v| match v.as_str() {
+        "always" => Some(ColorChoice::Always),
+        "never" => Some(ColorChoice::Never),
+        _ => None,
+    }).unwrap_or_else(|| AutoStream::choice(&std::io::stderr()));
 
     // Listener conditionally prints warnings
-    let (listener_tmp1, listener_tmp2);
-    let listener: &dyn listener::Listener = if quiet {
-        listener_tmp1 = listener::NoOpListener;
-        &listener_tmp1
-    } else {
-        listener_tmp2 = listener::StdErrListener { verbose };
-        &listener_tmp2
+    let listener: &dyn listener::Listener = &listener::StdErrListener {
+        verbose, quiet, color,
     };
 
     let deb_version = matches.get_one::<String>("deb-version").cloned();
@@ -195,23 +198,8 @@ fn main() -> ExitCode {
     }).process(listener) {
         Ok(()) => ExitCode::SUCCESS,
         Err(err) => {
-            print_error(&err);
+            listener.error(&err);
             ExitCode::FAILURE
         },
     }
-}
-
-#[allow(deprecated)]
-fn err_cause(err: &dyn std::error::Error, max: usize) {
-    if let Some(reason) = err.cause() {
-        eprintln!("  because: {reason}");
-        if max > 0 {
-            err_cause(reason, max - 1);
-        }
-    }
-}
-
-fn print_error(err: &dyn std::error::Error) {
-    eprintln!("cargo-deb: {err}");
-    err_cause(err, 3);
 }
