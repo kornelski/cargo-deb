@@ -122,6 +122,8 @@ impl CargoDeb<'_> {
             || package_deb.resolved_binary_dependencies(config.rust_target_triple.as_deref(), listener),
             || compressed_assets(&package_deb, listener),
         );
+
+        debug_assert!(package_deb.resolved_depends.is_none());
         package_deb.resolved_depends = Some(depends?);
         apply_compressed_assets(&mut package_deb, compressed_assets?);
 

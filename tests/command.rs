@@ -268,6 +268,7 @@ fn run_cargo_deb_command_on_example_dir() {
 
 #[test]
 #[cfg_attr(any(not(target_family = "unix"), target_os = "macos"), ignore = "needs linux objcopy")]
+#[cfg(feature = "debug-id")]
 fn run_cargo_deb_command_on_example_dir_with_separate_debug_symbols() {
     let (_cdir, ddir) = extract_built_package_from_manifest("example/Cargo.toml", DEFAULT_COMPRESSION_EXT,
         &["--separate-debug-symbols", "--no-dbgsym", "--compress-debug-symbols=zlib"]);
@@ -295,6 +296,7 @@ fn run_cargo_deb_command_on_example_dir_with_separate_debug_symbols() {
 
 #[test]
 #[cfg_attr(any(not(target_family = "unix"), target_os = "macos"), ignore = "needs linux objcopy")]
+#[cfg(feature = "debug-id")]
 fn run_cargo_deb_command_on_example_dir_with_dbgsym() {
     let (_bdir, deb_path, ddeb_path) = cargo_deb("example/Cargo.toml", &["--dbgsym", "--deb-revision=456", "--section=junk"]);
     let ddeb_path = ddeb_path.expect("dbgsym option");
@@ -328,7 +330,7 @@ fn run_cargo_deb_command_on_example_dir_with_dbgsym() {
     assert!(ddebctrl.contains("Version: 0.1.0-456\n"), "{ddebctrl}");
     assert!(ddebctrl.contains("Auto-Built-Package: debug-symbols\n"), "{ddebctrl}");
     assert!(ddebctrl.contains("Section: debug\n"), "{ddebctrl}");
-    assert!(ddebctrl.contains("Depends: example (= 0.1.0-456)\n"), "{ddebctrl}");
+    assert!(ddebctrl.contains("Recommends: example (= 0.1.0-456)\n"), "{ddebctrl}");
     assert!(ddebctrl.contains("Description: Debug symbols for example"), "{ddebctrl}");
 }
 

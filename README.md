@@ -19,15 +19,13 @@ If you get a compilation error, run `rustup update`! If you get an error running
 cargo deb
 ```
 
-Upon running `cargo deb` from the base directory of your Rust project, the Debian package will be created in `target/debian/<project_name>_<version>-1_<arch>.deb` (or you can change the location with the `--output` option). This package can be installed with `dpkg -i target/debian/*.deb`.
+When you run `cargo deb` from the base directory of your Rust/Cargo project, the Debian package will be created in `target/debian/<project_name>_<version>-1_<arch>.deb` (or you can change the location with the `--output` option).
 
-`cargo deb --install` builds and installs the project system-wide.
+This package can be installed with `dpkg -i target/debian/*.deb`. `cargo deb --install` builds and immediately installs the package on the local system.
 
 ## Optional Configuration
 
-No configuration is necessary to make a basic package from a Cargo project with a binary. This command obtains basic information it needs from [the `Cargo.toml` file](https://doc.rust-lang.org/cargo/reference/manifest.html). It uses Cargo fields: `name`, `version`, `license`, `license-file`, `description`, `readme`, and `homepage` or `repository`.
-
-For a more complete Debian package, you may also define a new table, `[package.metadata.deb]` that contains `maintainer`, `copyright`, `license-file`, `changelog`, `depends`, `conflicts`, `breaks`, `replaces`, `provides`, `extended-description`/`extended-description-file`, `section`, `priority`, and `assets`.
+No configuration is necessary to make a basic package from a Cargo project with a binary. This command obtains basic information it needs from [the `Cargo.toml` file](https://doc.rust-lang.org/cargo/reference/manifest.html). It uses Cargo fields: `name`, `version`, `license`, `license-file`, `description`, `readme`, and `homepage` or `repository`. For a more complete Debian package, you may also define a new table, `[package.metadata.deb]` that contains additional metadata (described below).
 
 For a Debian package that includes one or more systemd unit files you may also wish to define a new (inline) table, `[package.metadata.deb.systemd-units]`, so that the unit files are automatically added as assets and the units are properly installed. [Systemd integration](./systemd.md)
 

@@ -1305,6 +1305,12 @@ impl PackageConfig {
             return Ok(None);
         }
 
+        let mut recommends = Some(format!("{} (= {})", self.deb_name, self.deb_version));
+
+        // if the debug paths are ambiguous, it has to require exact dep
+        let using_build_id = debug_assets.iter().all(|asset| asset.c.target_path.components().any(|c| c.as_os_str() == ".build-id"));
+        let resolved_depends = if !using_build_id { recommends.take() } else { None };
+
         Ok(Some(Self {
             cargo_crate_name: self.cargo_crate_name.clone(),
             deb_name: format!("{}-dbgsym", self.deb_name),
@@ -1321,9 +1327,9 @@ impl PackageConfig {
             extended_description: ExtendedDescription::None,
             maintainer: self.maintainer.clone(),
             wildcard_depends: String::new(),
-            resolved_depends: Some(format!("{} (= {})", self.deb_name, self.deb_version)),
+            resolved_depends,
             pre_depends: None,
-            recommends: None,
+            recommends,
             suggests: None,
             enhances: None,
             section: Some("debug".into()),
