@@ -212,7 +212,8 @@ pub fn select_compressor(fast: bool, compress_format: Format, use_system: bool) 
 
 pub(crate) fn gzipped(mut content: &[u8]) -> io::Result<Vec<u8>> {
     let mut compressed = Vec::new();
-    compressed.try_reserve(content.len() * 2 / 3)?;
+    compressed.try_reserve(content.len() * 2 / 3)
+        .map_err(|_| io::ErrorKind::OutOfMemory)?;
     let mut encoder = GzipEncoder::new(
         Options {
             iteration_count: 7.try_into().unwrap(),
