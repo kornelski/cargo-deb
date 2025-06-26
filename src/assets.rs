@@ -411,7 +411,7 @@ pub fn compressed_assets(package_deb: &PackageConfig, listener: &dyn Listener) -
             let mut file_name = orig_asset.c.target_path.file_name().map(|f| f.to_string_lossy().into_owned()).unwrap_or_default();
             file_name.push_str(".gz");
             let new_path = orig_asset.c.target_path.with_file_name(file_name);
-            listener.info(format!("Compressing '{}'", new_path.display()));
+            listener.progress("Compressing", format!("'{}'", new_path.display()));
             CDResult::Ok((idx, Asset::new(
                 crate::assets::AssetSource::Data(gzipped(&orig_asset.source.data()?)?),
                 new_path,
@@ -541,7 +541,7 @@ mod tests {
     #[test]
     fn add_systemd_assets_with_no_config_does_nothing() {
         let mut mock_listener = crate::listener::MockListener::new();
-        mock_listener.expect_info().return_const(());
+        mock_listener.expect_progress().return_const(());
 
         // supply a systemd unit file as if it were available on disk
         let _g = add_test_fs_paths(&[to_canon_static_str("cargo-deb.service")]);
@@ -568,7 +568,7 @@ mod tests {
     #[test]
     fn add_systemd_assets_with_config_adds_unit_assets() {
         let mut mock_listener = crate::listener::MockListener::new();
-        mock_listener.expect_info().return_const(());
+        mock_listener.expect_progress().return_const(());
 
         // supply a systemd unit file as if it were available on disk
         let _g = add_test_fs_paths(&[to_canon_static_str("cargo-deb.service")]);

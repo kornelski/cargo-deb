@@ -171,7 +171,7 @@ pub(crate) fn autoscript(
     let outfile_ext = if service_order { "service" } else { "debhelper" };
     let outfile = format!("{package}.{script}.{outfile_ext}");
 
-    listener.info(format!("Maintainer script {script} will be augmented with autoscript {snippet_filename}"));
+    listener.progress("Applying", format!("autoscript {snippet_filename} to maintainer script {script}"));
 
     if scripts.contains_key(&outfile) && (script == "postrm" || script == "prerm") {
         if !replacements.is_empty() {
@@ -267,7 +267,7 @@ fn debhelper_script_subst(user_scripts_dir: &Path, scripts: &mut ScriptFragments
     }
 
     if let Some(user_file_path) = user_file {
-        listener.info(format!("Augmenting maintainer script {}", user_file_path.display()));
+        listener.progress("Augmenting", format!("maintainer script {}", user_file_path.display()));
 
         // merge the generated scripts if they exist into the user script
         // if no generated script exists, we still need to remove #DEBHELPER# if
@@ -279,7 +279,7 @@ fn debhelper_script_subst(user_scripts_dir: &Path, scripts: &mut ScriptFragments
         }
         scripts.insert(script.into(), new_text.into());
     } else if !generated_text.is_empty() {
-        listener.info(format!("Generating maintainer script {script}"));
+        listener.progress("Generating", format!("maintainer script {script}"));
 
         // give it a shebang header and rename it
         let mut new_text = String::new();
@@ -410,7 +410,7 @@ mod tests {
 
     fn autoscript_test_wrapper(pkg: &str, script: &str, snippet: &str, unit: &str, scripts: Option<ScriptFragments>) -> ScriptFragments {
         let mut mock_listener = crate::listener::MockListener::new();
-        mock_listener.expect_info().times(1).return_const(());
+        mock_listener.expect_progress().times(1).return_const(());
         let mut scripts = scripts.unwrap_or_default();
         let replacements = map! { "UNITFILES" => unit.to_owned() };
         autoscript(&mut scripts, pkg, script, snippet, &replacements, false, &mock_listener).unwrap();
@@ -427,7 +427,7 @@ mod tests {
     #[should_panic(expected = "not implemented")]
     fn autoscript_panics_in_sed_mode() {
         let mut mock_listener = crate::listener::MockListener::new();
-        mock_listener.expect_info().times(1).return_const(());
+        mock_listener.expect_progress().times(1).return_const(());
         let mut scripts = ScriptFragments::new();
 
         // sed mode is when no search -> replacement pairs are defined
@@ -556,7 +556,7 @@ mod tests {
     #[test]
     fn autoscript_check_service_order() {
         let mut mock_listener = crate::listener::MockListener::new();
-        mock_listener.expect_info().return_const(());
+        mock_listener.expect_progress().return_const(());
         let replacements = map! { "UNITFILES" => "someunit".to_owned() };
 
         let in_out = vec![(false, "debhelper"), (true, "service")];
@@ -604,7 +604,7 @@ mod tests {
         set_test_fs_path_content("myscript", invalid_user_file);
 
         let mut mock_listener = crate::listener::MockListener::new();
-        mock_listener.expect_info().times(1).return_const(());
+        mock_listener.expect_progress().times(1).return_const(());
 
         let mut scripts = ScriptFragments::new();
 
@@ -622,7 +622,7 @@ mod tests {
         set_test_fs_path_content("myscript", valid_user_file);
 
         let mut mock_listener = crate::listener::MockListener::new();
-        mock_listener.expect_info().times(1).return_const(());
+        mock_listener.expect_progress().times(1).return_const(());
 
         let mut scripts = ScriptFragments::new();
 
@@ -640,7 +640,7 @@ mod tests {
     fn debhelper_script_subst_with_generated_file_only() {
         let _g = add_test_fs_paths(&[]);
         let mut mock_listener = crate::listener::MockListener::new();
-        mock_listener.expect_info().times(1).return_const(());
+        mock_listener.expect_progress().times(1).return_const(());
 
         let mut scripts = ScriptFragments::new();
         scripts.insert("mypkg.myscript.debhelper".to_owned(), b"injected".to_vec());
@@ -662,7 +662,7 @@ mod tests {
         set_test_fs_path_content("myscript", valid_user_file);
 
         let mut mock_listener = crate::listener::MockListener::new();
-        mock_listener.expect_info().times(1).return_const(());
+        mock_listener.expect_progress().times(1).return_const(());
 
         let mut scripts = ScriptFragments::new();
         scripts.insert("mypkg.myscript.debhelper".to_owned(), b"injected".to_vec());
@@ -693,7 +693,7 @@ mod tests {
         set_test_fs_path_content(maintainer_script, valid_user_file);
 
         let mut mock_listener = crate::listener::MockListener::new();
-        mock_listener.expect_info().times(1).return_const(());
+        mock_listener.expect_progress().times(1).return_const(());
 
         let mut scripts = ScriptFragments::new();
         scripts.insert(format!("mypkg.{maintainer_script}.debhelper"), b"first".to_vec());
@@ -729,7 +729,7 @@ mod tests {
         set_test_fs_path_content("myscript", format!("error:{error}"));
 
         let mut mock_listener = crate::listener::MockListener::new();
-        mock_listener.expect_info().times(1).return_const(());
+        mock_listener.expect_progress().times(1).return_const(());
 
         let mut scripts = ScriptFragments::new();
 
@@ -762,7 +762,7 @@ mod tests {
         }
 
         let mut mock_listener = crate::listener::MockListener::new();
-        mock_listener.expect_info().times(scripts.len()).return_const(());
+        mock_listener.expect_progress().times(scripts.len()).return_const(());
 
         apply(Path::new(""), &mut ScriptFragments::new(), "mypkg", None, &mock_listener).unwrap();
     }

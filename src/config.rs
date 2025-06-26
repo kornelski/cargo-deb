@@ -579,7 +579,7 @@ impl BuildEnvironment {
             cmd.arg("--verbose");
         }
         if verbose {
-            listener.info(format!("cargo {}{}",
+            listener.progress("Running", format!("cargo {}{}",
                 cmd.get_args().map(|arg| {
                     let arg = arg.to_string_lossy();
                     if arg.as_bytes().iter().any(|b| b.is_ascii_whitespace()) {

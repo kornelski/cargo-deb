@@ -281,8 +281,8 @@ pub fn write_deb(config: &BuildEnvironment, deb_output_path: PathBuf, package_de
 
     let compressed_size = data_compressed.len() + compressed_control_size;
     let original_size = original_data_size + compressed_control_size; // doesn't track control size
-    listener.info(format!(
-        "{}KB compressed to {}KB (by {}%)",
+    listener.progress("Compressed", format!(
+        "{}KB to {}KB (by {}%)",
         original_data_size / 1000,
         compressed_size / 1000,
         (original_size.saturating_sub(compressed_size)) * 100 / original_size,

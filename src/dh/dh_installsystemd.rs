@@ -274,7 +274,7 @@ pub fn generate(package: &str, assets: &[Asset], options: &Options, listener: &d
 
         // for each unit that we have not yet processed
         for unit in &units {
-            listener.info(format!("Determining augmentations needed for systemd unit {unit}"));
+            listener.progress("Checking", format!("augmentations needed for systemd unit {unit}"));
 
             // the unit has to be started
             start_units.insert(unit.clone());
@@ -605,7 +605,7 @@ mod tests {
         let tmp_file_path = PathBuf::from(format!("debian/{TMP_FILE_NAME}"));
 
         let mut mock_listener = crate::listener::MockListener::new();
-        mock_listener.expect_info().times(1).return_const(());
+        mock_listener.expect_progress().times(1).return_const(());
 
         let assets = vec![Asset::new(
             AssetSource::Path(tmp_file_path),
@@ -776,7 +776,7 @@ mod tests {
 
         // setup mocks
         let mut mock_listener = crate::listener::MockListener::new();
-        mock_listener.expect_info().return_const(());
+        mock_listener.expect_progress().return_const(());
 
         // start_units: yes
         // enable_units: no, no [Install] section in the unit file

@@ -6,6 +6,10 @@ pub trait Listener: Send + Sync {
     fn warning(&self, s: String);
     fn info(&self, s: String);
 
+    fn progress(&self, operation: &str, detail: String) {
+        self.info(format!("{operation}: {detail}"))
+    }
+
     /// Notified when finished writing .deb file (possibly before install)
     fn generated_archive(&self, path: &Path) {
         println!("{}", path.display());
@@ -16,6 +20,7 @@ pub struct NoOpListener;
 impl Listener for NoOpListener {
     fn info(&self, _s: String) {}
     fn warning(&self, _s: String) {}
+    fn progress(&self, _op: &str, _s: String) {}
     fn generated_archive(&self, _: &Path) {}
 }
 
@@ -36,6 +41,13 @@ impl Listener for StdErrListener {
             for (i, line) in s.lines().enumerate() {
                 let _ = writeln!(out, "{}{line}", if i == 0 { "info: " } else { "      " });
             }
+        }
+    }
+
+    fn progress(&self, operation: &str, detail: String) {
+        if self.verbose {
+            let mut out = std::io::stderr().lock();
+            let _ = writeln!(out, "{operation:>12} {detail}");
         }
     }
 }

@@ -134,7 +134,7 @@ fn log_asset(asset: &Asset, log_display_base_dir: &Path, listener: &dyn Listener
     } else {
         "Adding"
     };
-    let mut log_line = format!("{operation} '{}' {}-> {}",
+    let mut log_line = format!("'{}' {}-> {}",
         asset.processed_from.as_ref().and_then(|p| p.original_path.as_deref()).or(asset.source.path())
             .map(|p| p.strip_prefix(log_display_base_dir).unwrap_or(p))
             .unwrap_or_else(|| Path::new("-")).display(),
@@ -146,7 +146,7 @@ fn log_asset(asset: &Asset, log_display_base_dir: &Path, listener: &dyn Listener
         use std::fmt::Write;
         let _ = write!(&mut log_line, " ({size}{unit})");
     }
-    listener.info(log_line);
+    listener.progress(operation, log_line);
 }
 
 fn human_size(len: u64) -> (u64, &'static str) {

@@ -117,7 +117,7 @@ impl<'l, W: Write> ControlArchiveBuilder<'l, W> {
 
     fn add_file_with_log(&mut self, name: &Path, contents: &[u8], permissions: u32, source_path: Option<&Path>) -> CDResult<()> {
         let source_path = source_path.and_then(|s| s.to_str()).unwrap_or("-");
-        self.listener.info(format!("Adding '{}' control-> {}", source_path, name.display()));
+        self.listener.progress("Adding", format!("'{}' control-> {}", source_path, name.display()));
         self.archive.file(name, contents, permissions)
     }
 
@@ -207,7 +207,7 @@ mod tests {
     fn prepare<'l, W: Write>(dest: W, package_name: Option<&str>, mock_listener: &'l mut MockListener) -> (BuildEnvironment, PackageConfig, ControlArchiveBuilder<'l, W>) {
         use crate::config::BuildOptions;
 
-        mock_listener.expect_info().return_const(());
+        mock_listener.expect_progress().return_const(());
 
         let (mut config, package_deb) = BuildEnvironment::from_manifest(
             BuildOptions {

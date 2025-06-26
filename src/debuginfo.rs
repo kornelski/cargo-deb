@@ -144,13 +144,13 @@ pub fn strip_binaries(config: &BuildEnvironment, package_deb: &mut PackageConfig
                 None // no new asset
             };
 
-            listener.info(if separate_debug_symbols && new_debug_asset.is_some() {
-                format!("Extracted debug info from '{}'", path.display())
+            if separate_debug_symbols && new_debug_asset.is_some() {
+                listener.progress("Extracted", format!("Extracted debug info from '{}'", path.display()));
             } else if !separate_debug_symbols && asked_for_dbgsym_package {
-                format!("No debug info in '{}'", path.display())
+                listener.info(format!("No debug info in '{}'", path.display()));
             } else {
-                format!("Stripped '{}'", path.display())
-            });
+                listener.progress("Stripped", format!("'{}'", path.display()));
+            }
 
             (AssetSource::Path(stripped_temp_path), new_debug_asset)
         } else {
