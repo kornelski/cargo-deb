@@ -374,10 +374,16 @@ impl BuildEnvironment {
         let selected_profile = build_profile.profile_name();
         let package_profile = find_profile(&manifest, selected_profile);
         let root_profile = root_manifest.as_ref().and_then(|m| find_profile(m, selected_profile));
-        if package_profile.is_some() && root_profile.is_some() {
+        if package_profile.is_some() && workspace_root_manifest_path != manifest_path {
             let rel_path = workspace_root_manifest_path.parent().and_then(|base| manifest_path.strip_prefix(base).ok()).unwrap_or(&manifest_path);
-            listener.warning(format!("The [profile.{selected_profile}] is in both the package and the root workspace.\n\
-                Picking root ({}) over the package ({}) for compatibility with Cargo", workspace_root_manifest_path.display(), rel_path.display()));
+            if root_profile.is_some() {
+                listener.warning(format!("The [profile.{selected_profile}] is in both the package and the root workspace.\n\
+                    Picking root ({}) over the package ({}) for compatibility with Cargo", workspace_root_manifest_path.display(), rel_path.display()));
+            } else if root_manifest.is_some() {
+                listener.warning(format!("The [profile.{selected_profile}] should be defined in {}, not in {}\n\
+                    Cargo only uses profiles from the workspace root. See --override-debug and --override-lto options.",
+                    workspace_root_manifest_path.display(), rel_path.display()));
+            }
         }
         drop(workspace_root_manifest_path);
 
