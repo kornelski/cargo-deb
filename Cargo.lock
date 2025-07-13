@@ -87,7 +87,7 @@ checksum = "46c5e41b57b8bba42a04676d81cb89e9ee8e859a1a66f80a5a72e1cb76b34d43"
 
 [[package]]
 name = "cargo-deb"
-version = "3.2.0"
+version = "3.2.1"
 dependencies = [
  "anstream",
  "anstyle",
