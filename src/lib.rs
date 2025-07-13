@@ -176,12 +176,10 @@ impl CargoDeb<'_> {
         listener.generated_archive(&generated_deb);
 
         if self.install {
-            install_deb(&generated_deb)?;
-
-            if !self.install_without_dbgsym {
-                if let Some(dbgsym_ddeb) = &generated_dbgsym_ddeb {
-                    install_deb(dbgsym_ddeb)?;
-                }
+            if let Some(dbgsym_ddeb) = generated_dbgsym_ddeb.as_deref().filter(|_| !self.install_without_dbgsym) {
+                install_debs(&[&generated_deb, dbgsym_ddeb])?;
+            } else {
+                install_debs(&[&generated_deb])?;
             }
         }
         Ok(())
@@ -230,26 +228,29 @@ impl Default for CargoDeb<'_> {
 }
 
 /// Run `dpkg` to install `deb` archive at the given path
-pub fn install_deb(path: &Path) -> CDResult<()> {
+pub fn install_debs(paths: &[&Path]) -> CDResult<()> {
     let no_sudo = std::env::var_os("EUID").or_else(|| std::env::var_os("UID")).is_some_and(|v| v == "0");
-    match install_deb_inner(path, no_sudo) {
+    match install_debs_inner(paths, no_sudo) {
         Err(CargoDebError::CommandFailed(_, "sudo")) => {
-            install_deb_inner(path, true)
+            install_debs_inner(paths, true)
         },
         res => res
     }
 }
 
-fn install_deb_inner(path: &Path, no_sudo: bool) -> CDResult<()> {
-    let args = ["dpkg".as_ref(), "-i".as_ref(), path.as_os_str()];
-    let (cmd, args) = if no_sudo {
+fn install_debs_inner(paths: &[&Path], no_sudo: bool) -> CDResult<()> {
+    let args = ["dpkg", "-i", "--"];
+    let (exe, args) = if no_sudo {
         ("dpkg", &args[1..])
     } else {
         ("sudo", &args[..])
     };
-    log::debug!("{cmd} {args:?}");
-    let status = Command::new(cmd).args(args).status()
-        .map_err(|e| CargoDebError::CommandFailed(e, cmd))?;
+    let mut cmd = Command::new(exe);
+    cmd.args(args);
+    cmd.args(paths);
+    log::debug!("{exe} {:?}", cmd.get_args());
+    let status = cmd.status()
+        .map_err(|e| CargoDebError::CommandFailed(e, "dpkg"))?;
     if !status.success() {
         return Err(CargoDebError::InstallFailed(status));
     }
