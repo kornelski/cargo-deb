@@ -72,6 +72,7 @@ impl<'l, W: Write> ControlArchiveBuilder<'l, W> {
                         &package_deb.assets.resolved,
                         &dh_installsystemd::Options::from(systemd_units_config),
                         self.listener,
+                        systemd_units_config.usr_merge.unwrap_or(false)
                     )?;
 
                     // Get Option<&str> from Option<String>

@@ -239,7 +239,12 @@ fn unquote(s: &str) -> &str {
 ///
 /// See:
 ///   <https://git.launchpad.net/ubuntu/+source/debhelper/tree/dh_installsystemd?h=applied/12.10ubuntu1#n288>
-pub fn generate(package: &str, assets: &[Asset], options: &Options, listener: &dyn Listener) -> CDResult<ScriptFragments> {
+pub fn generate(package: &str, assets: &[Asset], options: &Options, listener: &dyn Listener, usr_merge: bool) -> CDResult<ScriptFragments> {
+    let systemd_system_dir = match usr_merge {
+        true => USR_LIB_SYSTEMD_SYSTEM_DIR,
+        false => LIB_SYSTEMD_SYSTEM_DIR
+    };
+
     let mut scripts = ScriptFragments::new();
 
     // add postinst code blocks to handle tmpfiles
@@ -273,7 +278,7 @@ pub fn generate(package: &str, assets: &[Asset], options: &Options, listener: &d
     installed_non_template_units.extend(
         assets
             .iter()
-            .filter(|a| a.c.target_path.parent() == Some(LIB_SYSTEMD_SYSTEM_DIR.as_ref()))
+            .filter(|a| a.c.target_path.parent() == Some(systemd_system_dir.as_ref()))
             .filter_map(|a| fname_from_path(a.c.target_path.as_path()))
             .filter(|fname| !fname.contains('@')),
     );
@@ -304,7 +309,7 @@ pub fn generate(package: &str, assets: &[Asset], options: &Options, listener: &d
             start_units.insert(unit.clone());
 
             // get the unit file contents
-            let needle = Path::new(LIB_SYSTEMD_SYSTEM_DIR).join(unit);
+            let needle = Path::new(systemd_system_dir).join(unit);
             let data = assets.iter().find(move |&item| item.c.target_path == needle).unwrap().source.data()?;
             let reader = data.into_owned();
 
@@ -567,7 +572,7 @@ mod tests {
         let mut mock_listener = crate::listener::MockListener::new();
         mock_listener.expect_info().times(0).return_const(());
 
-        let fragments = generate("", &[], &Options::default(), &mock_listener).unwrap();
+        let fragments = generate("", &[], &Options::default(), &mock_listener, false).unwrap();
 
         assert!(fragments.is_empty());
     }
@@ -585,7 +590,7 @@ mod tests {
             AssetKind::Any,
         )];
 
-        let fragments = generate("mypkg", &assets, &Options::default(), &mock_listener).unwrap();
+        let fragments = generate("mypkg", &assets, &Options::default(), &mock_listener, false).unwrap();
         assert!(fragments.is_empty());
     }
 
@@ -602,7 +607,7 @@ mod tests {
             AssetKind::Any,
         )];
 
-        assert!(generate("mypkg", &assets, &Options::default(), &mock_listener).is_err());
+        assert!(generate("mypkg", &assets, &Options::default(), &mock_listener, false).is_err());
     }
 
     #[test]
@@ -618,7 +623,7 @@ mod tests {
             AssetKind::Any,
         )];
 
-        assert!(generate("mypkg", &assets, &Options::default(), &mock_listener).is_err());
+        assert!(generate("mypkg", &assets, &Options::default(), &mock_listener, false).is_err());
     }
 
     #[test]
@@ -639,7 +644,7 @@ mod tests {
             AssetKind::Any,
         )];
 
-        let fragments = generate("mypkg", &assets, &Options::default(), &mock_listener).unwrap();
+        let fragments = generate("mypkg", &assets, &Options::default(), &mock_listener, false).unwrap();
         assert_eq!(1, fragments.len());
 
         let (fragment_name, fragment_bytes) = fragments.into_iter().next().unwrap();
@@ -690,7 +695,7 @@ mod tests {
             AssetKind::Any,
         )];
 
-        let fragments = generate("mypkg", &assets, &Options::default(), &mock_listener).unwrap();
+        let fragments = generate("mypkg", &assets, &Options::default(), &mock_listener, false).unwrap();
         assert_eq!(0, fragments.len());
     }
 
@@ -707,7 +712,7 @@ mod tests {
             AssetKind::Any,
         )];
 
-        let fragments = generate("mypkg", &assets, &Options::default(), &mock_listener).unwrap();
+        let fragments = generate("mypkg", &assets, &Options::default(), &mock_listener, false).unwrap();
         assert_eq!(0, fragments.len());
     }
 
@@ -725,7 +730,7 @@ mod tests {
             AssetKind::Any,
         )];
 
-        let fragments = generate("mypkg", &assets, &Options::default(), &mock_listener).unwrap();
+        let fragments = generate("mypkg", &assets, &Options::default(), &mock_listener, false).unwrap();
         assert_eq!(0, fragments.len());
     }
 
@@ -835,7 +840,7 @@ WantedBy=multi-user.target");
         ]);
 
         // generate!
-        let fragments = generate("mypkg", &assets, &options, &mock_listener).unwrap();
+        let fragments = generate("mypkg", &assets, &options, &mock_listener, false).unwrap();
 
         // verify, though don't verify creation of autoscript fragments as that
         // is verified in tests of the lower level functionality, instead verify
