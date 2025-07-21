@@ -38,8 +38,9 @@ use crate::{CDResult, CargoDebError};
 ///            If this exists, it is installed into usr/lib/tmpfiles.d/ in the
 ///            package build directory. Note that the "tmpfiles.d" mechanism is
 ///            currently only used by systemd.
-const LIB_SYSTEMD_SYSTEM_DIR: &str = "lib/systemd/system/";
 const USR_LIB_TMPFILES_D_DIR: &str = "usr/lib/tmpfiles.d/";
+
+const LIB_SYSTEMD_SYSTEM_DIR: &str = "lib/systemd/system/";
 const SYSTEMD_UNIT_FILE_INSTALL_MAPPINGS: [(&str, &str, &str); 12] = [
     ("",  "mount",   LIB_SYSTEMD_SYSTEM_DIR),
     ("",  "path",    LIB_SYSTEMD_SYSTEM_DIR),
@@ -52,6 +53,24 @@ const SYSTEMD_UNIT_FILE_INSTALL_MAPPINGS: [(&str, &str, &str); 12] = [
     ("@", "target",  LIB_SYSTEMD_SYSTEM_DIR),
     ("",  "timer",   LIB_SYSTEMD_SYSTEM_DIR),
     ("@", "timer",   LIB_SYSTEMD_SYSTEM_DIR),
+    ("",  "tmpfile", USR_LIB_TMPFILES_D_DIR),
+];
+
+/// For Debian Trixie and higher
+/// see https://wiki.debian.org/UsrMerge
+const USR_LIB_SYSTEMD_SYSTEM_DIR: &str = "usr/lib/systemd/system/";
+const USR_SYSTEMD_UNIT_FILE_INSTALL_MAPPINGS: [(&str, &str, &str); 12] = [
+    ("",  "mount",   USR_LIB_SYSTEMD_SYSTEM_DIR),
+    ("",  "path",    USR_LIB_SYSTEMD_SYSTEM_DIR),
+    ("@", "path",    USR_LIB_SYSTEMD_SYSTEM_DIR),
+    ("",  "service", USR_LIB_SYSTEMD_SYSTEM_DIR),
+    ("@", "service", USR_LIB_SYSTEMD_SYSTEM_DIR),
+    ("",  "socket",  USR_LIB_SYSTEMD_SYSTEM_DIR),
+    ("@", "socket",  USR_LIB_SYSTEMD_SYSTEM_DIR),
+    ("",  "target",  USR_LIB_SYSTEMD_SYSTEM_DIR),
+    ("@", "target",  USR_LIB_SYSTEMD_SYSTEM_DIR),
+    ("",  "timer",   USR_LIB_SYSTEMD_SYSTEM_DIR),
+    ("@", "timer",   USR_LIB_SYSTEMD_SYSTEM_DIR),
     ("",  "tmpfile", USR_LIB_TMPFILES_D_DIR),
 ];
 
@@ -133,10 +152,15 @@ pub struct Options {
 ///   <https://git.launchpad.net/ubuntu/+source/debhelper/tree/dh_installsystemd?h=applied/12.10ubuntu1#n264>
 ///   <https://git.launchpad.net/ubuntu/+source/debhelper/tree/dh_installsystemd?h=applied/12.10ubuntu1#n198>
 ///   <https://git.launchpad.net/ubuntu/+source/debhelper/tree/lib/Debian/Debhelper/Dh_Lib.pm?h=applied/12.10ubuntu1#n957>
-pub fn find_units(dir: &Path, main_package: &str, unit_name: Option<&str>) -> PackageUnitFiles {
+pub fn find_units(dir: &Path, main_package: &str, unit_name: Option<&str>, usr_merge: bool) -> PackageUnitFiles {
     let mut installables = HashMap::new();
 
-    for (package_suffix, unit_type, install_dir) in &SYSTEMD_UNIT_FILE_INSTALL_MAPPINGS {
+    let mappings = match usr_merge {
+        true => &USR_SYSTEMD_UNIT_FILE_INSTALL_MAPPINGS,
+        false => &SYSTEMD_UNIT_FILE_INSTALL_MAPPINGS
+    };
+
+    for (package_suffix, unit_type, install_dir) in mappings {
         let package_name = &format!("{main_package}{package_suffix}");
         if let Some(src_path) = pkgfile(dir, main_package, package_name, unit_type, unit_name) {
             // .tmpfile files should be installed in a different directory and
@@ -456,7 +480,7 @@ mod tests {
 
     #[test]
     fn find_units_in_empty_dir_finds_nothing() {
-        let pkg_unit_files = find_units(Path::new(""), "mypkg", None);
+        let pkg_unit_files = find_units(Path::new(""), "mypkg", None, false);
         assert!(pkg_unit_files.is_empty());
     }
 
@@ -484,7 +508,7 @@ mod tests {
             "debian/mypkg.tmpfile",
             "debian/mypkg.myunit.service", // demonstrates lack of unit name
         ]);
-        let pkg_unit_files = find_units(Path::new("debian"), "mypkg", None);
+        let pkg_unit_files = find_units(Path::new("debian"), "mypkg", None, false);
         assert_eq_found_unit(&pkg_unit_files, "lib/systemd/system/mypkg.mount",   "debian/mypkg.mount");
         assert_eq_found_unit(&pkg_unit_files, "lib/systemd/system/mypkg@.path",   "debian/mypkg@.path");
         assert_eq_found_unit(&pkg_unit_files, "lib/systemd/system/mypkg.service", "debian/service");
@@ -523,7 +547,7 @@ mod tests {
             "mypkg.myunit.postinit",
         ]);
 
-        let pkg_unit_files = find_units(Path::new("debian"), "mypkg", Some("myunit"));
+        let pkg_unit_files = find_units(Path::new("debian"), "mypkg", Some("myunit"), false);
         // note the "myunit" target names, even when the match was less specific
         assert_eq_found_unit(&pkg_unit_files, "lib/systemd/system/myunit.mount",   "debian/mypkg.myunit.mount");
         assert_eq_found_unit(&pkg_unit_files, "lib/systemd/system/myunit@.path",   "debian/mypkg@.myunit.path");

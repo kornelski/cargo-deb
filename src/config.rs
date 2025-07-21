@@ -804,10 +804,11 @@ impl BuildEnvironment {
                 if let Some(unit_dir) = units_dir_option {
                     let search_path = self.path_in_package(unit_dir);
                     let unit_name = config.unit_name.as_deref();
+                    let usr_merge = config.usr_merge.unwrap_or(false);
 
-                    let mut units = dh_installsystemd::find_units(&search_path, &package_deb.deb_name, unit_name);
+                    let mut units = dh_installsystemd::find_units(&search_path, &package_deb.deb_name, unit_name, usr_merge);
                     if package_deb.deb_name != package_deb.cargo_crate_name {
-                        let fallback_units = dh_installsystemd::find_units(&search_path, &package_deb.cargo_crate_name, unit_name);
+                        let fallback_units = dh_installsystemd::find_units(&search_path, &package_deb.cargo_crate_name, unit_name, usr_merge);
                         if !fallback_units.is_empty() && fallback_units != units {
                             let unit_name_info = unit_name.unwrap_or("<unit_name unspecified>");
                             if units.is_empty() {

@@ -33,6 +33,7 @@ pub(crate) struct SystemdUnitsConfig {
     pub start: Option<bool>,
     pub restart_after_upgrade: Option<bool>,
     pub stop_on_upgrade: Option<bool>,
+    pub usr_merge: Option<bool>,
 }
 
 #[derive(PartialEq, Copy, Clone, Debug)]
