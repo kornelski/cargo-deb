@@ -13,6 +13,8 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
+pub const USR_MERGE_DEFAULT: bool = false;
+
 /// Configuration settings for the `systemd_units` functionality.
 ///
 /// `unit_scripts`: (optional) relative path to a directory containing correctly

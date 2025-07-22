@@ -6,7 +6,7 @@ use crate::dh::dh_installsystemd;
 use crate::error::{CDResult, CargoDebError};
 use crate::listener::Listener;
 use crate::parse::cargo::CargoConfig;
-use crate::parse::manifest::{cargo_metadata, debug_flags, find_profile, manifest_version_string};
+use crate::parse::manifest::{self, cargo_metadata, debug_flags, find_profile, manifest_version_string};
 use crate::parse::manifest::{CargoDeb, CargoDebAssetArrayOrTable, CargoMetadataTarget, CargoPackageMetadata, ManifestFound};
 use crate::parse::manifest::{DependencyList, SystemUnitsSingleOrMultiple, SystemdUnitsConfig, LicenseFile, ManifestDebugFlags};
 use crate::util::wordsplit::WordSplit;
@@ -804,7 +804,7 @@ impl BuildEnvironment {
                 if let Some(unit_dir) = units_dir_option {
                     let search_path = self.path_in_package(unit_dir);
                     let unit_name = config.unit_name.as_deref();
-                    let usr_merge = config.usr_merge.unwrap_or(false);
+                    let usr_merge = config.usr_merge.unwrap_or(manifest::USR_MERGE_DEFAULT);
 
                     let mut units = dh_installsystemd::find_units(&search_path, &package_deb.deb_name, unit_name, usr_merge);
                     if package_deb.deb_name != package_deb.cargo_crate_name {

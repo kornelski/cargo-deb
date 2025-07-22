@@ -3,6 +3,7 @@ use crate::deb::tar::Tarball;
 use crate::dh::{dh_installsystemd, dh_lib};
 use crate::error::{CDResult, CargoDebError};
 use crate::listener::Listener;
+use crate::parse::manifest;
 use crate::util::{is_path_file, read_file_to_bytes};
 use dh_lib::ScriptFragments;
 use std::fs;
@@ -72,7 +73,7 @@ impl<'l, W: Write> ControlArchiveBuilder<'l, W> {
                         &package_deb.assets.resolved,
                         &dh_installsystemd::Options::from(systemd_units_config),
                         self.listener,
-                        systemd_units_config.usr_merge.unwrap_or(false)
+                        systemd_units_config.usr_merge.unwrap_or(manifest::USR_MERGE_DEFAULT)
                     )?;
 
                     // Get Option<&str> from Option<String>

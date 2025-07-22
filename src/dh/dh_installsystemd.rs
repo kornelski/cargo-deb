@@ -59,7 +59,7 @@ const SYSTEMD_UNIT_FILE_INSTALL_MAPPINGS: [(&str, &str, &str); 12] = [
 /// For Debian Trixie and higher
 /// see https://wiki.debian.org/UsrMerge
 const USR_LIB_SYSTEMD_SYSTEM_DIR: &str = "usr/lib/systemd/system/";
-const USR_SYSTEMD_UNIT_FILE_INSTALL_MAPPINGS: [(&str, &str, &str); 12] = [
+const USR_LIB_SYSTEMD_UNIT_FILE_INSTALL_MAPPINGS: [(&str, &str, &str); 12] = [
     ("",  "mount",   USR_LIB_SYSTEMD_SYSTEM_DIR),
     ("",  "path",    USR_LIB_SYSTEMD_SYSTEM_DIR),
     ("@", "path",    USR_LIB_SYSTEMD_SYSTEM_DIR),
@@ -156,7 +156,7 @@ pub fn find_units(dir: &Path, main_package: &str, unit_name: Option<&str>, usr_m
     let mut installables = HashMap::new();
 
     let mappings = match usr_merge {
-        true => &USR_SYSTEMD_UNIT_FILE_INSTALL_MAPPINGS,
+        true => &USR_LIB_SYSTEMD_UNIT_FILE_INSTALL_MAPPINGS,
         false => &SYSTEMD_UNIT_FILE_INSTALL_MAPPINGS
     };
 
