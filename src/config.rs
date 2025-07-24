@@ -734,7 +734,7 @@ impl BuildEnvironment {
     /// Generates the copyright file from the license file and adds that to the tar archive.
     fn generate_copyright_asset(&self, package_deb: &PackageConfig) -> CDResult<(PathBuf, (String, bool))> {
         Ok(if let Some(path) = &package_deb.license_file_rel_path {
-            let source_path = self.path_in_package(path);
+            let source_path = self.path_in_cargo_crate(path);
             let license_string = fs::read_to_string(&source_path)
                 .map_err(|e| CargoDebError::IoFile("unable to read license file", e, path.clone()))?;
 
@@ -779,7 +779,7 @@ impl BuildEnvironment {
     /// Generates compressed changelog file
     fn generate_changelog_asset(&self, package_deb: &PackageConfig) -> CDResult<Option<(PathBuf, Vec<u8>)>> {
         if let Some(ref path) = package_deb.changelog {
-            let source_path = self.path_in_package(path);
+            let source_path = self.path_in_cargo_crate(path);
             let changelog = fs::read(&source_path)
                 .and_then(|content| {
                     // allow pre-compressed
@@ -797,12 +797,19 @@ impl BuildEnvironment {
     }
 
     fn add_systemd_assets(&self, package_deb: &mut PackageConfig, listener: &dyn Listener) -> CDResult<()> {
+        let maintainer_scripts_dir = package_deb.maintainer_scripts_rel_path.as_ref()
+            .map(|dir| self.path_in_cargo_crate(dir))
+            .inspect(|dir| {
+                if !dir.is_dir() {
+                    listener.warning(format!("maintainer-scripts directory not found: {}", dir.display()));
+                }
+            });
+
         if let Some(ref config_vec) = package_deb.systemd_units {
             for config in config_vec {
-                let units_dir_option = config.unit_scripts.as_ref()
-                    .or(package_deb.maintainer_scripts_rel_path.as_ref());
-                if let Some(unit_dir) = units_dir_option {
-                    let search_path = self.path_in_package(unit_dir);
+                let units_dir_option = config.unit_scripts.as_ref().map(|dir| self.path_in_cargo_crate(dir));
+                if let Some(unit_dir) = units_dir_option.as_ref().or(maintainer_scripts_dir.as_ref()) {
+                    let search_path = self.path_in_cargo_crate(unit_dir);
                     let unit_name = config.unit_name.as_deref();
 
                     let mut units = dh_installsystemd::find_units(&search_path, &package_deb.deb_name, unit_name);
@@ -849,7 +856,7 @@ impl BuildEnvironment {
         path
     }
 
-    pub(crate) fn path_in_package<P: AsRef<Path>>(&self, rel_path: P) -> PathBuf {
+    pub(crate) fn path_in_cargo_crate<P: AsRef<Path>>(&self, rel_path: P) -> PathBuf {
         self.package_manifest_dir.join(rel_path)
     }
 
@@ -1135,7 +1142,7 @@ impl PackageConfig {
             ExtendedDescription::None => return Ok(None),
             ExtendedDescription::String(s) => return Ok(Some(s.as_str().into())),
             ExtendedDescription::File(p) => Cow::Borrowed(p.as_path()),
-            ExtendedDescription::ReadmeFallback(p) => Cow::Owned(config.path_in_package(p)),
+            ExtendedDescription::ReadmeFallback(p) => Cow::Owned(config.path_in_cargo_crate(p)),
         };
         let desc = fs::read_to_string(&path)
             .map_err(|err| CargoDebError::IoFile("unable to read extended description from file", err, path.into_owned()))?;
@@ -1473,7 +1480,7 @@ impl BuildEnvironment {
                 if source_path.to_str().is_some_and(|s| s.starts_with(['/','.']) && s.contains("/target/")) {
                     listener.warning(format!("Only source paths starting with exactly 'target/release/' are detected as Cargo target dir. '{}' does not match the pattern, and will not be built", source_path.display()));
                 }
-                (IsBuilt::No, self.path_in_package(&source_path), false)
+                (IsBuilt::No, self.path_in_cargo_crate(&source_path), false)
             };
 
             if package_deb.multiarch != Multiarch::None {
@@ -1523,7 +1530,7 @@ impl BuildEnvironment {
             return Err(CargoDebError::BinariesNotFound(package_deb.cargo_crate_name.clone()));
         }
         if let Some(readme_rel_path) = package_deb.readme_rel_path.as_deref() {
-            let path = self.path_in_package(readme_rel_path);
+            let path = self.path_in_cargo_crate(readme_rel_path);
             let target_path = Path::new("usr/share/doc")
                 .join(&package_deb.deb_name)
                 .join(path.file_name().ok_or("bad README path")?);

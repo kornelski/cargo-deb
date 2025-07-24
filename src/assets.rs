@@ -236,7 +236,10 @@ impl UnresolvedAsset {
             .map_err(|e| e.context(format_args!("Error while glob searching {}", source_path.display())))?;
 
         if matched_assets.is_empty() {
-            return Err(CargoDebError::AssetFileNotFound(source_path.to_path_buf()));
+            return Err(CargoDebError::AssetFileNotFound(
+                source_path.to_path_buf(),
+                Asset::normalized_target_path(target_path.to_path_buf(), Some(&source_path)),
+                source_prefix_len.is_some(), is_built != IsBuilt::No));
         }
         Ok(matched_assets)
     }
@@ -313,17 +316,22 @@ pub struct ProcessedFrom {
 
 impl Asset {
     #[must_use]
-    pub fn new(source: AssetSource, mut target_path: PathBuf, chmod: u32, is_built: IsBuilt, asset_kind: AssetKind) -> Self {
+    pub fn normalized_target_path(mut target_path: PathBuf, source_path: Option<&Path>) -> PathBuf {
         // is_dir() is only for paths that exist
         if target_path.to_string_lossy().ends_with('/') {
-            let file_name = source.path().and_then(|p| p.file_name()).expect("source must be a file");
+            let file_name = source_path.and_then(|p| p.file_name()).expect("source must be a file");
             target_path = target_path.join(file_name);
         }
 
         if target_path.is_absolute() || target_path.has_root() {
             target_path = target_path.strip_prefix("/").expect("no root dir").to_owned();
         }
+        target_path
+    }
 
+    #[must_use]
+    pub fn new(source: AssetSource, target_path: PathBuf, chmod: u32, is_built: IsBuilt, asset_kind: AssetKind) -> Self {
+        let target_path = Self::normalized_target_path(target_path, source.path());
         Self {
             source,
             processed_from: None,

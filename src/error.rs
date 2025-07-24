@@ -89,8 +89,13 @@ quick_error! {
             display("Unable to parse glob pattern")
             source(err)
         }
-        AssetFileNotFound(path: PathBuf) {
-            display("Static file asset path or glob pattern did not match any existing files: {}", path.display())
+        AssetFileNotFound(source_path: PathBuf, target_path: PathBuf, is_glob: bool, is_built: bool) {
+            display("{} {}: {}\nNeeded for {}",
+                if *is_glob { "Glob pattern" } else { "Static file asset" },
+                if *is_built { "has not been built" } else { "path did not match any existing files" },
+                source_path.display(),
+                target_path.display(),
+            )
         }
         AssetGlobError(err: glob::GlobError) {
             from()

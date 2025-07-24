@@ -60,7 +60,7 @@ impl<'l, W: Write> ControlArchiveBuilder<'l, W> {
     /// should be inserted.
     fn generate_scripts(&mut self, config: &BuildEnvironment, package_deb: &PackageConfig) -> CDResult<()> {
         if let Some(ref maintainer_scripts_dir) = package_deb.maintainer_scripts_rel_path {
-            let maintainer_scripts_dir = config.path_in_package(maintainer_scripts_dir);
+            let maintainer_scripts_dir = config.path_in_cargo_crate(maintainer_scripts_dir);
             let mut scripts = ScriptFragments::with_capacity(0);
 
             if let Some(systemd_units_config_vec) = &package_deb.systemd_units {
@@ -133,7 +133,7 @@ impl<'l, W: Write> ControlArchiveBuilder<'l, W> {
     }
 
     fn add_triggers_file(&mut self, config: &BuildEnvironment, rel_path: &Path) -> CDResult<()> {
-        let path = config.path_in_package(rel_path);
+        let path = config.path_in_cargo_crate(rel_path);
         let content = match fs::read(&path) {
             Ok(p) => p,
             Err(e) => return Err(CargoDebError::IoFile("triggers file", e, path)),
