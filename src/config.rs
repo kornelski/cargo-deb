@@ -797,48 +797,53 @@ impl BuildEnvironment {
     }
 
     fn add_systemd_assets(&self, package_deb: &mut PackageConfig, listener: &dyn Listener) -> CDResult<()> {
-        let maintainer_scripts_dir = package_deb.maintainer_scripts_rel_path.as_ref()
+        let default_units_dir = package_deb.maintainer_scripts_rel_path.as_ref()
             .map(|dir| self.path_in_cargo_crate(dir))
             .inspect(|dir| {
                 if !dir.is_dir() {
                     listener.warning(format!("maintainer-scripts directory not found: {}", dir.display()));
                 }
-            });
+            })
+            .unwrap_or_else(|| self.path_in_cargo_crate("systemd"));
 
-        if let Some(ref config_vec) = package_deb.systemd_units {
-            for config in config_vec {
-                let units_dir_option = config.unit_scripts.as_ref().map(|dir| self.path_in_cargo_crate(dir));
-                if let Some(unit_dir) = units_dir_option.as_ref().or(maintainer_scripts_dir.as_ref()) {
-                    let search_path = self.path_in_cargo_crate(unit_dir);
-                    let unit_name = config.unit_name.as_deref();
+        let Some(ref config_vec) = package_deb.systemd_units else {
+            log::debug!("no systemd units to generate");
+            return Ok(());
+        };
 
-                    let mut units = dh_installsystemd::find_units(&search_path, &package_deb.deb_name, unit_name);
-                    if package_deb.deb_name != package_deb.cargo_crate_name {
-                        let fallback_units = dh_installsystemd::find_units(&search_path, &package_deb.cargo_crate_name, unit_name);
-                        if !fallback_units.is_empty() && fallback_units != units {
-                            let unit_name_info = unit_name.unwrap_or("<unit_name unspecified>");
-                            if units.is_empty() {
-                                units = fallback_units;
-                                listener.warning(format!("Systemd unit {unit_name_info} found for Cargo package name ({}), but Debian package name was expected ({}). Used Cargo package name as a fallback.", package_deb.cargo_crate_name, package_deb.deb_name));
-                            } else {
-                                listener.warning(format!("Cargo package name and Debian package name are different ({} !=  {}) and both have systemd units. Used Debian package name for the systemd unit {unit_name_info}.", package_deb.cargo_crate_name, package_deb.deb_name));
-                            }
-                        }
-                    }
+        for config in config_vec {
+            let units_dir_option = config.unit_scripts.as_ref().map(|dir| self.path_in_cargo_crate(dir));
+            let search_path = units_dir_option.as_ref().unwrap_or(&default_units_dir);
+            log::debug!("searching for systemd units in {}", search_path.display());
+            let unit_name = config.unit_name.as_deref();
 
-                    for (source, target) in units {
-                        package_deb.assets.resolved.push(Asset::new(
-                            AssetSource::from_path(source, package_deb.preserve_symlinks), // should this even support symlinks at all?
-                            target.path,
-                            target.mode,
-                            IsBuilt::No,
-                            AssetKind::Any,
-                        ).processed("systemd", unit_dir.clone()));
+            let mut units = dh_installsystemd::find_units(&search_path, &package_deb.deb_name, unit_name);
+            if package_deb.deb_name != package_deb.cargo_crate_name {
+                let fallback_units = dh_installsystemd::find_units(&search_path, &package_deb.cargo_crate_name, unit_name);
+                if !fallback_units.is_empty() && fallback_units != units {
+                    let unit_name_info = unit_name.unwrap_or("<unit_name unspecified>");
+                    if units.is_empty() {
+                        units = fallback_units;
+                        listener.warning(format!("Systemd unit {unit_name_info} found for Cargo package name ({}), but Debian package name was expected ({}). Used Cargo package name as a fallback.", package_deb.cargo_crate_name, package_deb.deb_name));
+                    } else {
+                        listener.warning(format!("Cargo package name and Debian package name are different ({} !=  {}) and both have systemd units. Used Debian package name for the systemd unit {unit_name_info}.", package_deb.cargo_crate_name, package_deb.deb_name));
                     }
                 }
             }
-        } else {
-            log::debug!("no systemd units to generate");
+
+            if units.is_empty() {
+                listener.warning(format!("No usable systemd units found for `{}` in `{}`", package_deb.deb_name, search_path.display()));
+            }
+
+            for (source, target) in units {
+                package_deb.assets.resolved.push(Asset::new(
+                    AssetSource::from_path(source, package_deb.preserve_symlinks), // should this even support symlinks at all?
+                    target.path,
+                    target.mode,
+                    IsBuilt::No,
+                    AssetKind::Any,
+                ).processed("systemd", search_path.clone()));
+            }
         }
         Ok(())
     }

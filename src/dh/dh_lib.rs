@@ -98,7 +98,10 @@ pub(crate) fn pkgfile(dir: &Path, main_package: &str, package: &str, filename: &
         paths_to_try.push(dir.join(filename));
     }
 
-    paths_to_try.into_iter().find(|p| is_path_file(p))
+    paths_to_try.into_iter().find(|p| {
+        log::debug!("Looking for a systemd unit in {}", p.display());
+        is_path_file(p)
+    })
 }
 
 /// Get the bytes for the specified filename whose contents were embedded in our

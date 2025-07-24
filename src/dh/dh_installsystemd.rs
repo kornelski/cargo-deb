@@ -160,7 +160,6 @@ pub fn find_units(dir: &Path, main_package: &str, unit_name: Option<&str>) -> Pa
 
             // Save the combination of source path, target path and target file
             // mode for this unit file.
-            // eprintln!("[INFO] Identified installable at {:?}", src_path);
             installables.insert(src_path, InstallRecipe {
                 path: install_path,
                 mode: 0o644,
