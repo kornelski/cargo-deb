@@ -404,7 +404,7 @@ mod tests {
 
         // make the unit file available for systemd unit processing
         let source = AssetSource::Path(PathBuf::from(service_file));
-        let target_path = PathBuf::from(format!("lib/systemd/system/{}", filename_from_path_str(service_file)));
+        let target_path = PathBuf::from(format!("usr/lib/systemd/system/{}", filename_from_path_str(service_file)));
         package_deb.assets.resolved.push(Asset::new(source, target_path, 0o000, IsBuilt::No, crate::assets::AssetKind::Any));
 
         // look in the current dir for maintainer scripts (none, but the systemd

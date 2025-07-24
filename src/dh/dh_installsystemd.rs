@@ -38,7 +38,7 @@ use crate::{CDResult, CargoDebError};
 ///            If this exists, it is installed into usr/lib/tmpfiles.d/ in the
 ///            package build directory. Note that the "tmpfiles.d" mechanism is
 ///            currently only used by systemd.
-const LIB_SYSTEMD_SYSTEM_DIR: &str = "lib/systemd/system/";
+const LIB_SYSTEMD_SYSTEM_DIR: &str = "usr/lib/systemd/system/";
 const USR_LIB_TMPFILES_D_DIR: &str = "usr/lib/tmpfiles.d/";
 const SYSTEMD_UNIT_FILE_INSTALL_MAPPINGS: [(&str, &str, &str); 12] = [
     ("",  "mount",   LIB_SYSTEMD_SYSTEM_DIR),
@@ -484,12 +484,12 @@ mod tests {
             "debian/mypkg.myunit.service", // demonstrates lack of unit name
         ]);
         let pkg_unit_files = find_units(Path::new("debian"), "mypkg", None);
-        assert_eq_found_unit(&pkg_unit_files, "lib/systemd/system/mypkg.mount",   "debian/mypkg.mount");
-        assert_eq_found_unit(&pkg_unit_files, "lib/systemd/system/mypkg@.path",   "debian/mypkg@.path");
-        assert_eq_found_unit(&pkg_unit_files, "lib/systemd/system/mypkg.service", "debian/service");
-        assert_eq_found_unit(&pkg_unit_files, "lib/systemd/system/mypkg@.socket", "debian/mypkg@.socket");
-        assert_eq_found_unit(&pkg_unit_files, "lib/systemd/system/mypkg.target",  "debian/mypkg.target");
-        assert_eq_found_unit(&pkg_unit_files, "lib/systemd/system/mypkg@.timer",  "debian/mypkg@.timer");
+        assert_eq_found_unit(&pkg_unit_files, "usr/lib/systemd/system/mypkg.mount",   "debian/mypkg.mount");
+        assert_eq_found_unit(&pkg_unit_files, "usr/lib/systemd/system/mypkg@.path",   "debian/mypkg@.path");
+        assert_eq_found_unit(&pkg_unit_files, "usr/lib/systemd/system/mypkg.service", "debian/service");
+        assert_eq_found_unit(&pkg_unit_files, "usr/lib/systemd/system/mypkg@.socket", "debian/mypkg@.socket");
+        assert_eq_found_unit(&pkg_unit_files, "usr/lib/systemd/system/mypkg.target",  "debian/mypkg.target");
+        assert_eq_found_unit(&pkg_unit_files, "usr/lib/systemd/system/mypkg@.timer",  "debian/mypkg@.timer");
         assert_eq_found_unit(&pkg_unit_files, "usr/lib/tmpfiles.d/mypkg.conf",    "debian/mypkg.tmpfile");
         assert_eq!(7, pkg_unit_files.len());
     }
@@ -524,12 +524,12 @@ mod tests {
 
         let pkg_unit_files = find_units(Path::new("debian"), "mypkg", Some("myunit"));
         // note the "myunit" target names, even when the match was less specific
-        assert_eq_found_unit(&pkg_unit_files, "lib/systemd/system/myunit.mount",   "debian/mypkg.myunit.mount");
-        assert_eq_found_unit(&pkg_unit_files, "lib/systemd/system/myunit@.path",   "debian/mypkg@.myunit.path");
-        assert_eq_found_unit(&pkg_unit_files, "lib/systemd/system/myunit.service", "debian/mypkg.myunit.service");
-        assert_eq_found_unit(&pkg_unit_files, "lib/systemd/system/myunit@.socket", "debian/mypkg@.myunit.socket");
-        assert_eq_found_unit(&pkg_unit_files, "lib/systemd/system/myunit.target",  "debian/target");
-        assert_eq_found_unit(&pkg_unit_files, "lib/systemd/system/myunit@.timer",  "debian/mypkg@.myunit.timer");
+        assert_eq_found_unit(&pkg_unit_files, "usr/lib/systemd/system/myunit.mount",   "debian/mypkg.myunit.mount");
+        assert_eq_found_unit(&pkg_unit_files, "usr/lib/systemd/system/myunit@.path",   "debian/mypkg@.myunit.path");
+        assert_eq_found_unit(&pkg_unit_files, "usr/lib/systemd/system/myunit.service", "debian/mypkg.myunit.service");
+        assert_eq_found_unit(&pkg_unit_files, "usr/lib/systemd/system/myunit@.socket", "debian/mypkg@.myunit.socket");
+        assert_eq_found_unit(&pkg_unit_files, "usr/lib/systemd/system/myunit.target",  "debian/target");
+        assert_eq_found_unit(&pkg_unit_files, "usr/lib/systemd/system/myunit@.timer",  "debian/mypkg@.myunit.timer");
 
         // note the changed file extension
         assert_eq_found_unit(&pkg_unit_files, "usr/lib/tmpfiles.d/myunit.conf",    "debian/mypkg.tmpfile");
@@ -659,7 +659,7 @@ mod tests {
 
         let assets = vec![Asset::new(
             AssetSource::Path(PathBuf::from("debian/my_unit@.service")),
-            Path::new("lib/systemd/system/").to_path_buf(),
+            Path::new("usr/lib/systemd/system/").to_path_buf(),
             0o0,
             IsBuilt::No,
             AssetKind::Any,
@@ -676,7 +676,7 @@ mod tests {
 
         let assets = vec![Asset::new(
             AssetSource::Path(PathBuf::from("debian/10-extra-hardening.conf")),
-            Path::new("lib/systemd/system/foobar.service.d/").to_path_buf(),
+            Path::new("usr/lib/systemd/system/foobar.service.d/").to_path_buf(),
             0o0,
             IsBuilt::No,
             AssetKind::Any,
@@ -753,7 +753,7 @@ mod tests {
 
         let install_base_path = match ip {
             "ult" => "usr/lib/tmpfiles.d",
-            "lss" => "lib/systemd/system",
+            "lss" => "usr/lib/systemd/system",
             x => panic!("Unsupported install path value '{x}'"),
         };
 

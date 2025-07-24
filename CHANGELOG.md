@@ -1,5 +1,9 @@
 For more details see https://github.com/kornelski/cargo-deb/commits/main/
 
+# 3.2.0
+
+* Switched systemd location to the preferred `/usr/lib/systemd` instead of `/lib/systemd`
+
 # 3.1.0
 
 * Added `--compress-debug-symbols=zlib` and `--compress-debug-symbols=zstd`. If the algorithm is not specified, it defaults to `zstd` for `debug = "full"` (for debuggers) and `zlib` otherwise (for compatibility with panic backtraces).

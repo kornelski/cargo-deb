@@ -567,7 +567,7 @@ mod tests {
         }, &mock_listener).unwrap();
 
         let num_unit_assets = package_deb.assets.resolved.iter()
-            .filter(|a| a.c.target_path.starts_with("lib/systemd/system/"))
+            .filter(|a| a.c.target_path.starts_with("usr/lib/systemd/system/"))
             .count();
 
         assert_eq!(0, num_unit_assets);
@@ -600,7 +600,7 @@ mod tests {
 
         let num_unit_assets = package_deb.assets.resolved
             .iter()
-            .filter(|a| a.c.target_path.starts_with("lib/systemd/system/"))
+            .filter(|a| a.c.target_path.starts_with("usr/lib/systemd/system/"))
             .count();
 
         assert_eq!(1, num_unit_assets);
