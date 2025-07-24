@@ -575,7 +575,7 @@ impl BuildEnvironment {
 
         self.set_cargo_build_flags_for_package(package_deb, &mut cmd);
 
-        if verbose_cargo {
+        if verbose_cargo && !self.cargo_build_flags.iter().any(|f| f == "--quiet" || f == "-q") {
             cmd.arg("--verbose");
         }
         if verbose {
