@@ -42,7 +42,7 @@ impl<W: Write> Tarball<W> {
                 let out_data = asset.source.data()?;
                 if rsyncable {
                     if archive_data_added > 1_000_000 || prev_is_built != asset.c.is_built() {
-                        self.flush()?;
+                        self.flush().map_err(|e| CargoDebError::Io(e).context("error while writing tar archive"))?;
                         archive_data_added = 0;
                     }
                     // puts synchronization point between non-code and code assets
@@ -53,7 +53,7 @@ impl<W: Write> Tarball<W> {
             }
         }
 
-        Ok(self.tar.into_inner()?)
+        self.tar.into_inner().map_err(|e| CargoDebError::Io(e).context("error while finalizing tar archive"))
     }
 
     fn directory(&mut self, path: &Path) -> io::Result<()> {
@@ -84,7 +84,8 @@ impl<W: Write> Tarball<W> {
             }
             if !self.added_directories.contains(&directory) {
                 self.added_directories.insert(directory.clone());
-                self.directory(&directory)?;
+                self.directory(&directory)
+                    .map_err(|e| CargoDebError::IoFile("can't add directory to tarball", e, directory.clone()))?;
             }
         }
         Ok(())
@@ -102,7 +103,8 @@ impl<W: Write> Tarball<W> {
         header.set_mode(chmod);
         header.set_size(out_data.len() as u64);
         header.set_cksum();
-        self.tar.append_data(&mut header, path, out_data)?;
+        self.tar.append_data(&mut header, path, out_data)
+            .map_err(|e| CargoDebError::IoFile("can't add file to tarball", e, path.into()))?;
         Ok(())
     }
 
@@ -115,7 +117,8 @@ impl<W: Write> Tarball<W> {
         header.set_size(0);
         header.set_mode(0o777);
         header.set_cksum();
-        self.tar.append_link(&mut header, path, link_name)?;
+        self.tar.append_link(&mut header, path, link_name)
+            .map_err(|e| CargoDebError::IoFile("can't add symlink to tarball", e, path.into()))?;
         Ok(())
     }
 

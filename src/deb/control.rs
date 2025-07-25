@@ -38,7 +38,7 @@ impl<'l, W: Write> ControlArchiveBuilder<'l, W> {
     }
 
     pub fn finish(self) -> CDResult<W> {
-        Ok(self.archive.into_inner()?)
+        self.archive.into_inner().map_err(|e| CargoDebError::Io(e).context("error while finalizing control archive"))
     }
 
     /// Append Debian maintainer script files (control, preinst, postinst, prerm,
@@ -103,7 +103,9 @@ impl<'l, W: Write> ControlArchiveBuilder<'l, W> {
                 if !is_path_file(&script_path) {
                     continue;
                 }
-                (read_file_to_bytes(&script_path)?, Some(script_path.as_path()))
+                let file = read_file_to_bytes(&script_path)
+                    .map_err(|e| CargoDebError::IoFile("can't read script", e, script_path.clone()))?;
+                (file, Some(script_path.as_path()))
             };
 
             // The config, postinst, postrm, preinst, and prerm

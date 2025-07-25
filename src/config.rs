@@ -351,7 +351,7 @@ impl BuildEnvironment {
             reproducible = true;
             source_date_epoch.parse().map_err(|e| CargoDebError::NumParse("SOURCE_DATE_EPOCH", e))?
         } else {
-            let manifest_mdate = fs::metadata(&manifest_path)?.modified().unwrap_or_else(|_| SystemTime::now());
+            let manifest_mdate = fs::metadata(&manifest_path).and_then(|m| m.modified()).unwrap_or_else(|_| SystemTime::now());
             let mut timestamp = manifest_mdate.duration_since(SystemTime::UNIX_EPOCH).map_err(CargoDebError::SystemTime)?.as_secs();
             timestamp -= timestamp % (24 * 3600);
             timestamp
@@ -560,7 +560,8 @@ impl BuildEnvironment {
         self.add_changelog_asset(package_deb)?;
         self.add_systemd_assets(package_deb, listener)?;
 
-        self.reset_deb_temp_directory(package_deb)?;
+        self.reset_deb_temp_directory(package_deb)
+            .map_err(|e| CargoDebError::Io(e).context("Error while clearing temp directory"))?;
         Ok(())
     }
 
@@ -781,15 +782,15 @@ impl BuildEnvironment {
         if let Some(ref path) = package_deb.changelog {
             let source_path = self.path_in_cargo_crate(path);
             let changelog = fs::read(&source_path)
+                .map_err(|e| CargoDebError::IoFile("unable to read changelog file", e, source_path.clone()))
                 .and_then(|content| {
                     // allow pre-compressed
                     if source_path.extension().is_some_and(|e| e == "gz") {
                         return Ok(content);
                     }
                     // The input is plaintext, but the debian package should contain gzipped one.
-                    gzipped(&content)
-                })
-                .map_err(|e| CargoDebError::IoFile("unable to read changelog file", e, source_path.clone()))?;
+                    gzipped(&content).map_err(|e| CargoDebError::Io(e).context("error gzipping changelog"))
+                })?;
             Ok(Some((source_path, changelog)))
         } else {
             Ok(None)

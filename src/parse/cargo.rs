@@ -1,4 +1,5 @@
 use crate::error::CDResult;
+use crate::CargoDebError;
 use std::path::{Path, PathBuf};
 use std::{env, fs};
 
@@ -49,7 +50,9 @@ impl CargoConfig {
                 return Ok(None);
             }
         }
-        Ok(Some(Self::from_str(&fs::read_to_string(&path)?, path)?))
+        let config = fs::read_to_string(&path)
+            .map_err(|e| CargoDebError::IoFile("unable to read config file", e, path.clone()))?;
+        Ok(Some(Self::from_str(&config, path)?))
     }
 
     fn from_str(input: &str, path: PathBuf) -> CDResult<Self> {

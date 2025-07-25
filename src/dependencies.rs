@@ -6,13 +6,14 @@ const DPKG_SHLIBDEPS_COMMAND: &str = "dpkg-shlibdeps";
 
 /// Resolves the dependencies based on the output of dpkg-shlibdeps on the binary.
 pub(crate) fn resolve_with_dpkg(path: &Path, lib_dir_search_paths: &[&Path]) -> CDResult<Vec<String>> {
-    let temp_folder = tempfile::tempdir()?;
+    let temp_folder = tempfile::tempdir().map_err(CargoDebError::Io)?;
     let debian_folder = temp_folder.path().join("debian");
     let control_file_path = debian_folder.join("control");
-    std::fs::create_dir_all(&debian_folder)?;
+    let _ = std::fs::create_dir_all(&debian_folder);
     // dpkg-shlibdeps requires a (possibly empty) debian/control file to exist in its working
     // directory. The executable location doesn't matter.
-    let _ = std::fs::File::create(control_file_path);
+    let _ = std::fs::File::create(&control_file_path)
+        .map_err(|e| CargoDebError::IoFile("can't make temp file", e, control_file_path))?;
 
     let mut cmd = Command::new(DPKG_SHLIBDEPS_COMMAND);
     // Print result to stdout instead of a file.

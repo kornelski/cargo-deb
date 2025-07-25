@@ -420,8 +420,10 @@ pub fn compressed_assets(package_deb: &PackageConfig, listener: &dyn Listener) -
             file_name.push_str(".gz");
             let new_path = orig_asset.c.target_path.with_file_name(file_name);
             listener.progress("Compressing", format!("'{}'", new_path.display()));
+            let gzdata = gzipped(&orig_asset.source.data()?)
+                .map_err(|e| CargoDebError::Io(e).context("error while gzipping asset"))?;
             CDResult::Ok((idx, Asset::new(
-                crate::assets::AssetSource::Data(gzipped(&orig_asset.source.data()?)?),
+                crate::assets::AssetSource::Data(gzdata),
                 new_path,
                 orig_asset.c.chmod,
                 IsBuilt::No,

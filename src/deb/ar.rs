@@ -1,5 +1,5 @@
 use crate::util::compress::Compressed;
-use crate::CDResult;
+use crate::{CDResult, CargoDebError};
 use ar::{Builder, Header};
 use std::fs;
 use std::fs::File;
@@ -16,7 +16,9 @@ pub struct DebArchive {
 impl DebArchive {
     pub fn new(out_abspath: PathBuf, mtime_timestamp: u64) -> CDResult<Self> {
         let _ = fs::create_dir_all(out_abspath.parent().ok_or("invalid output path")?);
-        let ar_builder = Builder::new(BufWriter::new(File::create(&out_abspath)?));
+        let arfile = File::create(&out_abspath)
+            .map_err(|e| CargoDebError::IoFile("can't create file for the archive", e, out_abspath.clone()))?;
+        let ar_builder = Builder::new(BufWriter::new(arfile));
 
         let mut ar = Self {
             out_abspath,
@@ -41,8 +43,8 @@ impl DebArchive {
         header.set_mtime(self.mtime_timestamp);
         header.set_uid(0);
         header.set_gid(0);
-        self.ar_builder.append(&header, data)?;
-        Ok(())
+        self.ar_builder.append(&header, data)
+            .map_err(|e| CargoDebError::Io(e).context("ar archive entry"))
     }
 
     pub fn finish(self) -> CDResult<PathBuf> {

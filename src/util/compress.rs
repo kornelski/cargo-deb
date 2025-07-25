@@ -130,7 +130,7 @@ impl Compressor {
     }
 
     pub fn finish(self) -> CDResult<Compressed> {
-        self.writer.finish().map_err(From::from)
+        self.writer.finish().map_err(CargoDebError::Io)
     }
 }
 
