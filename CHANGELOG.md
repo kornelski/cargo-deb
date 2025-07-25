@@ -4,6 +4,7 @@ For more details see https://github.com/kornelski/cargo-deb/commits/main/
 
 * Switched systemd location to the preferred `/usr/lib/systemd` instead of `/lib/systemd`
 * Improved warnings and error messages
+* Added `systemd/` is a fallback location for systemd units if `maintainer-scripts` is not set
 
 # 3.1.0
 
