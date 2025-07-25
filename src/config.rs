@@ -1398,7 +1398,7 @@ impl TryFrom<CargoDebAssetArrayOrTable> for RawAssetOrAuto {
                 return Err(format!("{EXPECTED}, but found a string: '{bad}'"));
             },
             CargoDebAssetArrayOrTable::Invalid(bad) => {
-                return Err(format!("{EXPECTED}, but found {}: {bad}", bad.type_str()));
+                return Err(format!("{EXPECTED}, but found {}: {:?}", bad.type_str(), bad));
             },
         };
         if let Self::RawAsset(a) = &raw_asset {
