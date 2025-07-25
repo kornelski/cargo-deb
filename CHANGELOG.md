@@ -1,10 +1,14 @@
 For more details see https://github.com/kornelski/cargo-deb/commits/main/
 
-# 3.2.0
+# 3.3.0
 
 * Switched systemd location to the preferred `/usr/lib/systemd` instead of `/lib/systemd`
 * Improved warnings and error messages
 * Added `systemd/` is a fallback location for systemd units if `maintainer-scripts` is not set
+
+# 3.2.0
+
+* Added colored terminal output
 
 # 3.1.0
 
