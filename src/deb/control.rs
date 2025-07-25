@@ -59,59 +59,60 @@ impl<'l, W: Write> ControlArchiveBuilder<'l, W> {
     /// contain a `#DEBHELPER#` token at the point where shell script fragments
     /// should be inserted.
     fn generate_scripts(&mut self, config: &BuildEnvironment, package_deb: &PackageConfig) -> CDResult<()> {
-        if let Some(ref maintainer_scripts_dir) = package_deb.maintainer_scripts_rel_path {
-            let maintainer_scripts_dir = config.path_in_cargo_crate(maintainer_scripts_dir);
-            let mut scripts = ScriptFragments::with_capacity(0);
+        let Some(maintainer_scripts_dir) = &package_deb.maintainer_scripts_rel_path else {
+            return Ok(());
+        };
 
-            if let Some(systemd_units_config_vec) = &package_deb.systemd_units {
-                for systemd_units_config in systemd_units_config_vec {
-                    // Select and populate autoscript templates relevant to the unit
-                    // file(s) in this package and the configuration settings chosen.
-                    scripts = dh_installsystemd::generate(
-                        &package_deb.deb_name,
-                        &package_deb.assets.resolved,
-                        &dh_installsystemd::Options::from(systemd_units_config),
-                        self.listener,
-                    )?;
+        let maintainer_scripts_dir = config.path_in_cargo_crate(maintainer_scripts_dir);
+        let mut scripts = ScriptFragments::with_capacity(0);
 
-                    // Get Option<&str> from Option<String>
-                    let unit_name = systemd_units_config.unit_name.as_deref();
+        if let Some(systemd_units_config_vec) = &package_deb.systemd_units {
+            for systemd_units_config in systemd_units_config_vec {
+                // Select and populate autoscript templates relevant to the unit
+                // file(s) in this package and the configuration settings chosen.
+                scripts = dh_installsystemd::generate(
+                    &package_deb.deb_name,
+                    &package_deb.assets.resolved,
+                    &dh_installsystemd::Options::from(systemd_units_config),
+                    self.listener,
+                )?;
 
-                    // Replace the #DEBHELPER# token in the users maintainer scripts
-                    // and/or generate maintainer scripts from scratch as needed.
-                    dh_lib::apply(
-                        &maintainer_scripts_dir,
-                        &mut scripts,
-                        &package_deb.deb_name,
-                        unit_name,
-                        self.listener,
-                    )?;
-                }
-            }
+                // Get Option<&str> from Option<String>
+                let unit_name = systemd_units_config.unit_name.as_deref();
 
-            // Add maintainer scripts to the archive, either those supplied by the
-            // user or if available prefer modified versions generated above.
-            for name in ["config", "preinst", "postinst", "prerm", "postrm", "templates"] {
-                let script_path;
-                let (contents, source_path) = if let Some(script) = scripts.remove(name) {
-                    (script, Some(Path::new("systemd_units")))
-                } else {
-                    script_path = maintainer_scripts_dir.join(name);
-                    if !is_path_file(&script_path) {
-                        continue;
-                    }
-                    (read_file_to_bytes(&script_path)?, Some(script_path.as_path()))
-                };
-
-                // The config, postinst, postrm, preinst, and prerm
-                // control files should use mode 0755; all other control files should use 0644.
-                // See Debian Policy Manual section 10.9
-                // and lintian tag control-file-has-bad-permissions
-                let permissions = if name == "templates" { 0o644 } else { 0o755 };
-                self.add_file_with_log(name.as_ref(), &contents, permissions, source_path)?;
+                // Replace the #DEBHELPER# token in the users maintainer scripts
+                // and/or generate maintainer scripts from scratch as needed.
+                dh_lib::apply(
+                    &maintainer_scripts_dir,
+                    &mut scripts,
+                    &package_deb.deb_name,
+                    unit_name,
+                    self.listener,
+                )?;
             }
         }
 
+        // Add maintainer scripts to the archive, either those supplied by the
+        // user or if available prefer modified versions generated above.
+        for name in ["config", "preinst", "postinst", "prerm", "postrm", "templates"] {
+            let script_path;
+            let (contents, source_path) = if let Some(script) = scripts.remove(name) {
+                (script, Some(Path::new("systemd_units")))
+            } else {
+                script_path = maintainer_scripts_dir.join(name);
+                if !is_path_file(&script_path) {
+                    continue;
+                }
+                (read_file_to_bytes(&script_path)?, Some(script_path.as_path()))
+            };
+
+            // The config, postinst, postrm, preinst, and prerm
+            // control files should use mode 0755; all other control files should use 0644.
+            // See Debian Policy Manual section 10.9
+            // and lintian tag control-file-has-bad-permissions
+            let permissions = if name == "templates" { 0o644 } else { 0o755 };
+            self.add_file_with_log(name.as_ref(), &contents, permissions, source_path)?;
+        }
         Ok(())
     }
 
