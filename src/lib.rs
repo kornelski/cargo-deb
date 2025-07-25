@@ -250,7 +250,7 @@ fn install_debs_inner(paths: &[&Path], no_sudo: bool) -> CDResult<()> {
     cmd.args(paths);
     log::debug!("{exe} {:?}", cmd.get_args());
     let status = cmd.status()
-        .map_err(|e| CargoDebError::CommandFailed(e, "dpkg"))?;
+        .map_err(|e| CargoDebError::CommandFailed(e, exe))?;
     if !status.success() {
         return Err(CargoDebError::InstallFailed(status));
     }
