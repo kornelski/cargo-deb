@@ -5,11 +5,11 @@ This is a [Cargo](https://doc.rust-lang.org/cargo/) helper command which automat
 ## Installation
 
 ```sh
-rustup update   # Debian's Rust is too outdated, use rustup.rs
+rustup update   # Bookworm's Rust is too outdated, use Trixie or rustup.rs
 cargo install cargo-deb
 ```
 
-Requires Rust 1.71+, and optionally `dpkg`, `dpkg-dev` and `liblzma-dev`. Compatible with Ubuntu. If the LZMA dependency causes you headaches, try `cargo install cargo-deb --no-default-features`.
+Requires Rust 1.76+, and optionally `dpkg`, `dpkg-dev` and `liblzma-dev`. Compatible with Ubuntu. If the LZMA dependency causes you headaches, try `cargo install cargo-deb --no-default-features`.
 
 If you get a compilation error, run `rustup update`! If you get an error running `rustup update`, uninstall your rust/cargo package, and install [the official Rust](https://rustup.rs/) instead.
 
@@ -95,17 +95,41 @@ assets = [
 
 ## Advanced usage
 
-Debian packages can use a number of different compression formats, but the target system may only support some of them.
-The default format is currently xz, but this may change at any point to support newer formats.
-The format can be explicitly specified using the `--compress-type` command-line option. The supported formats are "gzip" and "xz".
+`--fast` flag uses quicker/lighter compression in the `.deb` file. Useful for quick deployment of large packages. `--dbgsym` can also improve speed by making two packages in parallel.
 
-`--fast` flag uses lighter compression. Useful for very large packages or quick deployment.
-
-`--compress-system` forces the use of system command-line tools for data compression.
+[`--multiarch=same`](https://wiki.ubuntu.com/MultiarchSpec#Binary_package_control_fields) will use `/usr/lib/$debian-target-tuple/` for library paths, allowing library packages for different architectures to co-exist.
 
 ### `[package.metadata.deb.variants.$name]`
 
-There can be multiple variants of the metadata in one `Cargo.toml` file. `--variant=name` selects the variant to use. Options set in a variant override `[package.metadata.deb]` options. It automatically adjusts the package name.
+There can be multiple variants of the metadata in one `Cargo.toml` file. `--variant=name` selects the variant to use. Options set in a variant override `[package.metadata.deb]` options. It automatically appends the variant name to the package name (or you can set the `name` in the variant).
+
+### Separate debug info
+
+To get debug symbols in the package, set in `Cargo.toml`:
+
+```toml
+[profile.release]
+debug = "line-tables-only"
+# or debug = 1 for fatter debug info
+```
+
+Note: building using the `dev` profile is intentionally unsupported. You can specify other profiles with `--profile`.
+
+#### Separate `-dbgsym.ddeb` package
+
+```sh
+cargo deb --dbgsym
+```
+
+Removes debug symbols from the executables, and makes a second `-dbgsym.ddeb` package with only `/usr/lib/debug/.build-id/*` files. Requires GNU `objcopy` tool. The `.ddeb` package is a regular deb package that can be installed together with the base `.deb` package.
+
+#### Separate debug files in the same package
+
+```sh
+cargo deb --separate-debug-symbols --compress-debug-symbols
+```
+
+Removes debug symbols from the executables, and places them in separate files in `/usr/lib/debug/.build-id/*`. Requires GNU `objcopy` tool. `--compress-debug-symbols` makes the debug symbols compressed internally, taking less space on disk.
 
 ### Merging Assets
 
@@ -192,41 +216,13 @@ Cross-compiled archives are saved in `target/<target triple>/debian/*.deb`. The 
 
 Note that you can't use cross-compilation to build for an older version of Debian. If you need to support Debian releases older than the host, consider using a container or a VM, or make a completely static binary for MUSL instead.
 
-### Separate debug info
-
-To get debug symbols, set in `Cargo.toml`:
-
-```toml
-[profile.release]
-debug = "line-tables-only"
-# or debug = 1 for fatter debug info
-```
-
-Note: building using the `dev` profile is intentionally unsupported. You can specify other profiles with `--profile`.
-
-#### Separate `-dbgsym.ddeb` package
-
-```sh
-cargo deb --dbgsym
-```
-
-Removes debug symbols from the executables, and makes a second `-dbgsym.ddeb` package with only `/usr/lib/debug/.build-id/*` fikes. Requires GNU `objcopy` tool. The `.ddeb` package is a regular deb package that can be installed together with the base `.deb` package.
-
-#### Separate files in the same package
-
-```sh
-cargo deb --separate-debug-symbols --compress-debug-symbols
-```
-
-Removes debug symbols from the executables, and places them in separate files in `/usr/lib/debug/.build-id/*`. Requires GNU `objcopy` tool. `--compress-debug-symbols` uses zstd, and requires `objcopy` to support it.
-
 ### Custom build flags
 
 If you would like to handle the build process yourself, you can use `cargo deb --no-build` so that the `cargo-deb` command will not attempt to rebuild your project.
 
     cargo deb -- <cargo build flags>
 
-Flags after `--` are passed to `cargo build`, so you can use options such as `-Z`, `--frozen`, and `--locked`. Please use that only for features that `cargo-deb` doesn't support natively.
+Flags after `--` are passed to `cargo build`, so you can use options such as `-Z`, `-j`, or `--timings`. Please use that only for options that `cargo-deb` doesn't support natively.
 
 ### Workspaces
 

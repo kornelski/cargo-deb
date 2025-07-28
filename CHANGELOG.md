@@ -1,5 +1,9 @@
 For more details see https://github.com/kornelski/cargo-deb/commits/main/
 
+# 3.4.0
+
+* Added support for `build-dir` Cargo feature
+
 # 3.3.0
 
 * Switched systemd location to the preferred `/usr/lib/systemd` instead of `/lib/systemd`
