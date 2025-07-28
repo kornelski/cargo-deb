@@ -58,8 +58,8 @@ pub(crate) fn find_profile<'a>(manifest: &'a cargo_toml::Manifest<CargoPackageMe
 
 fn from_toml_value<T: DeserializeOwned>(toml: &str) -> Option<T> {
     // support parsing `true` as bool, but other values as strings
-    T::deserialize(toml::de::ValueDeserializer::new(toml)).ok().or_else(|| {
-        T::deserialize(toml::de::ValueDeserializer::new(&format!("\"{toml}\"")))
+    toml::de::ValueDeserializer::parse(toml).and_then(|deserializer| T::deserialize(deserializer)).ok().or_else(|| {
+        toml::de::ValueDeserializer::parse(&format!("\"{toml}\"")).and_then(|deserializer| T::deserialize(deserializer))
             .inspect_err(|e| log::warn!("error parsing profile override: {toml}\n{e}")).ok()
     })
 }
