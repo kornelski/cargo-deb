@@ -46,7 +46,8 @@ pub fn strip_binaries(config: &BuildEnvironment, package_deb: &mut PackageConfig
         }
     }
 
-    let stripped_binaries_output_dir = config.default_deb_output_dir();
+    let stripped_binaries_output_dir = config.deb_temp_dir(&package_deb);
+    debug_assert!(stripped_binaries_output_dir.is_dir());
 
     let lib_dir_base = package_deb.library_install_dir(config.rust_target_triple());
     let added_debug_assets = package_deb.built_binaries_mut().into_par_iter().enumerate()

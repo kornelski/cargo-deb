@@ -369,6 +369,7 @@ struct CargoMetadata {
     #[serde(default)]
     pub workspace_default_members: Vec<String>,
     pub target_directory: String,
+    pub build_directory: Option<String>,
     #[serde(default)]
     pub workspace_root: String,
 }
@@ -396,10 +397,11 @@ pub(crate) struct ManifestFound {
     pub workspace_root_manifest_path: PathBuf,
     pub root_manifest: Option<cargo_toml::Manifest<CargoPackageMetadata>>,
     pub target_dir: PathBuf,
+    pub build_dir: Option<PathBuf>,
     pub manifest: cargo_toml::Manifest<CargoPackageMetadata>,
 }
 
-fn parse_metadata(mut metadata: CargoMetadata, selected_package_name: Option<&str>) -> Result<(CargoMetadataPackage, PathBuf, PathBuf), CargoDebError> {
+fn get_selected_package(metadata: &mut CargoMetadata, selected_package_name: Option<&str>) -> Result<CargoMetadataPackage, CargoDebError> {
     let available_package_names = || {
         metadata.packages.iter()
             .filter(|p| metadata.workspace_members.iter().any(|w| w == &p.id))
@@ -414,7 +416,7 @@ fn parse_metadata(mut metadata: CargoMetadata, selected_package_name: Option<&st
         pick_default_package_from_workspace(&metadata)
             .ok_or_else(|| CargoDebError::NoRootFoundInWorkspace(available_package_names()))
     }?;
-    Ok((metadata.packages.swap_remove(target_package_pos), metadata.target_directory.into(), metadata.workspace_root.into()))
+    Ok(metadata.packages.swap_remove(target_package_pos))
 }
 
 fn pick_default_package_from_workspace(metadata: &CargoMetadata) -> Option<usize> {
@@ -456,8 +458,12 @@ fn parse_manifest_only(manifest_path: &Path) -> Result<cargo_toml::Manifest<Carg
 }
 
 pub(crate) fn cargo_metadata(initial_manifest_path: Option<&Path>, selected_package_name: Option<&str>, cargo_locking_flags: CargoLockingFlags) -> Result<ManifestFound, CargoDebError> {
-    let metadata = run_cargo_metadata(initial_manifest_path, cargo_locking_flags)?;
-    let (target_package, target_dir, workspace_root) = parse_metadata(metadata, selected_package_name)?;
+    let mut metadata = run_cargo_metadata(initial_manifest_path, cargo_locking_flags)?;
+    let target_package = get_selected_package(&mut metadata, selected_package_name)?;
+
+    let target_dir = PathBuf::from(metadata.target_directory);
+    let workspace_root = PathBuf::from(metadata.workspace_root);
+    let build_dir = metadata.build_directory.map(PathBuf::from);
 
     let manifest_path = Path::new(&target_package.manifest_path);
     let mut manifest = parse_manifest_only(manifest_path)?;
@@ -475,6 +481,7 @@ pub(crate) fn cargo_metadata(initial_manifest_path: Option<&Path>, selected_pack
         workspace_root_manifest_path,
         build_targets: target_package.targets,
         root_manifest,
+        build_dir,
         target_dir,
         manifest,
     })

@@ -217,6 +217,7 @@ fn cargo_deb(manifest_path: &str, args: &[&str]) -> (TempDir, PathBuf, Option<Pa
     let workdir = root.join(Path::new(manifest_path).parent().unwrap());
     let output = Command::new(cmd_path)
         .env("CARGO_TARGET_DIR", cargo_dir.path()) // use isolated 'target' directories
+        .env("CARGO_BUILD_BUILD_DIR", cargo_dir.path().join("build-tmp")) // use isolated build directories
         .arg(format!("--output={}", deb_path.display()))
         .args(args)
         .current_dir(workdir)
@@ -444,6 +445,7 @@ fn dir_test_run_in_subdir(subdir_path: &str) {
     let output = Command::new(cmd_path)
         .current_dir(root.join(subdir_path))
         .env("CARGO_TARGET_DIR", cargo_dir.path()) // use isolated 'target' directories
+        .env("CARGO_BUILD_BUILD_DIR", cargo_dir.path().join("build-tmp")) // use isolated build directories
         .arg("-p").arg("sub-crate")
         .arg("--no-strip")
         .arg("-q")

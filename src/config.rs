@@ -95,6 +95,8 @@ pub struct BuildEnvironment {
     pub rust_target_triple: Option<String>,
     /// `CARGO_TARGET_DIR`
     pub target_dir: PathBuf,
+    /// Either derived from target_dir or `-Zbuild-dir`
+    pub build_dir: PathBuf,
     /// List of Cargo features to use during build
     pub features: Vec<String>,
     pub default_features: bool,
@@ -331,7 +333,7 @@ impl BuildEnvironment {
             multiarch,
             cargo_build_cmd,
             cargo_build_flags,
-        }: BuildOptions,
+        }: BuildOptions<'_>,
         listener: &dyn Listener,
     ) -> CDResult<(Self, PackageConfig)> {
         // **IMPORTANT**: This function must not create or expect to see any asset files on disk!
@@ -342,6 +344,7 @@ impl BuildEnvironment {
             root_manifest,
             workspace_root_manifest_path,
             mut manifest_path,
+            build_dir,
             mut target_dir,
             mut manifest,
         } = cargo_metadata(manifest_path, selected_package_name, cargo_locking_flags)?;
@@ -416,6 +419,7 @@ impl BuildEnvironment {
             reproducible,
             package_manifest_dir: manifest_dir,
             rust_target_triple: rust_target_triple.map(|t| t.to_string()),
+            build_dir: build_dir.as_deref().unwrap_or(&target_dir).join("debian"),
             target_dir,
             features,
             all_features: overrides.all_features,
@@ -849,11 +853,12 @@ impl BuildEnvironment {
         Ok(())
     }
 
-    pub(crate) fn path_in_build<P: AsRef<Path>>(&self, rel_path: P) -> PathBuf {
-        self.path_in_build_(rel_path.as_ref())
+    /// Based on target dir, not build dir
+    pub(crate) fn path_in_build_products<P: AsRef<Path>>(&self, rel_path: P) -> PathBuf {
+        self.path_in_target_dir(rel_path.as_ref())
     }
 
-    pub(crate) fn path_in_build_(&self, rel_path: &Path) -> PathBuf {
+    fn path_in_target_dir(&self, rel_path: &Path) -> PathBuf {
         let profile = self.build_profile.profile_dir();
         let mut path = PathBuf::with_capacity(2 + self.target_dir.as_os_str().len() + profile.as_os_str().len() + rel_path.as_os_str().len());
         path.push(&self.target_dir);
@@ -872,7 +877,7 @@ impl BuildEnvironment {
 
     /// Store intermediate files here
     pub(crate) fn deb_temp_dir(&self, package_deb: &PackageConfig) -> PathBuf {
-        self.target_dir.join("debian").join(&package_deb.cargo_crate_name)
+        self.build_dir.join(&package_deb.cargo_crate_name)
     }
 
     pub(crate) fn default_deb_output_dir(&self) -> PathBuf {
@@ -886,6 +891,7 @@ impl BuildEnvironment {
     /// Creates empty (removes files if needed) target/debian/foo directory so that we can start fresh.
     fn reset_deb_temp_directory(&self, package_deb: &PackageConfig) -> io::Result<()> {
         let deb_temp_dir = self.deb_temp_dir(package_deb);
+        log::debug!("clearing build dir {}", deb_temp_dir.display());
         let _ = fs::remove_dir(&deb_temp_dir);
         // Delete previous .deb from target/debian, but only other versions of the same package
         let deb_dir = self.default_deb_output_dir();
@@ -1481,7 +1487,7 @@ impl BuildEnvironment {
                 .or_else(|| source_path.strip_prefix(custom_profile_target_dir.as_deref()?).ok());
             let (is_built, source_path, is_example) = if let Some(rel_path) = target_artifact_rel_path {
                 let is_example = rel_path.starts_with("examples");
-                (self.find_is_built_file_in_package(rel_path, if is_example { "example" } else { "bin" }), self.path_in_build(rel_path), is_example)
+                (self.find_is_built_file_in_package(rel_path, if is_example { "example" } else { "bin" }), self.path_in_build_products(rel_path), is_example)
             } else {
                 if source_path.to_str().is_some_and(|s| s.starts_with(['/','.']) && s.contains("/target/")) {
                     listener.warning(format!("Only source paths starting with exactly 'target/release/' are detected as Cargo target dir. '{}' does not match the pattern, and will not be built", source_path.display()));
@@ -1510,7 +1516,7 @@ impl BuildEnvironment {
             .filter_map(|t| {
                 if t.crate_types.iter().any(|ty| ty == "bin") && t.kind.iter().any(|k| k == "bin") {
                     Some(Asset::new(
-                        AssetSource::Path(self.path_in_build(&t.name)),
+                        AssetSource::Path(self.path_in_build_products(&t.name)),
                         Path::new("usr/bin").join(&t.name),
                         0o755,
                         self.is_built_file_in_package(t),
@@ -1521,7 +1527,7 @@ impl BuildEnvironment {
                     let lib_name = format!("{prefix}{}{suffix}", t.name);
                     let lib_dir = package_deb.library_install_dir(self.rust_target_triple());
                     Some(Asset::new(
-                        AssetSource::Path(self.path_in_build(&lib_name)),
+                        AssetSource::Path(self.path_in_build_products(&lib_name)),
                         lib_dir.join(lib_name),
                         0o644,
                         self.is_built_file_in_package(t),

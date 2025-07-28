@@ -294,7 +294,7 @@ pub fn write_deb(config: &BuildEnvironment, deb_output_path: PathBuf, package_de
     let generated = deb_contents.finish()?;
 
     let deb_temp_dir = config.deb_temp_dir(package_deb);
-    let _ = fs::remove_dir(deb_temp_dir);
+    let _ = fs::remove_dir(&deb_temp_dir);
 
     Ok(generated)
 }
