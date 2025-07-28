@@ -1357,7 +1357,7 @@ impl PackageConfig {
             replaces: None,
             provides: None,
             architecture: self.architecture.clone(),
-            multiarch: if self.multiarch != Multiarch::None { Multiarch::Same } else { Multiarch::None },
+            multiarch: if self.multiarch == Multiarch::Same { Multiarch::Same } else { Multiarch::None },
             conf_files: Vec::new(),
             assets: Assets::new(Vec::new(), debug_assets),
             readme_rel_path: None,
