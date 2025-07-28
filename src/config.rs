@@ -636,7 +636,6 @@ impl BuildEnvironment {
             if std::env::var_os("PKG_CONFIG_ALLOW_CROSS").is_none() && std::env::var_os("PKG_CONFIG_PATH").is_none() {
                 let pkg_config_path = format!("/usr/lib/{}/pkgconfig", debian_triple_from_rust_triple(rust_target_triple));
                 if Path::new(&pkg_config_path).exists() {
-                    cmd.env("PKG_CONFIG_ALLOW_CROSS", "1");
                     cmd.env("PKG_CONFIG_PATH", pkg_config_path);
                 }
             }
