@@ -27,7 +27,7 @@ pub(crate) fn resolve_with_dpkg(path: &Path, lib_dir_search_paths: &[&Path]) -> 
         .arg(path)
         .current_dir(temp_folder.path())
         .output()
-        .map_err(|e| CargoDebError::CommandFailed(e, DPKG_SHLIBDEPS_COMMAND))?;
+        .map_err(|e| CargoDebError::CommandFailed(e, DPKG_SHLIBDEPS_COMMAND.into()))?;
     if !output.status.success() {
         use std::fmt::Write;
         let mut args = String::new();

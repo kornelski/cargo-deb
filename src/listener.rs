@@ -13,7 +13,8 @@ pub trait Listener: Send + Sync {
         self.info(format!("{operation}: {detail}"))
     }
 
-    fn error(&self, error: &dyn Error) {
+    #[allow(unused_parens)]
+    fn error(&self, error: &(dyn Error + 'static)) {
         let mut out = std::io::stderr().lock();
         let _ = writeln!(out, "cargo-deb: {error}");
     }
@@ -41,17 +42,33 @@ pub struct StdErrListener {
 impl StdErrListener {
     fn label(&self, label: &str, style: Style, text: &str) {
         let mut out = AutoStream::new(std::io::stderr(), self.color).lock();
-        self.label_locked(&mut out, label, style, text);
+        self.label_locked(&mut out, label, 0, style, text);
     }
 
-    fn label_locked(&self, out: &mut AutoStream<StderrLock<'static>>, label: &str, style: Style, text: &str) {
-        let text = text.strip_prefix(label).and_then(|t| t.strip_prefix(": ")).unwrap_or(text);
+    fn label_locked(&self, out: &mut AutoStream<StderrLock<'static>>, label: &str, indent: u8, style: Style, text: &str) {
+        let text = text.strip_prefix(label).and_then(|t| t.strip_prefix(": ")).unwrap_or(text).trim_ascii_end();
         let mut lines = text.lines();
         if let Some(line) = lines.next() {
-            let _ = writeln!(*out, "{style}{label}{style:#}: {line}");
+            let _ = writeln!(*out, "{:width$}{style}{label}{style:#}: {line}", "", width = indent as usize);
         }
         for line in lines {
-            let _ = writeln!(*out, "{:width$}{line}", "", width = label.len() + 2);
+            let _ = writeln!(*out, "{:width$}{line}", "", width = indent as usize + label.len() + 2);
+        }
+    }
+
+    fn error_with_notes(&self, out: &mut AutoStream<StderrLock<'static>>, err: &(dyn Error + 'static), primary_error: bool) {
+        let err_msg = err.to_string();
+        let mut messages = err_msg.split("\nnote: ");
+        let err_msg = messages.next().unwrap_or_default();
+
+        if primary_error {
+            self.label_locked(&mut *out, "error", 0, Style::new().bold().fg_color(Some(AnsiColor::Red.into())), err_msg);
+        } else {
+            self.label_locked(&mut *out, "cause", 2, Style::new().fg_color(Some(AnsiColor::Red.into())), err_msg);
+        }
+
+        for note in messages.map(|n| n.trim_ascii_start()).filter(|n| !n.is_empty()) {
+            self.label_locked(out, "note", if primary_error { 0 } else { 3 }, Style::new().fg_color(Some(AnsiColor::Cyan.into())), note);
         }
     }
 }
@@ -69,25 +86,20 @@ impl Listener for StdErrListener {
         }
     }
 
-    fn error(&self, err: &dyn Error) {
+    fn error(&self, err: &(dyn Error + 'static)) {
+        let mut out = AutoStream::new(std::io::stderr(), self.color).lock();
+        self.error_with_notes(&mut out, err, true);
+
         let mut cause = err.source();
-        let mut causes = String::new();
-        let mut max_causes = 3;
+        let mut max_causes = 5;
         while let Some(err) = cause {
             max_causes -= 1;
             if max_causes == 0 {
                 break;
             }
-            causes = format!("{err}\n\n{causes}");
+            self.error_with_notes(&mut out, err, false);
             cause = err.source();
         }
-        let causes = causes.trim_end();
-
-        let mut out = AutoStream::new(std::io::stderr(), self.color).lock();
-        if !causes.is_empty() {
-            self.label_locked(&mut out, "error", Style::new().fg_color(Some(AnsiColor::Red.into())), causes);
-        }
-        self.label_locked(&mut out, "error", Style::new().bold().fg_color(Some(AnsiColor::Red.into())), &err.to_string());
     }
 
     fn progress(&self, operation: &str, detail: String) {
@@ -106,7 +118,7 @@ impl Listener for PrefixedListener<'_> {
         self.1.warning(s);
     }
 
-    fn error(&self, err: &dyn Error) {
+    fn error(&self, err: &(dyn Error + 'static)) {
         self.1.error(err);
     }
 

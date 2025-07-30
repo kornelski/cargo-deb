@@ -44,7 +44,7 @@ impl DebArchive {
         header.set_uid(0);
         header.set_gid(0);
         self.ar_builder.append(&header, data)
-            .map_err(|e| CargoDebError::Io(e).context("ar archive entry"))
+            .map_err(|e| CargoDebError::Io(e).context("can't add ar archive entry"))
     }
 
     pub fn finish(self) -> CDResult<PathBuf> {

@@ -55,29 +55,34 @@ pub fn strip_binaries(config: &BuildEnvironment, package_deb: &mut PackageConfig
         .map(|(i, asset)| {
         let (new_source, new_debug_asset) = if let Some(path) = asset.source.path() {
             if !path.exists() {
-                return Err(CargoDebError::StripFailed(path.to_owned(), "The file doesn't exist".into()));
+                return Err(CargoDebError::StripFailed(path.to_owned(), format!("The file doesn't exist\nnote: needed for {}", asset.c.target_path.display())));
             }
 
-            let cargo_config_path = cargo_config.as_ref().map_or(Path::new(".cargo/config.toml"), |c| c.path());
-            let file_name = path.file_stem().ok_or(CargoDebError::Str("bad path"))?.to_string_lossy();
-            let stripped_temp_path = stripped_binaries_output_dir.join(format!("{file_name}.tmp{i}-stripped"));
+            let cargo_config_path = cargo_config.as_ref().map(|c| c.path()).unwrap_or(".cargo/config.toml".as_ref());
+            let file_name = path.file_stem().and_then(|f| f.to_str()).ok_or(CargoDebError::Str("bad path"))?;
+            let stripped_temp_path = stripped_binaries_output_dir.join(format!("{file_name}.stripped-{i}.tmp"));
             let _ = fs::remove_file(&stripped_temp_path);
 
             run_strip(strip_cmd, &stripped_temp_path, path, &["--strip-unneeded", "--remove-section=.comment", "--remove-section=.note"])
                 .or_else(|err| {
-                    let msg = err.map(|err| {
-                        use std::fmt::Write;
-                        let mut msg = format!("{}: {err}", strip_cmd.display());
-                        if let Some(target) = rust_target_triple {
-                            write!(&mut msg, "\nTarget-specific strip commands are configured in {}: `[target.{target}] strip = {{ path = \"{}\" }}`", cargo_config_path.display(), strip_cmd.display()).unwrap();
-                        }
-                        if !separate_debug_symbols {
-                            write!(&mut msg, "\nYou can add `[profile.{}] strip=true` or run with --no-strip",
-                                config.build_profile.example_profile_name()).unwrap();
-                        }
-                        msg
-                    })
-                    .unwrap_or_else(|| format!("{} command failed to create output '{}'", strip_cmd.display(), stripped_temp_path.display()));
+                    use std::fmt::Write;
+                    let mut help_text = String::new();
+                    if let Some(target) = rust_target_triple {
+                        write!(&mut help_text, "\nnote: Target-specific strip commands are configured in {}: `[target.{target}] strip = {{ path = \"{}\" }}`", cargo_config_path.display(), strip_cmd.display()).unwrap();
+                    }
+                    if !separate_debug_symbols {
+                        write!(&mut help_text, "\nnote: You can add `[profile.{}] strip=true` or run with --no-strip",
+                            config.build_profile.example_profile_name()).unwrap();
+                    }
+
+                    let msg = match err {
+                        Some(err) if err.kind() == io::ErrorKind::NotFound => {
+                            return Err(CargoDebError::CommandFailed(err, strip_cmd.display().to_string().into())
+                                .context(format!("can't separate debug symbols{help_text}")));
+                        },
+                        Some(err) => format!("{}: {err}{help_text}", strip_cmd.display()),
+                        None => format!("{} command failed to create output '{}'{help_text}", strip_cmd.display(), stripped_temp_path.display()),
+                    };
 
                     match run_strip(strip_cmd, &stripped_temp_path, path, &[]) {
                         Ok(()) => Ok(listener.warning(format!("strip didn't support additional arguments: {msg}"))),
@@ -113,13 +118,18 @@ pub fn strip_binaries(config: &BuildEnvironment, package_deb: &mut PackageConfig
                     .and_then(ensure_success)
                     .map_err(|err| {
                         use std::fmt::Write;
-                        let mut msg = format!("{}: {err}", objcopy_cmd.display());
+                        let mut help_text = String::new();
 
                         if let Some(target) = rust_target_triple {
-                            write!(&mut msg, "\nTarget-specific objcopy commands are configured in {}: `[target.{target}] objcopy = {{ path =\"{}\" }}`", cargo_config_path.display(), objcopy_cmd.display()).unwrap();
+                            write!(&mut help_text, "\nnote: Target-specific objcopy commands are configured in {}: `[target.{target}] objcopy = {{ path =\"{}\" }}`", cargo_config_path.display(), objcopy_cmd.display()).unwrap();
                         }
-                        msg.push_str("\nUse --no-separate-debug-symbols if you don't have objcopy");
-                        CargoDebError::StripFailed(path.to_owned(), msg)
+                        help_text.push_str("\nnote: Use --no-separate-debug-symbols if you don't have objcopy");
+                        if err.kind() == io::ErrorKind::NotFound {
+                            CargoDebError::CommandFailed(err, objcopy_cmd.display().to_string().into())
+                                .context(format!("can't separate debug symbols{help_text}"))
+                        } else {
+                            CargoDebError::StripFailed(path.to_owned(), format!("{}: {err}{help_text}", objcopy_cmd.display()))
+                        }
                     })?;
 
                 let relative_debug_temp_path = debug_temp_path.file_name().ok_or(CargoDebError::Str("bad path"))?;
@@ -132,7 +142,7 @@ pub fn strip_binaries(config: &BuildEnvironment, package_deb: &mut PackageConfig
                     .arg(&stripped_temp_path)
                     .status()
                     .and_then(ensure_success)
-                    .map_err(|err| CargoDebError::CommandFailed(err, "objcopy"))?;
+                    .map_err(|err| CargoDebError::CommandFailed(err, "objcopy".into()))?;
 
                 Some(Asset::new(
                     AssetSource::Path(debug_temp_path),

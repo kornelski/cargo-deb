@@ -75,7 +75,7 @@ fn match_architecture(spec: ArchSpec, target_arch: &str) -> CDResult<bool> {
     let output = Command::new("dpkg-architecture")
         .args(["-a", target_arch, "-i", &spec])
         .output()
-        .map_err(|e| CargoDebError::CommandFailed(e, "dpkg-architecture"))?;
+        .map_err(|e| CargoDebError::CommandFailed(e, "dpkg-architecture".into()))?;
     if neg {
         Ok(!output.status.success())
     } else {
@@ -602,7 +602,7 @@ impl BuildEnvironment {
         }
 
         let status = cmd.status()
-            .map_err(|e| CargoDebError::CommandFailed(e, "cargo"))?;
+            .map_err(|e| CargoDebError::CommandFailed(e, "cargo".into()))?;
         if !status.success() {
             return Err(CargoDebError::BuildFailed);
         }

@@ -1,7 +1,8 @@
 use quick_error::quick_error;
+use std::borrow::Cow;
 use std::path::PathBuf;
 use std::process::ExitStatus;
-use std::{io, num, time};
+use std::{fmt, io, num, time, env};
 
 quick_error! {
     #[derive(Debug)]
@@ -17,29 +18,29 @@ quick_error! {
             source(err)
         }
         IoFile(msg: &'static str, err: io::Error, file: PathBuf) {
-            display("{}: {}", msg, file.display())
+            display("{msg}: {}", file.display())
             source(err)
         }
-        CommandFailed(err: io::Error, cmd: &'static str) {
-            display("Command {} failed to launch", cmd)
+        CommandFailed(err: io::Error, cmd: Cow<'static, str>) {
+            display("Command `{cmd}` failed to launch\nnote: The current $PATH is {}", env::var("PATH").as_deref().unwrap_or("unset or invalid"))
             source(err)
         }
         CommandError(msg: &'static str, arg: String, reason: Vec<u8>) {
-            display("{} ({}): {}", msg, arg, String::from_utf8_lossy(reason).trim_start_matches("error: "))
+            display("{msg} ({arg}): {}", String::from_utf8_lossy(reason).trim_start_matches("error: "))
         }
         Str(msg: &'static str) {
-            display("{}", msg)
+            display("{msg}")
             from()
         }
         NumParse(msg: &'static str, err: num::ParseIntError) {
-            display("{}", msg)
+            display("{msg}")
             source(err)
         }
         InvalidVersion(msg: &'static str, ver: String) {
-            display("Version '{}' is invalid: {}", ver, msg)
+            display("Version '{ver}' is invalid: {msg}")
         }
         InstallFailed(status: ExitStatus) {
-            display("Installation failed, because dpkg -i returned error {status}")
+            display("Installation failed, because `dpkg -i` returned error {status}")
         }
         BuildFailed {
             display("Build failed")
@@ -48,7 +49,7 @@ quick_error! {
             display("Unable to replace #DEBHELPER# token in maintainer script '{}'", name.display())
         }
         StripFailed(name: PathBuf, reason: String) {
-            display("Unable to strip binary '{}': {}", name.display(), reason)
+            display("Unable to strip binary '{}': {reason}", name.display())
         }
         SystemTime(err: time::SystemTimeError) {
             from()
@@ -66,16 +67,16 @@ quick_error! {
             source(err)
         }
         PackageNotFound(path: String, reason: Vec<u8>) {
-            display("Path '{}' does not belong to a package: {}", path, String::from_utf8_lossy(reason))
+            display("Path '{path}' does not belong to a package: {}", String::from_utf8_lossy(reason))
         }
         BinariesNotFound(crate_name: String) {
-            display("No binaries or cdylibs found. The package `{crate_name}` empty. Please specify some assets to package in Cargo.toml")
+            display("No binaries or cdylibs found. The package '{crate_name}' is empty. Please specify some assets to package in Cargo.toml")
         }
         PackageNotFoundInWorkspace(name: String, available: String) {
-            display("The workspace doesn't have a package named {name}.\nAvailable packages are: {available}")
+            display("The workspace doesn't have a package named {name}.\nnote: Available packages are: {available}")
         }
         NoRootFoundInWorkspace(available: String) {
-            display("This is a workspace with multiple packages, and there is no single package at the root.\nPlease specify the package with `-p` or set one in the workspace's `default-members = []`.\nAvailable packages are: {available}")
+            display("This is a workspace with multiple packages, and there is no single package at the root.\nPlease specify the package with `-p` or set one in the workspace's `default-members = []`.\nnote: Available packages are: {available}")
         }
         VariantNotFound(variant: String) {
             display("[package.metadata.deb.variants.{}] not found in Cargo.toml", variant)
@@ -110,13 +111,13 @@ quick_error! {
 }
 
 impl CargoDebError {
-    pub fn context(self, msg: impl std::fmt::Display) -> Self {
+    pub(crate) fn context(self, msg: impl fmt::Display) -> Self {
         Self::Context(msg.to_string(), Box::new(self))
     }
 }
 
-impl From<std::fmt::Error> for CargoDebError {
-    fn from(_: std::fmt::Error) -> Self {
+impl From<fmt::Error> for CargoDebError {
+    fn from(_: fmt::Error) -> Self {
         Self::Str("fmt")
     }
 }

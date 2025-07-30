@@ -499,7 +499,7 @@ fn run_cargo_metadata(manifest_rel_path: Option<&Path>, cargo_locking_flags: Car
     }
 
     let output = cmd.output()
-        .map_err(|e| CargoDebError::CommandFailed(e, "cargo (is it in your PATH?)"))?;
+        .map_err(|e| CargoDebError::CommandFailed(e, "cargo".into()))?;
     if !output.status.success() {
         return Err(CargoDebError::CommandError("cargo", "metadata".to_owned(), output.stderr));
     }

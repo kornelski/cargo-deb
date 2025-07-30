@@ -231,7 +231,7 @@ impl Default for CargoDeb<'_> {
 pub fn install_debs(paths: &[&Path]) -> CDResult<()> {
     let no_sudo = std::env::var_os("EUID").or_else(|| std::env::var_os("UID")).is_some_and(|v| v == "0");
     match install_debs_inner(paths, no_sudo) {
-        Err(CargoDebError::CommandFailed(_, "sudo")) => {
+        Err(CargoDebError::CommandFailed(_, cmd)) if cmd == "sudo" => {
             install_debs_inner(paths, true)
         },
         res => res
@@ -250,7 +250,7 @@ fn install_debs_inner(paths: &[&Path], no_sudo: bool) -> CDResult<()> {
     cmd.args(paths);
     log::debug!("{exe} {:?}", cmd.get_args());
     let status = cmd.status()
-        .map_err(|e| CargoDebError::CommandFailed(e, exe))?;
+        .map_err(|e| CargoDebError::CommandFailed(e, exe.into()))?;
     if !status.success() {
         return Err(CargoDebError::InstallFailed(status));
     }

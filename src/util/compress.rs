@@ -161,7 +161,7 @@ fn system_compressor(compress_format: Format, fast: bool) -> CDResult<Compressor
         .stdout(Stdio::piped())
         .stderr(Stdio::inherit())
         .spawn()
-        .map_err(|e| CargoDebError::CommandFailed(e, compress_format.program()))?;
+        .map_err(|e| CargoDebError::CommandFailed(e, compress_format.program().into()))?;
     let mut stdout = child.stdout.take().unwrap();
 
     let handle = std::thread::spawn(move || {
