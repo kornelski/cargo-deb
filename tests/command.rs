@@ -74,8 +74,9 @@ fn build_with_command_line_compress_gz() {
 }
 
 #[test]
+#[cfg_attr(all(feature = "default_enable_separate_debug_symbols", target_os = "macos"), ignore = "no objcopy")]
 fn no_dbgsym() {
-    let (_, ddir) = extract_built_package_from_manifest("tests/test-workspace/test-ws2/Cargo.toml", "xz", &["--no-dbgsym", "--fast"]);
+    let (_, ddir) = extract_built_package_from_manifest("tests/test-workspace/test-ws2/Cargo.toml", "xz", &["--no-dbgsym", "--fast", "--color=always"]);
     assert!(ddir.path().join("usr/bin/renamed2").exists());
 }
 
@@ -215,7 +216,8 @@ fn cargo_deb(manifest_path: &str, args: &[&str]) -> (TempDir, PathBuf, Option<Pa
     assert!(cmd_path.exists());
 
     let workdir = root.join(Path::new(manifest_path).parent().unwrap());
-    let output = Command::new(cmd_path)
+    let mut cmd = Command::new(cmd_path);
+    let output = cmd
         .env("CARGO_TARGET_DIR", cargo_dir.path()) // use isolated 'target' directories
         .env("CARGO_BUILD_BUILD_DIR", cargo_dir.path().join("build-tmp")) // use isolated build directories
         .arg(format!("--output={}", deb_path.display()))
@@ -229,7 +231,13 @@ fn cargo_deb(manifest_path: &str, args: &[&str]) -> (TempDir, PathBuf, Option<Pa
     println!("{manifest_path} {args:?}: {stdout}");
     eprintln!("{manifest_path} {args:?}: {stderr}");
 
-    assert!(output.status.success(), "Cmd failed {stdout}\n{stderr}");
+    if !output.status.success() {
+        panic!(
+            "Cmd failed: {} {cmd:?}\n{}",
+            output.status,
+            cargo_dir.keep().display(),
+        );
+    }
 
     // prints deb path on the last line
     let mut lines = stdout.lines();
@@ -385,6 +393,7 @@ fn run_cargo_deb_command_on_example_dir_with_variant() {
 
 #[test]
 #[cfg(all(feature = "lzma", target_family = "unix"))]
+#[cfg_attr(all(feature = "default_enable_separate_debug_symbols", target_os = "macos"), ignore = "no objcopy")]
 fn run_cargo_deb_command_on_example_dir_with_version() {
     let (_bdir, deb_path, _) = cargo_deb("example/Cargo.toml", &["--deb-version=1my-custom-version", "--maintainer=alternative maintainer"]);
 
@@ -436,13 +445,16 @@ fn run_cargo_deb_command_on_example_dir_with_version() {
 }
 
 fn dir_test_run_in_subdir(subdir_path: &str) {
+    let _ = env_logger::builder().is_test(true).try_init();
+
     let cargo_dir = tempfile::tempdir().unwrap();
 
     let root = PathBuf::from(env::var_os("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR"));
     let cmd_path = root.join(env!("CARGO_BIN_EXE_cargo-deb"));
     let deb_path = cargo_dir.path().join("test.deb");
 
-    let output = Command::new(cmd_path)
+    let mut cmd = Command::new(cmd_path);
+    let output = cmd
         .current_dir(root.join(subdir_path))
         .env("CARGO_TARGET_DIR", cargo_dir.path()) // use isolated 'target' directories
         .env("CARGO_BUILD_BUILD_DIR", cargo_dir.path().join("build-tmp")) // use isolated build directories
@@ -452,12 +464,15 @@ fn dir_test_run_in_subdir(subdir_path: &str) {
         .arg(format!("--output={}", deb_path.display()))
         .output()
         .unwrap();
-    assert!(
-        output.status.success(),
-        "Cmd failed: {}\n{}",
-        String::from_utf8_lossy(&output.stdout),
-        String::from_utf8_lossy(&output.stderr)
-    );
+    if !output.status.success() {
+        panic!(
+            "Cmd failed: {} {cmd:?}\n{}\n{}\n{}",
+            output.status,
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr),
+            cargo_dir.keep().display(),
+        );
+    }
 
     let (_, ddir) = extract_package(&deb_path, DEFAULT_COMPRESSION_EXT);
     assert!(ddir.path().join("usr/share/doc/sub-crate/README.md").exists(), "must package README");
