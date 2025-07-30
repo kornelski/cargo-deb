@@ -617,7 +617,7 @@ mod tests {
         let fragments = generate("mypkg", &assets, &Options::default(), &mock_listener).unwrap();
         assert_eq!(1, fragments.len());
 
-        let (fragment_name, fragment_bytes) = fragments.into_iter().next().unwrap();
+        let (fragment_name, created_text) = fragments.into_iter().next().unwrap();
 
         // should create an augmentation for the postinst script
         assert_eq!("mypkg.postinst.debhelper", fragment_name);
@@ -629,7 +629,6 @@ mod tests {
         //   # End automatically added section
         let autoscript_text = get_embedded_autoscript("postinst-init-tmpfiles");
         let autoscript_line_count = autoscript_text.lines().count();
-        let created_text = String::from_utf8(fragment_bytes).unwrap();
         let created_line_count = created_text.lines().count();
         assert_eq!(autoscript_line_count + 2, created_line_count);
 

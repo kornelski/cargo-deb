@@ -3,7 +3,7 @@ use crate::deb::tar::Tarball;
 use crate::dh::{dh_installsystemd, dh_lib};
 use crate::error::{CDResult, CargoDebError};
 use crate::listener::Listener;
-use crate::util::{is_path_file, read_file_to_bytes};
+use crate::util::{is_path_file, read_file_to_string};
 use dh_lib::ScriptFragments;
 use std::fs;
 use std::io::Write;
@@ -109,7 +109,7 @@ impl<'l, W: Write> ControlArchiveBuilder<'l, W> {
                     log::info!("maintainer script {} not found", script_path.display());
                     continue;
                 }
-                let file = read_file_to_bytes(&script_path)
+                let file = read_file_to_string(&script_path)
                     .map_err(|e| CargoDebError::IoFile("can't read script", e, script_path.clone()))?;
                 (file, Some(script_path.as_path()))
             };
@@ -121,7 +121,7 @@ impl<'l, W: Write> ControlArchiveBuilder<'l, W> {
             // See Debian Policy Manual section 10.9
             // and lintian tag control-file-has-bad-permissions
             let permissions = if name == "templates" { 0o644 } else { 0o755 };
-            self.add_file_with_log(name.as_ref(), &contents, permissions, source_path)?;
+            self.add_file_with_log(name.as_ref(), contents.as_bytes(), permissions, source_path)?;
         }
 
         if !found_any {

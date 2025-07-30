@@ -65,10 +65,6 @@ quick_error! {
             display("Unable to parse `cargo metadata` output")
             source(err)
         }
-        ParseUTF8(err: std::str::Utf8Error) {
-            from()
-            from(err: std::string::FromUtf8Error) -> (err.utf8_error())
-        }
         PackageNotFound(path: String, reason: Vec<u8>) {
             display("Path '{}' does not belong to a package: {}", path, String::from_utf8_lossy(reason))
         }

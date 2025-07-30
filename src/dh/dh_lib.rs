@@ -39,7 +39,7 @@ static AUTOSCRIPTS: [(&str, &[u8]); 10] = [
     ("prerm-systemd", include_bytes!("../../autoscripts/prerm-systemd")),
     ("prerm-systemd-restart", include_bytes!("../../autoscripts/prerm-systemd-restart")),
 ];
-pub(crate) type ScriptFragments = HashMap<String, Vec<u8>>;
+pub(crate) type ScriptFragments = HashMap<String, String>;
 
 /// Find a file in the given directory that best matches the given package,
 /// filename and (optional) unit name. Enables callers to use the most specific
@@ -178,7 +178,7 @@ pub(crate) fn autoscript(
 
     if scripts.contains_key(&outfile) && (script == "postrm" || script == "prerm") {
         if !replacements.is_empty() {
-            let existing_text = std::str::from_utf8(scripts.get(&outfile).unwrap())?;
+            let existing_text = scripts.get(&outfile).unwrap();
 
             // prepend new text to existing script fragment
             let new_text = [
@@ -195,7 +195,7 @@ pub(crate) fn autoscript(
     } else if !replacements.is_empty() {
         // append to existing script fragment (if any)
         let new_text = [
-            std::str::from_utf8(scripts.get(&outfile).unwrap_or(&Vec::new()))?,
+            scripts.get(&outfile).unwrap_or(&String::new()),
             &format!("# Automatically added by {bin_name}\n"),
             &autoscript_sed(snippet_filename, replacements),
             "# End automatically added section\n",
@@ -265,7 +265,7 @@ fn debhelper_script_subst(user_scripts_dir: &Path, scripts: &mut ScriptFragments
     let mut generated_text = String::new();
     for generated_file_name in &generated_scripts {
         if let Some(contents) = scripts.get(generated_file_name) {
-            generated_text.push_str(std::str::from_utf8(contents)?);
+            generated_text.push_str(contents);
         }
     }
 
@@ -486,7 +486,7 @@ mod tests {
         assert_eq!(1, scripts.len());
 
         let expected_created_name = &format!("mypkg.{maintainer_script}.debhelper");
-        let (created_name, created_bytes) = scripts.iter().next().unwrap();
+        let (created_name, created_text) = scripts.iter().next().unwrap();
 
         // Verify the created script filename key
         assert_eq!(expected_created_name, created_name);
@@ -498,7 +498,6 @@ mod tests {
         //   # End automatically added section
         let autoscript_text = get_embedded_autoscript(autoscript_name);
         let autoscript_line_count = autoscript_text.lines().count();
-        let created_text = std::str::from_utf8(created_bytes).unwrap();
         let created_line_count = created_text.lines().count();
         assert_eq!(autoscript_line_count + 2, created_line_count);
 
@@ -526,11 +525,10 @@ mod tests {
 
         // The number and name of the output scripts should remain the same
         assert_eq!(1, scripts.len());
-        let (created_name, created_bytes) = scripts.iter().next().unwrap();
+        let (created_name, created_text) = scripts.iter().next().unwrap();
         assert_eq!(expected_created_name, created_name);
 
         // The line structure should now contain two injected blocks
-        let created_text = std::str::from_utf8(created_bytes).unwrap();
         let created_line_count = created_text.lines().count();
         assert_eq!((autoscript_line_count + 2) * 2, created_line_count);
 
@@ -636,8 +634,8 @@ mod tests {
         assert!(scripts.contains_key("myscript"));
     }
 
-    fn script_to_string(scripts: &ScriptFragments, script: &str) -> String {
-        String::from_utf8(scripts.get(script).unwrap().clone()).unwrap()
+    fn script_to_string<'a>(scripts: &'a ScriptFragments, script: &str) -> &'a str {
+        scripts.get(script).unwrap()
     }
 
     #[test]
@@ -647,7 +645,7 @@ mod tests {
         mock_listener.expect_progress().times(1).return_const(());
 
         let mut scripts = ScriptFragments::new();
-        scripts.insert("mypkg.myscript.debhelper".to_owned(), b"injected".to_vec());
+        scripts.insert("mypkg.myscript.debhelper".to_owned(), "injected".into());
 
         assert_eq!(1, scripts.len());
         debhelper_script_subst(Path::new(""), &mut scripts, "mypkg", "myscript", None, &mock_listener).unwrap();
@@ -669,7 +667,7 @@ mod tests {
         mock_listener.expect_progress().times(1).return_const(());
 
         let mut scripts = ScriptFragments::new();
-        scripts.insert("mypkg.myscript.debhelper".to_owned(), b"injected".to_vec());
+        scripts.insert("mypkg.myscript.debhelper".to_owned(), "injected".into());
 
         assert_eq!(1, scripts.len());
         debhelper_script_subst(Path::new(""), &mut scripts, "mypkg", "myscript", None, &mock_listener).unwrap();
@@ -700,8 +698,8 @@ mod tests {
         mock_listener.expect_progress().times(1).return_const(());
 
         let mut scripts = ScriptFragments::new();
-        scripts.insert(format!("mypkg.{maintainer_script}.debhelper"), b"first".to_vec());
-        scripts.insert(format!("mypkg.{maintainer_script}.service"), b"second".to_vec());
+        scripts.insert(format!("mypkg.{maintainer_script}.debhelper"), "first".into());
+        scripts.insert(format!("mypkg.{maintainer_script}.service"), "second".into());
 
         assert_eq!(2, scripts.len());
         debhelper_script_subst(Path::new(""), &mut scripts, "mypkg", maintainer_script, None, &mock_listener).unwrap();
