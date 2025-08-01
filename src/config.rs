@@ -1121,7 +1121,7 @@ impl PackageConfig {
         self.assets.resolved.iter()
             .filter(|asset| {
                 // Assumes files in build dir which have executable flag set are binaries
-                asset.c.is_dynamic_library() || asset.c.is_executable()
+                asset.c.is_dynamic_library() || asset.is_binary_executable()
             })
             .map(|asset| &asset.source)
             .collect()

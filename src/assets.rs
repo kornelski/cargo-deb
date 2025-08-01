@@ -62,7 +62,6 @@ impl AssetSource {
     #[must_use]
     pub fn file_size(&self) -> Option<u64> {
         match *self {
-            // FIXME: may not be accurate if the executable is not stripped yet?
             Self::Path(ref p) => fs::metadata(p).ok().map(|m| m.len()),
             Self::Data(ref d) => Some(d.len() as u64),
             Self::Symlink(_) => None,
@@ -83,6 +82,21 @@ impl AssetSource {
                 Cow::Owned(data)
             },
         })
+    }
+
+    pub(crate) fn magic_bytes(&self) -> Option<[u8; 4]> {
+        match self {
+            Self::Path(p) | Self::Symlink(p) => {
+                let mut buf = [0; 4];
+                use std::io::Read;
+                let mut file = std::fs::File::open(p).ok()?;
+                file.read_exact(&mut buf[..]).ok()?;
+                Some(buf)
+            },
+            Self::Data(d) => {
+                d.get(..4).and_then(|b| b.try_into().ok())
+            },
+        }
     }
 }
 
@@ -347,6 +361,16 @@ impl Asset {
             action,
         });
         self
+    }
+
+    pub(crate) fn is_binary_executable(&self) -> bool {
+        self.c.is_executable()
+            && self.c.target_path.extension().is_none_or(|ext| ext != "sh")
+            && (self.c.is_built() || self.smells_like_elf())
+    }
+
+    fn smells_like_elf(&self) -> bool {
+        self.source.magic_bytes().is_some_and(|b| b == [0x7F, b'E', b'L', b'F'])
     }
 }
 
