@@ -1,20 +1,21 @@
 For more details see https://github.com/kornelski/cargo-deb/commits/main/
 
-# 3.4.0
+# 3.4
 
 * Added support for `build-dir` Cargo feature
+* Don't try to auto-detect library deps for shell scripts
 
-# 3.3.0
+# 3.3
 
 * Switched systemd location to the preferred `/usr/lib/systemd` instead of `/lib/systemd`
 * Improved warnings and error messages
 * Added `systemd/` is a fallback location for systemd units if `maintainer-scripts` is not set
 
-# 3.2.0
+# 3.2
 
 * Added colored terminal output
 
-# 3.1.0
+# 3.1
 
 * Added `--compress-debug-symbols=zlib` and `--compress-debug-symbols=zstd`. If the algorithm is not specified, it defaults to `zstd` for `debug = "full"` (for debuggers) and `zlib` otherwise (for compatibility with panic backtraces).
 * When `--separate-debug-symbols` or `--dbgsym` are used with a package that doesn't have debug symbols configured, the package will be built with some debug symbols enabled anyway.
