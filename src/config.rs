@@ -362,6 +362,10 @@ impl BuildEnvironment {
 
         // Cargo cross-compiles to a dir
         if let Some(rust_target_triple) = rust_target_triple {
+            if !is_valid_target(&rust_target_triple) {
+                listener.warning(format!("specified invalid target: '{rust_target_triple}'"));
+                return Err(CargoDebError::Str("invalid build target triple"));
+            }
             target_dir.push(rust_target_triple);
         }
 
@@ -911,6 +915,13 @@ impl BuildEnvironment {
     pub fn rust_target_triple(&self) -> &str {
         self.rust_target_triple.as_deref().unwrap_or(DEFAULT_TARGET)
     }
+}
+
+fn is_valid_target(rust_target_triple: &str) -> bool {
+    !rust_target_triple.is_empty() &&
+    !rust_target_triple.starts_with('.') &&
+    !rust_target_triple.as_bytes().iter().any(|&b| b == b'/' || b.is_ascii_whitespace()) &&
+    rust_target_triple.contains('-')
 }
 
 impl PackageConfig {
