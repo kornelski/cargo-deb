@@ -119,7 +119,7 @@ impl CargoDeb<'_> {
         package_deb.resolve_assets(listener)?;
 
         let (depends, compressed_assets) = rayon::join(
-            || package_deb.resolved_binary_dependencies(config.rust_target_triple.as_deref(), listener),
+            || package_deb.resolved_binary_dependencies(listener),
             || compressed_assets(&package_deb, listener),
         );
 
@@ -127,7 +127,7 @@ impl CargoDeb<'_> {
         package_deb.resolved_depends = Some(depends?);
         apply_compressed_assets(&mut package_deb, compressed_assets?);
 
-        strip_binaries(&config, &mut package_deb, config.rust_target_triple.as_deref(), asked_for_dbgsym_package, listener)?;
+        strip_binaries(&config, &mut package_deb, asked_for_dbgsym_package, listener)?;
 
         let generate_dbgsym_package = matches!(config.debug_symbols, DebugSymbols::Separate { generate_dbgsym_package: true, .. });
         let package_dbgsym_ddeb = generate_dbgsym_package.then(|| package_deb.split_dbgsym()).flatten();

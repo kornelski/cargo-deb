@@ -67,6 +67,16 @@ fn build_with_command_line_compress_xz() {
 }
 
 #[test]
+#[cfg_attr(all(feature = "default_enable_separate_debug_symbols", target_os = "macos"), ignore = "no objcopy")]
+fn build_with_target() {
+    let (_, ddir) = extract_built_package_from_manifest("tests/test-workspace/test-ws1/Cargo.toml",
+        "xz", &["--target", env!("CARGO_DEB_DEFAULT_TARGET"), "--fast"]);
+    assert!(ddir.path().join("usr/local/bin/decoy").exists());
+    assert!(ddir.path().join("usr/local/bin/renamed2").exists());
+    assert!(ddir.path().join("usr/share/doc/test1-crate-name/copyright").exists());
+}
+
+#[test]
 fn build_with_command_line_compress_gz() {
     // ws2 with system gzip
     let (_, ddir) = extract_built_package_from_manifest("tests/test-workspace/test-ws2/Cargo.toml", "gz", &["--no-strip", "--compress-system", "--compress-type", "gz"]);
@@ -96,8 +106,14 @@ fn no_symbols_for_dbgsym() {
 fn extract_built_package_from_manifest(manifest_path: &str, ext: &str, args: &[&str]) -> (TempDir, TempDir) {
     let (tmpdir, deb_path, ddeb) = cargo_deb(manifest_path, args);
     if let Some(ddeb) = ddeb {
-        drop(tmpdir.keep());
-        panic!("{ddeb:?} built unexpectedly");
+        let allowed = cfg!(feature = "default_enable_dbgsym") &&
+            !args.contains(&"--no-dbgsym") &&
+            !args.contains(&"--override-debug=none") &&
+            !args.contains(&"--no-strip");
+        if !allowed {
+            drop(tmpdir.keep());
+            panic!("{ddeb:?} built unexpectedly");
+        }
     }
     extract_package(&deb_path, ext)
 }
@@ -209,7 +225,6 @@ fn cargo_deb(manifest_path: &str, args: &[&str]) -> (TempDir, PathBuf, Option<Pa
 
     let cargo_dir = tempfile::tempdir().unwrap();
     assert!(cargo_dir.path().is_absolute());
-    let deb_path = cargo_dir.path().join("test.deb");
 
     let root = PathBuf::from(env::var_os("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR"));
     let cmd_path = root.join(env!("CARGO_BIN_EXE_cargo-deb"));
@@ -220,7 +235,6 @@ fn cargo_deb(manifest_path: &str, args: &[&str]) -> (TempDir, PathBuf, Option<Pa
     let output = cmd
         .env("CARGO_TARGET_DIR", cargo_dir.path()) // use isolated 'target' directories
         .env("CARGO_BUILD_BUILD_DIR", cargo_dir.path().join("build-tmp")) // use isolated build directories
-        .arg(format!("--output={}", deb_path.display()))
         .args(args)
         .current_dir(workdir)
         .output()
@@ -241,12 +255,12 @@ fn cargo_deb(manifest_path: &str, args: &[&str]) -> (TempDir, PathBuf, Option<Pa
 
     // prints deb path on the last line
     let mut lines = stdout.lines();
-    let printed_deb_path = Path::new(lines.next_back().unwrap());
+    let deb_path = PathBuf::from(lines.next_back().unwrap());
+    assert!(deb_path.exists());
     let before_last_line = lines.next_back().unwrap_or_default();
     let maybe_ddeb_path = if before_last_line.ends_with(".ddeb") { Some(PathBuf::from(before_last_line)) } else { None };
-    assert_eq!(printed_deb_path, deb_path);
-    assert!(deb_path.exists());
 
+    assert!(deb_path.starts_with(&cargo_dir));
     (cargo_dir, deb_path, maybe_ddeb_path)
 }
 

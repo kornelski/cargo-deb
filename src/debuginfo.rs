@@ -18,7 +18,7 @@ fn ensure_success(status: ExitStatus) -> io::Result<()> {
 }
 
 /// Strips the binary that was created with cargo
-pub fn strip_binaries(config: &BuildEnvironment, package_deb: &mut PackageConfig, rust_target_triple: Option<&str>, asked_for_dbgsym_package: bool, listener: &dyn Listener) -> CDResult<()> {
+pub fn strip_binaries(config: &BuildEnvironment, package_deb: &mut PackageConfig, asked_for_dbgsym_package: bool, listener: &dyn Listener) -> CDResult<()> {
     let (separate_debug_symbols, compress_debug_symbols) = match config.debug_symbols {
         DebugSymbols::Keep => return Ok(()),
         DebugSymbols::Strip => (false, CompressDebugSymbols::No),
@@ -31,7 +31,7 @@ pub fn strip_binaries(config: &BuildEnvironment, package_deb: &mut PackageConfig
     let mut objcopy_cmd = Path::new("objcopy");
     let mut strip_cmd = Path::new("strip");
 
-    if let Some(rust_target_triple) = rust_target_triple {
+    if let Some(rust_target_triple) = &package_deb.rust_target_triple {
         cargo_config = config.cargo_config().ok().flatten();
         if let Some(cmd) = target_specific_command(cargo_config.as_ref(), "objcopy", rust_target_triple) {
             listener.info(format!("Using '{}' for '{rust_target_triple}'", cmd.display()));
@@ -49,7 +49,8 @@ pub fn strip_binaries(config: &BuildEnvironment, package_deb: &mut PackageConfig
     let stripped_binaries_output_dir = config.deb_temp_dir(package_deb);
     debug_assert!(stripped_binaries_output_dir.is_dir());
 
-    let lib_dir_base = package_deb.library_install_dir(config.rust_target_triple());
+    let lib_dir_base = package_deb.library_install_dir();
+    let target_triple = package_deb.rust_target_triple.clone();
     let added_debug_assets = package_deb.built_binaries_mut().into_par_iter().enumerate()
         .filter(|(_, asset)| !asset.source.archive_as_symlink_only()) // data won't be included, so nothing to strip
         .map(|(i, asset)| {
@@ -67,7 +68,7 @@ pub fn strip_binaries(config: &BuildEnvironment, package_deb: &mut PackageConfig
                 .or_else(|err| {
                     use std::fmt::Write;
                     let mut help_text = String::new();
-                    if let Some(target) = rust_target_triple {
+                    if let Some(target) = &target_triple {
                         write!(&mut help_text, "\nnote: Target-specific strip commands are configured in {}: `[target.{target}] strip = {{ path = \"{}\" }}`", cargo_config_path.display(), strip_cmd.display()).unwrap();
                     }
                     if !separate_debug_symbols {
@@ -123,7 +124,7 @@ pub fn strip_binaries(config: &BuildEnvironment, package_deb: &mut PackageConfig
                         use std::fmt::Write;
                         let mut help_text = String::new();
 
-                        if let Some(target) = rust_target_triple {
+                        if let Some(target) = &target_triple {
                             write!(&mut help_text, "\nnote: Target-specific objcopy commands are configured in {}: `[target.{target}] objcopy = {{ path =\"{}\" }}`", cargo_config_path.display(), objcopy_cmd.display()).unwrap();
                         }
                         help_text.push_str("\nnote: Use --no-separate-debug-symbols if you don't have objcopy");

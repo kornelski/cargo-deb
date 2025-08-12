@@ -91,8 +91,6 @@ pub struct BuildEnvironment {
     pub package_manifest_dir: PathBuf,
     /// Run `cargo` commands from this dir, or things may subtly break
     pub cargo_run_current_dir: PathBuf,
-    /// Triple. `None` means current machine architecture.
-    pub rust_target_triple: Option<String>,
     /// `CARGO_TARGET_DIR`
     pub target_dir: PathBuf,
     /// Either derived from target_dir or `-Zbuild-dir`
@@ -191,6 +189,8 @@ pub struct PackageConfig {
 
     /// The Debian architecture of the target system.
     pub architecture: String,
+    /// Rust's name for the arch. `None` means `DEFAULT_TARGET`
+    pub(crate) rust_target_triple: Option<String>,
     /// Support Debian's multiarch, which puts libs in `/usr/lib/$tuple/`
     pub multiarch: Multiarch,
     /// A list of configuration files installed by the package.
@@ -304,7 +304,6 @@ pub struct DebugSymbolOptions {
 pub struct BuildOptions<'a> {
     pub manifest_path: Option<&'a Path>,
     pub selected_package_name: Option<&'a str>,
-    /// Trailing slash is meaningful
     pub rust_target_triple: Option<&'a str>,
     pub config_variant: Option<&'a str>,
     pub overrides: DebConfigOverrides,
@@ -422,7 +421,6 @@ impl BuildEnvironment {
         let config = Self {
             reproducible,
             package_manifest_dir: manifest_dir,
-            rust_target_triple: rust_target_triple.map(|t| t.to_string()),
             build_dir: build_dir.as_deref().unwrap_or(&target_dir).join("debian"),
             target_dir,
             features,
@@ -437,10 +435,9 @@ impl BuildEnvironment {
             cargo_run_current_dir: std::env::current_dir().unwrap_or_default(),
         };
 
-        let arch = debian_architecture_from_rust_triple(config.rust_target_triple());
         let assets = deb.assets.take().unwrap_or_else(|| vec![RawAssetOrAuto::Auto]);
         let cargo_package = manifest.package.as_mut().ok_or("Cargo.toml is a workspace, not a package")?;
-        let mut package_deb = PackageConfig::new(deb, cargo_package, listener, default_timestamp, overrides, arch, multiarch)?;
+        let mut package_deb = PackageConfig::new(deb, cargo_package, listener, default_timestamp, overrides, rust_target_triple, multiarch)?;
 
         config.add_assets(&mut package_deb, assets, listener)?;
 
@@ -549,7 +546,7 @@ impl BuildEnvironment {
         if package_deb.multiarch != Multiarch::None {
             let mut has_bin = None;
             let mut has_lib = None;
-            let multiarch_lib_dir_prefix = &package_deb.multiarch_lib_dirs(self.rust_target_triple())[0];
+            let multiarch_lib_dir_prefix = &package_deb.multiarch_lib_dirs()[0];
             for c in package_deb.assets.iter() {
                 let p = c.target_path.as_path();
                 if has_bin.is_none() && (p.starts_with("bin") || p.starts_with("usr/bin") || p.starts_with("usr/sbin")) {
@@ -634,7 +631,7 @@ impl BuildEnvironment {
         }
         cmd.args(self.cargo_locking_flags.flags());
 
-        if let Some(rust_target_triple) = self.rust_target_triple.as_deref() {
+        if let Some(rust_target_triple) = package_deb.rust_target_triple.as_deref() {
             cmd.args(["--target", (rust_target_triple)]);
             // Set helpful defaults for cross-compiling
             if std::env::var_os("PKG_CONFIG_ALLOW_CROSS").is_none() && std::env::var_os("PKG_CONFIG_PATH").is_none() {
@@ -911,10 +908,6 @@ impl BuildEnvironment {
         fs::create_dir_all(deb_temp_dir)
     }
 
-    #[must_use]
-    pub fn rust_target_triple(&self) -> &str {
-        self.rust_target_triple.as_deref().unwrap_or(DEFAULT_TARGET)
-    }
 }
 
 fn is_valid_target(rust_target_triple: &str) -> bool {
@@ -927,8 +920,9 @@ fn is_valid_target(rust_target_triple: &str) -> bool {
 impl PackageConfig {
     pub(crate) fn new(
         mut deb: CargoDeb, cargo_package: &mut cargo_toml::Package<CargoPackageMetadata>, listener: &dyn Listener, default_timestamp: u64,
-        overrides: DebConfigOverrides, architecture: &str, multiarch: Multiarch,
+        overrides: DebConfigOverrides, rust_target_triple: Option<&str>, multiarch: Multiarch,
     ) -> Result<Self, CargoDebError> {
+        let architecture = debian_architecture_from_rust_triple(rust_target_triple.unwrap_or(DEFAULT_TARGET));
         let (license_file_rel_path, license_file_skip_lines) = parse_license_file(cargo_package, deb.license_file.as_ref())?;
         let mut license_identifier = cargo_package.license.take().and_then(|mut v| v.get_mut().ok().map(mem::take));
 
@@ -991,6 +985,7 @@ impl PackageConfig {
             priority: deb.priority.take().unwrap_or_else(|| "optional".to_owned()),
             architecture: architecture.to_owned(),
             conf_files: deb.conf_files.take().unwrap_or_default(),
+            rust_target_triple: rust_target_triple.map(|v| v.to_owned()),
             assets: Assets::new(vec![], vec![]),
             triggers_file_rel_path: deb.triggers_file.take().map(PathBuf::from),
             changelog: deb.changelog.take(),
@@ -1012,18 +1007,18 @@ impl PackageConfig {
         self.multiarch = enable;
     }
 
-    pub(crate) fn library_install_dir(&self, rust_target_triple: &str) -> Cow<'static, Path> {
+    pub(crate) fn library_install_dir(&self) -> Cow<'static, Path> {
         if self.multiarch == Multiarch::None {
             Path::new("usr/lib").into()
         } else {
-            let [p, _] = self.multiarch_lib_dirs(rust_target_triple);
+            let [p, _] = self.multiarch_lib_dirs();
             p.into()
         }
     }
 
     /// Apparently, Debian uses both! The first one is preferred?
-    pub(crate) fn multiarch_lib_dirs(&self, rust_target_triple: &str) -> [PathBuf; 2] {
-        let triple = debian_triple_from_rust_triple(rust_target_triple);
+    pub(crate) fn multiarch_lib_dirs(&self) -> [PathBuf; 2] {
+        let triple = debian_triple_from_rust_triple(self.rust_target_triple.as_deref().unwrap_or(DEFAULT_TARGET));
         let debian_multiarch = PathBuf::from(format!("usr/lib/{triple}"));
         let gcc_crossbuild = PathBuf::from(format!("usr/{triple}/lib"));
         [debian_multiarch, gcc_crossbuild]
@@ -1077,9 +1072,9 @@ impl PackageConfig {
     }
 
     /// run dpkg/ldd to check deps of libs
-    pub fn resolved_binary_dependencies(&self, rust_target_triple: Option<&str>, listener: &dyn Listener) -> CDResult<String> {
+    pub fn resolved_binary_dependencies(&self, listener: &dyn Listener) -> CDResult<String> {
         // When cross-compiling, resolve dependencies using libs for the target platform (where multiarch is supported)
-        let lib_search_paths = rust_target_triple.map(|triple| self.multiarch_lib_dirs(triple));
+        let lib_search_paths = self.rust_target_triple.is_some().then(|| self.multiarch_lib_dirs());
         let lib_search_paths: Vec<_> = lib_search_paths.iter().flatten().enumerate()
             .filter_map(|(i, dir)| {
                 if dir.exists() {
@@ -1369,6 +1364,7 @@ impl PackageConfig {
             replaces: None,
             provides: None,
             architecture: self.architecture.clone(),
+            rust_target_triple: self.rust_target_triple.clone(),
             multiarch: if self.multiarch == Multiarch::Same { Multiarch::Same } else { Multiarch::None },
             conf_files: Vec::new(),
             assets: Assets::new(Vec::new(), debug_assets),
@@ -1509,7 +1505,7 @@ impl BuildEnvironment {
 
             if package_deb.multiarch != Multiarch::None {
                 if let Ok(lib_file_name) = target_path.strip_prefix("usr/lib") {
-                    let lib_dir = package_deb.library_install_dir(self.rust_target_triple());
+                    let lib_dir = package_deb.library_install_dir();
                     if !target_path.starts_with(&lib_dir) {
                         let new_path = lib_dir.join(lib_file_name);
                         log::debug!("multiarch: changed {} to {}", target_path.display(), new_path.display());
@@ -1535,9 +1531,9 @@ impl BuildEnvironment {
                         AssetKind::Any,
                     ).processed("$auto", t.src_path.clone()))
                 } else if t.crate_types.iter().any(|ty| ty == "cdylib") && t.kind.iter().any(|k| k == "cdylib") {
-                    let (prefix, suffix) = if self.rust_target_triple.is_none() { (DLL_PREFIX, DLL_SUFFIX) } else { ("lib", ".so") };
+                    let (prefix, suffix) = if package_deb.rust_target_triple.is_none() { (DLL_PREFIX, DLL_SUFFIX) } else { ("lib", ".so") };
                     let lib_name = format!("{prefix}{}{suffix}", t.name);
-                    let lib_dir = package_deb.library_install_dir(self.rust_target_triple());
+                    let lib_dir = package_deb.library_install_dir();
                     Some(Asset::new(
                         AssetSource::Path(self.path_in_build_products(&lib_name)),
                         lib_dir.join(lib_name),
