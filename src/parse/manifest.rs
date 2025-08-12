@@ -139,9 +139,9 @@ pub(crate) enum DependencyList {
 }
 
 impl DependencyList {
-    pub(crate) fn into_depends_string(self) -> String {
+    pub(crate) fn to_depends_string(&self) -> String {
         match self {
-            Self::String(s) => s,
+            Self::String(s) => s.to_owned(),
             Self::Vec(vals) => vals.join(", "),
         }
     }

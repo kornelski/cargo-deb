@@ -19,7 +19,7 @@ use std::env::consts::{DLL_PREFIX, DLL_SUFFIX, EXE_SUFFIX};
 use std::path::{Component, Path, PathBuf};
 use std::process::Command;
 use std::time::SystemTime;
-use std::{fmt, fs, io, mem};
+use std::{fmt, fs, io};
 
 pub(crate) fn is_glob_pattern(s: impl AsRef<Path>) -> bool {
     // glob crate requires str anyway ;(
@@ -273,7 +273,7 @@ impl BuildProfile {
     }
 
     #[must_use]
-    fn profile_dir(&self) -> &Path {
+    fn profile_dir_name(&self) -> &Path {
         Path::new(self.profile_name.as_deref().map(|p| match p {
             "dev" => "debug",
             p => p,
@@ -435,10 +435,10 @@ impl BuildEnvironment {
             cargo_run_current_dir: std::env::current_dir().unwrap_or_default(),
         };
 
-        let assets = deb.assets.take().unwrap_or_else(|| vec![RawAssetOrAuto::Auto]);
         let cargo_package = manifest.package.as_mut().ok_or("Cargo.toml is a workspace, not a package")?;
-        let mut package_deb = PackageConfig::new(deb, cargo_package, listener, default_timestamp, overrides, rust_target_triple, multiarch)?;
+        let mut package_deb = PackageConfig::new(&deb, cargo_package, listener, default_timestamp, &overrides, rust_target_triple, multiarch)?;
 
+        let assets = deb.assets.as_deref().unwrap_or(&[RawAssetOrAuto::Auto]);
         config.add_assets(&mut package_deb, assets, listener)?;
 
         Ok((config, package_deb))
@@ -539,7 +539,7 @@ impl BuildEnvironment {
         debug_symbols
     }
 
-    fn add_assets(&self, package_deb: &mut PackageConfig, assets: Vec<RawAssetOrAuto>, listener: &dyn Listener) -> CDResult<()> {
+    fn add_assets(&self, package_deb: &mut PackageConfig, assets: &[RawAssetOrAuto], listener: &dyn Listener) -> CDResult<()> {
         package_deb.assets = self.explicit_assets(package_deb, assets, listener)?;
 
         // https://wiki.debian.org/Multiarch/Implementation
@@ -859,7 +859,7 @@ impl BuildEnvironment {
     }
 
     fn path_in_target_dir(&self, rel_path: &Path) -> PathBuf {
-        let profile = self.build_profile.profile_dir();
+        let profile = self.build_profile.profile_dir_name();
         let mut path = PathBuf::with_capacity(2 + self.target_dir.as_os_str().len() + profile.as_os_str().len() + rel_path.as_os_str().len());
         path.push(&self.target_dir);
         path.push(profile);
@@ -919,22 +919,24 @@ fn is_valid_target(rust_target_triple: &str) -> bool {
 
 impl PackageConfig {
     pub(crate) fn new(
-        mut deb: CargoDeb, cargo_package: &mut cargo_toml::Package<CargoPackageMetadata>, listener: &dyn Listener, default_timestamp: u64,
-        overrides: DebConfigOverrides, rust_target_triple: Option<&str>, multiarch: Multiarch,
+        deb: &CargoDeb, cargo_package: &cargo_toml::Package<CargoPackageMetadata>, listener: &dyn Listener, default_timestamp: u64,
+        overrides: &DebConfigOverrides, rust_target_triple: Option<&str>, multiarch: Multiarch,
     ) -> Result<Self, CargoDebError> {
         let architecture = debian_architecture_from_rust_triple(rust_target_triple.unwrap_or(DEFAULT_TARGET));
         let (license_file_rel_path, license_file_skip_lines) = parse_license_file(cargo_package, deb.license_file.as_ref())?;
-        let mut license_identifier = cargo_package.license.take().and_then(|mut v| v.get_mut().ok().map(mem::take));
+        let mut license_identifier = cargo_package.license();
 
         if license_identifier.is_none() && license_file_rel_path.is_none() {
             if cargo_package.publish() == false {
-                license_identifier = Some("UNLICENSED".into());
+                license_identifier = Some("UNLICENSED");
                 listener.info("license field defaulted to UNLICENSED".into());
             } else {
                 listener.warning("license field is missing in Cargo.toml".into());
             }
         }
-        let deb_version = overrides.deb_version.unwrap_or_else(|| manifest_version_string(cargo_package, overrides.deb_revision.or(deb.revision.take()).as_deref()).into_owned());
+        let deb_version = overrides.deb_version.as_deref().map(Cow::Borrowed)
+            .unwrap_or_else(|| manifest_version_string(cargo_package, overrides.deb_revision.as_deref().or(deb.revision.as_deref())))
+            .into_owned();
         if let Err(why) = check_debian_version(&deb_version) {
             return Err(CargoDebError::InvalidVersion(why, deb_version));
         }
@@ -942,26 +944,28 @@ impl PackageConfig {
             deb_version,
             default_timestamp,
             cargo_crate_name: cargo_package.name.clone(),
-            deb_name: deb.name.take().unwrap_or_else(|| debian_package_name(&cargo_package.name)),
-            license_identifier,
+            deb_name: deb.name.clone().unwrap_or_else(|| debian_package_name(&cargo_package.name)),
+            license_identifier: license_identifier.map(From::from),
             license_file_rel_path,
             license_file_skip_lines,
-            maintainer: overrides.maintainer.or_else(|| deb.maintainer.take()).or_else(|| cargo_package.authors().first().map(String::from)),
-            copyright: deb.copyright.take().or_else(|| (!cargo_package.authors().is_empty()).then_some(cargo_package.authors().join(", "))),
+            maintainer: overrides.maintainer.as_deref().or(deb.maintainer.as_deref())
+                .or_else(|| Some(cargo_package.authors().first()?.as_str()))
+                .map(From::from),
+            copyright: deb.copyright.clone().or_else(|| (!cargo_package.authors().is_empty()).then_some(cargo_package.authors().join(", "))),
             homepage: cargo_package.homepage().map(From::from),
             documentation: cargo_package.documentation().map(From::from),
-            repository: cargo_package.repository.take().map(|v| v.unwrap()),
-            description: cargo_package.description.take().map_or_else(|| {
+            repository: cargo_package.repository().map(From::from),
+            description: cargo_package.description().map(From::from).unwrap_or_else(|| {
                 listener.warning("description field is missing in Cargo.toml".to_owned());
                 format!("[generated from Rust crate {}]", cargo_package.name)
-            }, |v| v.unwrap()),
-            extended_description: if let Some(path) = deb.extended_description_file.take() {
+            }),
+            extended_description: if let Some(path) = deb.extended_description_file.as_ref() {
                 if deb.extended_description.is_some() {
                     listener.warning("extended-description and extended-description-file are both set".into());
                 }
                 ExtendedDescription::File(path.into())
-            } else if let Some(desc) = deb.extended_description.take() {
-                ExtendedDescription::String(desc)
+            } else if let Some(desc) = &deb.extended_description {
+                ExtendedDescription::String(desc.into())
             } else if let Some(readme_rel_path) = cargo_package.readme().as_path() {
                 if readme_rel_path.extension().is_some_and(|ext| ext == "md" || ext == "markdown") {
                     listener.info(format!("extended-description field missing. Using {}, but markdown may not render well.", readme_rel_path.display()));
@@ -971,31 +975,31 @@ impl PackageConfig {
                 ExtendedDescription::None
             },
             readme_rel_path: cargo_package.readme().as_path().map(|p| p.to_path_buf()),
-            wildcard_depends: deb.depends.take().map_or_else(|| "$auto".to_owned(), DependencyList::into_depends_string),
+            wildcard_depends: deb.depends.as_ref().map_or_else(|| "$auto".to_owned(), DependencyList::to_depends_string),
             resolved_depends: None,
-            pre_depends: deb.pre_depends.take().map(DependencyList::into_depends_string),
-            recommends: deb.recommends.take().map(DependencyList::into_depends_string),
-            suggests: deb.suggests.take().map(DependencyList::into_depends_string),
-            enhances: deb.enhances.take().map(DependencyList::into_depends_string),
-            conflicts: deb.conflicts.take().map(DependencyList::into_depends_string),
-            breaks: deb.breaks.take().map(DependencyList::into_depends_string),
-            replaces: deb.replaces.take().map(DependencyList::into_depends_string),
-            provides: deb.provides.take().map(DependencyList::into_depends_string),
-            section: overrides.section.or_else(|| deb.section.take()),
-            priority: deb.priority.take().unwrap_or_else(|| "optional".to_owned()),
+            pre_depends: deb.pre_depends.as_ref().map(DependencyList::to_depends_string),
+            recommends: deb.recommends.as_ref().map(DependencyList::to_depends_string),
+            suggests: deb.suggests.as_ref().map(DependencyList::to_depends_string),
+            enhances: deb.enhances.as_ref().map(DependencyList::to_depends_string),
+            conflicts: deb.conflicts.as_ref().map(DependencyList::to_depends_string),
+            breaks: deb.breaks.as_ref().map(DependencyList::to_depends_string),
+            replaces: deb.replaces.as_ref().map(DependencyList::to_depends_string),
+            provides: deb.provides.as_ref().map(DependencyList::to_depends_string),
+            section: overrides.section.as_deref().or(deb.section.as_deref()).map(From::from),
+            priority: deb.priority.as_deref().unwrap_or("optional").into(),
             architecture: architecture.to_owned(),
-            conf_files: deb.conf_files.take().unwrap_or_default(),
+            conf_files: deb.conf_files.clone().unwrap_or_default(),
             rust_target_triple: rust_target_triple.map(|v| v.to_owned()),
             assets: Assets::new(vec![], vec![]),
-            triggers_file_rel_path: deb.triggers_file.take().map(PathBuf::from),
-            changelog: deb.changelog.take(),
-            maintainer_scripts_rel_path: overrides.maintainer_scripts_rel_path
-                .or_else(|| deb.maintainer_scripts.take().map(PathBuf::from)),
+            triggers_file_rel_path: deb.triggers_file.as_deref().map(PathBuf::from),
+            changelog: deb.changelog.clone(),
+            maintainer_scripts_rel_path: overrides.maintainer_scripts_rel_path.clone()
+                .or_else(|| deb.maintainer_scripts.as_deref().map(PathBuf::from)),
             preserve_symlinks: deb.preserve_symlinks.unwrap_or(false),
-            systemd_units: overrides.systemd_units.or_else(|| match deb.systemd_units.take() {
+            systemd_units: overrides.systemd_units.clone().or_else(|| match &deb.systemd_units {
                 None => None,
-                Some(SystemUnitsSingleOrMultiple::Single(s)) => Some(vec![s]),
-                Some(SystemUnitsSingleOrMultiple::Multi(v)) => Some(v),
+                Some(SystemUnitsSingleOrMultiple::Single(s)) => Some(vec![s.clone()]),
+                Some(SystemUnitsSingleOrMultiple::Multi(v)) => Some(v.clone()),
             }),
             multiarch,
             is_split_dbgsym_package: false,
@@ -1473,15 +1477,15 @@ fn debian_package_name(crate_name: &str) -> String {
 }
 
 impl BuildEnvironment {
-    fn explicit_assets(&self, package_deb: &PackageConfig, assets: Vec<RawAssetOrAuto>, listener: &dyn Listener) -> CDResult<Assets> {
-        let custom_profile_dir = self.build_profile.profile_dir();
+    fn explicit_assets(&self, package_deb: &PackageConfig, assets: &[RawAssetOrAuto], listener: &dyn Listener) -> CDResult<Assets> {
+        let custom_profile_dir = self.build_profile.profile_dir_name();
         let custom_profile_target_dir = (custom_profile_dir.as_os_str() != "release")
             .then(|| Path::new("target").join(custom_profile_dir));
 
         let mut has_auto = false;
 
         // Treat all explicit assets as unresolved until after the build step
-        let unresolved_assets = assets.into_iter().filter_map(|asset_or_auto| {
+        let unresolved_assets = assets.iter().filter_map(|asset_or_auto| {
             match asset_or_auto {
                 RawAssetOrAuto::Auto => {
                     has_auto = true;
@@ -1489,7 +1493,7 @@ impl BuildEnvironment {
                 },
                 RawAssetOrAuto::RawAsset(asset) => Some(asset),
             }
-        }).map(|RawAsset { source_path, mut target_path, chmod }| {
+        }).map(|&RawAsset { ref source_path, ref target_path, chmod }| {
             // target/release is treated as a magic prefix that resolves to any profile
             let target_artifact_rel_path = source_path.strip_prefix("target/release").ok()
                 .or_else(|| source_path.strip_prefix(custom_profile_target_dir.as_deref()?).ok());
@@ -1503,6 +1507,7 @@ impl BuildEnvironment {
                 (IsBuilt::No, self.path_in_cargo_crate(source_path), false)
             };
 
+            let mut target_path = target_path.to_owned();
             if package_deb.multiarch != Multiarch::None {
                 if let Ok(lib_file_name) = target_path.strip_prefix("usr/lib") {
                     let lib_dir = package_deb.library_install_dir();
