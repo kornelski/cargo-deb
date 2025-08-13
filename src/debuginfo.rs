@@ -46,7 +46,7 @@ pub fn strip_binaries(config: &BuildEnvironment, package_deb: &mut PackageConfig
         }
     }
 
-    let stripped_binaries_output_dir = config.deb_temp_dir(&package_deb);
+    let stripped_binaries_output_dir = config.deb_temp_dir(package_deb);
     debug_assert!(stripped_binaries_output_dir.is_dir());
 
     let lib_dir_base = package_deb.library_install_dir(config.rust_target_triple());
@@ -85,7 +85,10 @@ pub fn strip_binaries(config: &BuildEnvironment, package_deb: &mut PackageConfig
                     };
 
                     match run_strip(strip_cmd, &stripped_temp_path, path, &[]) {
-                        Ok(()) => Ok(listener.warning(format!("strip didn't support additional arguments: {msg}"))),
+                        Ok(()) => {
+                            listener.warning(format!("strip didn't support additional arguments: {msg}"));
+                            Ok(())
+                        },
                         Err(_) => Err(CargoDebError::StripFailed(path.to_owned(), msg)),
                     }
                 })?;

@@ -1,15 +1,14 @@
-use std::fmt;
 use crate::config::{is_glob_pattern, PackageConfig};
 use crate::error::{CDResult, CargoDebError};
 use crate::listener::Listener;
 use crate::parse::manifest::CargoDebAssetArrayOrTable;
 use crate::util::compress::gzipped;
 use crate::util::read_file_to_bytes;
+use rayon::prelude::*;
 use std::borrow::Cow;
 use std::env::consts::DLL_SUFFIX;
-use std::fs;
 use std::path::{Path, PathBuf};
-use rayon::prelude::*;
+use std::{fmt, fs};
 
 #[derive(Debug, Clone)]
 pub enum AssetSource {
@@ -117,7 +116,7 @@ impl RawAssetOrAuto {
     pub fn asset(self) -> Option<RawAsset> {
         match self {
             Self::RawAsset(a) => Some(a),
-            _ => None,
+            Self::Auto => None,
         }
     }
 }
@@ -251,8 +250,8 @@ impl UnresolvedAsset {
 
         if matched_assets.is_empty() {
             return Err(CargoDebError::AssetFileNotFound(
-                source_path.to_path_buf(),
-                Asset::normalized_target_path(target_path.to_path_buf(), Some(&source_path)),
+                source_path.clone(),
+                Asset::normalized_target_path(target_path.clone(), Some(source_path)),
                 source_prefix_len.is_some(), is_built != IsBuilt::No));
         }
         Ok(matched_assets)
@@ -365,7 +364,7 @@ impl Asset {
 
     pub(crate) fn is_binary_executable(&self) -> bool {
         self.c.is_executable()
-            && self.c.target_path.extension().is_none_or(|ext| ext != "sh")
+            && self.c.target_path.extension().map_or(true, |ext| ext != "sh")
             && (self.c.is_built() || self.smells_like_elf())
     }
 

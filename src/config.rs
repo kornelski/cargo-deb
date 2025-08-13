@@ -50,7 +50,7 @@ enum ArchSpec {
 
 fn get_architecture_specification(depend: &str) -> CDResult<(String, Option<ArchSpec>)> {
     use ArchSpec::{NegRequire, Require};
-    let re = regex::Regex::new(r#"(.*)\[(!?)(.*)\]"#).unwrap();
+    let re = regex::Regex::new(r"(.*)\[(!?)(.*)\]").map_err(|_| CargoDebError::Str("internal"))?;
     match re.captures(depend) {
         Some(caps) => {
             let spec = if &caps[2] == "!" {
@@ -362,7 +362,7 @@ impl BuildEnvironment {
 
         // Cargo cross-compiles to a dir
         if let Some(rust_target_triple) = rust_target_triple {
-            if !is_valid_target(&rust_target_triple) {
+            if !is_valid_target(rust_target_triple) {
                 listener.warning(format!("specified invalid target: '{rust_target_triple}'"));
                 return Err(CargoDebError::Str("invalid build target triple"));
             }
@@ -825,9 +825,9 @@ impl BuildEnvironment {
             log::debug!("searching for systemd units in {}", search_path.display());
             let unit_name = config.unit_name.as_deref();
 
-            let mut units = dh_installsystemd::find_units(&search_path, &package_deb.deb_name, unit_name);
+            let mut units = dh_installsystemd::find_units(search_path, &package_deb.deb_name, unit_name);
             if package_deb.deb_name != package_deb.cargo_crate_name {
-                let fallback_units = dh_installsystemd::find_units(&search_path, &package_deb.cargo_crate_name, unit_name);
+                let fallback_units = dh_installsystemd::find_units(search_path, &package_deb.cargo_crate_name, unit_name);
                 if !fallback_units.is_empty() && fallback_units != units {
                     let unit_name_info = unit_name.unwrap_or("<unit_name unspecified>");
                     if units.is_empty() {
@@ -1109,7 +1109,8 @@ impl PackageConfig {
                                 None
                             },
                         }
-                    }).collect_vec_list();
+                    })
+                    .collect_vec_list();
                 deps.extend(resolved.into_iter().flatten().flatten());
             } else {
                 let (dep, arch_spec) = get_architecture_specification(word)?;
@@ -1324,14 +1325,14 @@ impl PackageConfig {
         }
     }
 
-    pub(crate) fn split_dbgsym(&mut self) -> Result<Option<Self>, CargoDebError> {
+    pub(crate) fn split_dbgsym(&mut self) -> Option<Self> {
         debug_assert!(self.assets.unresolved.is_empty());
         let (debug_assets, regular): (Vec<_>, Vec<_>) = self.assets.resolved.drain(..).partition(|asset| {
             asset.c.asset_kind == AssetKind::SeparateDebugSymbols
         });
         self.assets.resolved = regular;
         if debug_assets.is_empty() {
-            return Ok(None);
+            return None;
         }
 
         let mut recommends = Some(format!("{} (= {})", self.deb_name, self.deb_version));
@@ -1340,7 +1341,7 @@ impl PackageConfig {
         let using_build_id = debug_assets.iter().all(|asset| asset.c.target_path.components().any(|c| c.as_os_str() == ".build-id"));
         let resolved_depends = if !using_build_id { recommends.take() } else { None };
 
-        Ok(Some(Self {
+        Some(Self {
             cargo_crate_name: self.cargo_crate_name.clone(),
             deb_name: format!("{}-dbgsym", self.deb_name),
             deb_version: self.deb_version.clone(),
@@ -1378,12 +1379,13 @@ impl PackageConfig {
             systemd_units: None,
             default_timestamp: self.default_timestamp,
             is_split_dbgsym_package: true,
-        }))
+        })
     }
 }
 
 fn license_doesnt_need_author_info(license_identifier: &str) -> bool {
-     ["UNLICENSED", "PROPRIETARY", "CC-PDDC", "CC0-1.0"].iter().any(|l| l.eq_ignore_ascii_case(license_identifier))
+    ["UNLICENSED", "PROPRIETARY", "CC-PDDC", "CC0-1.0"].iter()
+        .any(|l| l.eq_ignore_ascii_case(license_identifier))
 }
 
 const EXPECTED: &str = "Expected items in `assets` to be either `[source, dest, mode]` array, or `{source, dest, mode}` object, or `\"$auto\"`";
@@ -1502,7 +1504,7 @@ impl BuildEnvironment {
                 if source_path.to_str().is_some_and(|s| s.starts_with(['/','.']) && s.contains("/target/")) {
                     listener.warning(format!("Only source paths starting with exactly 'target/release/' are detected as Cargo target dir. '{}' does not match the pattern, and will not be built", source_path.display()));
                 }
-                (IsBuilt::No, self.path_in_cargo_crate(&source_path), false)
+                (IsBuilt::No, self.path_in_cargo_crate(source_path), false)
             };
 
             if package_deb.multiarch != Multiarch::None {

@@ -72,14 +72,14 @@ pub(crate) fn debug_flags(manifest_profile: Option<&cargo_toml::Profile>, profil
     };
 
     let strip = cargo_var("STRIP").and_then(|var| from_toml_value::<StripSetting>(&var))
-        .or(manifest_profile.and_then(|p| p.strip.clone())).inspect(|v| log::debug!("strip={v:?}"));
+        .or(manifest_profile.and_then(|p| p.strip)).inspect(|v| log::debug!("strip={v:?}"));
     if strip == Some(StripSetting::Symbols) {
         return ManifestDebugFlags::FullyStrippedByCargo;
     }
 
     let debug = profile_override.override_debug.clone().inspect(|o| log::debug!("override={o}")).or_else(|| cargo_var("DEBUG"))
         .and_then(|var| from_toml_value::<DebugSetting>(&var))
-        .or(manifest_profile.and_then(|p| p.debug.clone())).inspect(|v| log::debug!("debug={v:?}"));
+        .or(manifest_profile.and_then(|p| p.debug)).inspect(|v| log::debug!("debug={v:?}"));
     match debug {
         None => ManifestDebugFlags::Default,
         Some(DebugSetting::None) => ManifestDebugFlags::SymbolsDisabled,
@@ -311,7 +311,7 @@ impl CargoDeb {
 
         if let Some(merge_assets) = self.merge_assets {
             let old_assets = assets.get_or_insert_with(|| {
-                listener.warning(format!("variant has merge-assets, but not assets to merge"));
+                listener.warning("variant has merge-assets, but not assets to merge".into());
                 vec![]
             });
             if let Some(mut append) = merge_assets.append {
@@ -413,7 +413,7 @@ fn get_selected_package(metadata: &mut CargoMetadata, selected_package_name: Opt
         metadata.packages.iter().position(|p| p.name == name_no_ver)
             .ok_or_else(|| CargoDebError::PackageNotFoundInWorkspace(name.into(), available_package_names()))
     } else {
-        pick_default_package_from_workspace(&metadata)
+        pick_default_package_from_workspace(metadata)
             .ok_or_else(|| CargoDebError::NoRootFoundInWorkspace(available_package_names()))
     }?;
     Ok(metadata.packages.swap_remove(target_package_pos))

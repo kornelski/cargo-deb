@@ -72,7 +72,7 @@ impl Writer {
                 drop(stdin);
                 child.wait()?;
                 handle.join().unwrap().map(|data| Compressed { compress_format, data })
-            }
+            },
             #[cfg(feature = "gzip")]
             Self::Gz(w) => w.finish().map(|data| Compressed { compress_format: Format::Gzip, data }),
             Self::ZopfliGz(w) => w.into_inner()?.finish().map(|data| Compressed { compress_format: Format::Gzip, data }),

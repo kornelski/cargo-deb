@@ -130,7 +130,7 @@ impl CargoDeb<'_> {
         strip_binaries(&config, &mut package_deb, config.rust_target_triple.as_deref(), asked_for_dbgsym_package, listener)?;
 
         let generate_dbgsym_package = matches!(config.debug_symbols, DebugSymbols::Separate { generate_dbgsym_package: true, .. });
-        let package_dbgsym_ddeb = generate_dbgsym_package.then(|| package_deb.split_dbgsym()).transpose()?.flatten();
+        let package_dbgsym_ddeb = generate_dbgsym_package.then(|| package_deb.split_dbgsym()).flatten();
 
         if package_dbgsym_ddeb.is_none() && generate_dbgsym_package {
             listener.warning("No debug symbols found. Skipping dbgsym.ddeb".into());
@@ -234,7 +234,7 @@ pub fn install_debs(paths: &[&Path]) -> CDResult<()> {
         Err(CargoDebError::CommandFailed(_, cmd)) if cmd == "sudo" => {
             install_debs_inner(paths, true)
         },
-        res => res
+        res => res,
     }
 }
 

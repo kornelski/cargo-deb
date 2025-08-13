@@ -187,10 +187,10 @@ pub(crate) fn autoscript(
                 "# End automatically added section\n",
                 existing_text,
             ].concat();
-            scripts.insert(outfile, new_text.into());
+            scripts.insert(outfile, new_text);
         } else {
             // We don't support sed commands yet.
-            unimplemented!();
+            return Err(CargoDebError::Str("unsupported"));
         }
     } else if !replacements.is_empty() {
         // append to existing script fragment (if any)
@@ -200,10 +200,10 @@ pub(crate) fn autoscript(
             &autoscript_sed(snippet_filename, replacements),
             "# End automatically added section\n",
         ].concat();
-        scripts.insert(outfile, new_text.into());
+        scripts.insert(outfile, new_text);
     } else {
         // We don't support sed commands yet.
-        unimplemented!();
+        return Err(CargoDebError::Str("unsupported"));
     }
 
     Ok(())
@@ -281,7 +281,7 @@ fn debhelper_script_subst(user_scripts_dir: &Path, scripts: &mut ScriptFragments
         if new_text == user_text {
             return Err(CargoDebError::DebHelperReplaceFailed(user_file_path));
         }
-        scripts.insert(script.into(), new_text.into());
+        scripts.insert(script.into(), new_text);
     } else if !generated_text.is_empty() {
         listener.progress("Generating", format!("maintainer script {script}"));
 
@@ -291,7 +291,7 @@ fn debhelper_script_subst(user_scripts_dir: &Path, scripts: &mut ScriptFragments
         new_text.push_str("set -e\n");
         new_text.push_str(&generated_text);
 
-        scripts.insert(script.into(), new_text.into());
+        scripts.insert(script.into(), new_text);
     }
 
     Ok(())
@@ -428,7 +428,6 @@ mod tests {
     }
 
     #[test]
-    #[should_panic(expected = "not implemented")]
     fn autoscript_panics_in_sed_mode() {
         let mut mock_listener = crate::listener::MockListener::new();
         mock_listener.expect_progress().times(1).return_const(());
@@ -437,7 +436,7 @@ mod tests {
         // sed mode is when no search -> replacement pairs are defined
         let sed_mode = &HashMap::new();
 
-        autoscript(&mut scripts, "mypkg", "somescript", "idontexist", sed_mode, false, &mock_listener).unwrap();
+        assert!(autoscript(&mut scripts, "mypkg", "somescript", "idontexist", sed_mode, false, &mock_listener).is_err());
     }
 
     #[test]

@@ -1,7 +1,7 @@
 use anstream::{AutoStream, ColorChoice};
-use anstyle::{Style, AnsiColor};
+use anstyle::{AnsiColor, Style};
 use std::error::Error;
-use std::io::{Write, StderrLock};
+use std::io::{StderrLock, Write};
 use std::path::Path;
 
 #[cfg_attr(test, mockall::automock)]
@@ -10,7 +10,7 @@ pub trait Listener: Send + Sync {
     fn info(&self, s: String);
 
     fn progress(&self, operation: &str, detail: String) {
-        self.info(format!("{operation}: {detail}"))
+        self.info(format!("{operation}: {detail}"));
     }
 
     #[allow(unused_parens)]
@@ -42,11 +42,11 @@ pub struct StdErrListener {
 impl StdErrListener {
     fn label(&self, label: &str, style: Style, text: &str) {
         let mut out = AutoStream::new(std::io::stderr(), self.color).lock();
-        self.label_locked(&mut out, label, 0, style, text);
+        Self::label_locked(&mut out, label, 0, style, text);
     }
 
-    fn label_locked(&self, out: &mut AutoStream<StderrLock<'static>>, label: &str, indent: u8, style: Style, text: &str) {
-        let text = text.strip_prefix(label).and_then(|t| t.strip_prefix(": ")).unwrap_or(text).trim_ascii_end();
+    fn label_locked(out: &mut AutoStream<StderrLock<'static>>, label: &str, indent: u8, style: Style, text: &str) {
+        let text = text.strip_prefix(label).and_then(|t| t.strip_prefix(": ")).unwrap_or(text).trim_end();
         let mut lines = text.lines();
         if let Some(line) = lines.next() {
             let _ = writeln!(*out, "{:width$}{style}{label}{style:#}: {line}", "", width = indent as usize);
@@ -62,13 +62,13 @@ impl StdErrListener {
         let err_msg = messages.next().unwrap_or_default();
 
         if primary_error {
-            self.label_locked(&mut *out, "error", 0, Style::new().bold().fg_color(Some(AnsiColor::Red.into())), err_msg);
+            Self::label_locked(&mut *out, "error", 0, Style::new().bold().fg_color(Some(AnsiColor::Red.into())), err_msg);
         } else {
-            self.label_locked(&mut *out, "cause", 2, Style::new().fg_color(Some(AnsiColor::Red.into())), err_msg);
+            Self::label_locked(&mut *out, "cause", 2, Style::new().fg_color(Some(AnsiColor::Red.into())), err_msg);
         }
 
-        for note in messages.map(|n| n.trim_ascii_start()).filter(|n| !n.is_empty()) {
-            self.label_locked(out, "note", if primary_error { 0 } else { 3 }, Style::new().fg_color(Some(AnsiColor::Cyan.into())), note);
+        for note in messages.map(|n| n.trim_start()).filter(|n| !n.is_empty()) {
+            Self::label_locked(out, "note", if primary_error { 0 } else { 3 }, Style::new().fg_color(Some(AnsiColor::Cyan.into())), note);
         }
     }
 }

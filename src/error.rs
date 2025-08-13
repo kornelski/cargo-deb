@@ -2,7 +2,7 @@ use quick_error::quick_error;
 use std::borrow::Cow;
 use std::path::PathBuf;
 use std::process::ExitStatus;
-use std::{fmt, io, num, time, env};
+use std::{env, fmt, io, num, time};
 
 quick_error! {
     #[derive(Debug)]
