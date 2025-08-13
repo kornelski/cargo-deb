@@ -80,17 +80,21 @@ pub struct CargoDeb<'tmp> {
     pub verbose_cargo_build: bool,
     /// More info from cargo deb
     pub verbose: bool,
-    /// Run dpkg -i
-    pub install: bool,
-    pub install_without_dbgsym: bool,
     pub compress_config: CompressConfig,
     /// User-configured output path for *.deb
-    pub deb_output_path: Option<String>,
+    pub deb_output: Option<OutputPath<'tmp>>,
+    /// Run dpkg -i; run for dbsym
+    pub install: (bool, bool),
+}
+
+pub struct OutputPath<'tmp> {
+    pub path: &'tmp Path,
+    pub is_dir: bool,
 }
 
 impl CargoDeb<'_> {
     pub fn process(mut self, listener: &dyn Listener) -> CDResult<()> {
-        if self.install || self.options.rust_target_triple.is_none() {
+        if self.install.0 || self.options.rust_target_triple.is_none() {
             warn_if_not_linux(listener); // compiling natively for non-linux = nope
         }
 
@@ -116,6 +120,15 @@ impl CargoDeb<'_> {
             config.cargo_build(&package_deb, self.verbose, self.verbose_cargo_build, listener)?;
         }
 
+        let tmp_dir;
+        let output = if let Some(d) = self.deb_output { d } else {
+            tmp_dir = config.default_deb_output_dir();
+            OutputPath {
+                path: &tmp_dir,
+                is_dir: true,
+            }
+        };
+
         package_deb.resolve_assets(listener)?;
 
         let (depends, compressed_assets) = rayon::join(
@@ -136,21 +149,12 @@ impl CargoDeb<'_> {
             listener.warning("No debug symbols found. Skipping dbgsym.ddeb".into());
         }
 
-        let tmp;
-        let (deb_output_path, output_path_is_dir) = if let Some(path_str) = self.deb_output_path.as_deref() {
-            let path = Path::new(path_str);
-            (path, path_str.ends_with('/') || path.is_dir())
-        } else {
-            tmp = config.default_deb_output_dir();
-            (tmp.as_path(), true)
-        };
-
         let (generated_deb, generated_dbgsym_ddeb) = rayon::join(
             || {
                 package_deb.sort_assets_by_type();
                 write_deb(
                     &config,
-                    package_deb.deb_output_path(deb_output_path, output_path_is_dir),
+                    package_deb.deb_output_path(&output),
                     &package_deb,
                     &self.compress_config,
                     listener,
@@ -160,7 +164,7 @@ impl CargoDeb<'_> {
                 ddeb.sort_assets_by_type();
                 write_deb(
                     &config,
-                    ddeb.deb_output_path(deb_output_path, output_path_is_dir),
+                    ddeb.deb_output_path(&output),
                     &ddeb,
                     &self.compress_config,
                     &PrefixedListener("ddeb: ", listener),
@@ -175,8 +179,8 @@ impl CargoDeb<'_> {
         }
         listener.generated_archive(&generated_deb);
 
-        if self.install {
-            if let Some(dbgsym_ddeb) = generated_dbgsym_ddeb.as_deref().filter(|_| !self.install_without_dbgsym) {
+        if self.install.0 {
+            if let Some(dbgsym_ddeb) = generated_dbgsym_ddeb.as_deref().filter(|_| self.install.1) {
                 install_debs(&[&generated_deb, dbgsym_ddeb])?;
             } else {
                 install_debs(&[&generated_deb])?;
@@ -212,11 +216,10 @@ impl Default for CargoDeb<'_> {
         Self {
             options: BuildOptions::default(),
             no_build: false,
-            deb_output_path: None,
+            deb_output: None,
             verbose: false,
             verbose_cargo_build: false,
-            install: false,
-            install_without_dbgsym: false,
+            install: (false, false),
             compress_config: CompressConfig {
                 fast: false,
                 compress_type: Format::Xz,

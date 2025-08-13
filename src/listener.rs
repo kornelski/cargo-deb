@@ -111,7 +111,7 @@ impl Listener for StdErrListener {
     }
 }
 
-pub(crate) struct PrefixedListener<'l>(pub &'static str, pub &'l dyn Listener);
+pub(crate) struct PrefixedListener<'l>(pub &'l str, pub &'l dyn Listener);
 impl Listener for PrefixedListener<'_> {
     fn warning(&self, mut s: String) {
         s.insert_str(0, self.0);

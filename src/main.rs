@@ -1,9 +1,10 @@
 use anstream::{AutoStream, ColorChoice};
 use cargo_deb::compress::{CompressConfig, Format};
 use cargo_deb::config::{BuildOptions, CompressDebugSymbols, DebugSymbolOptions, Multiarch};
-use cargo_deb::{listener, BuildProfile, CargoDeb, CargoLockingFlags};
+use cargo_deb::{listener, BuildProfile, CargoDeb, CargoLockingFlags, OutputPath};
 use clap::{Arg, ArgAction, Command};
 use std::env;
+use std::path::Path;
 use std::process::ExitCode;
 
 fn main() -> ExitCode {
@@ -142,13 +143,23 @@ fn main() -> ExitCode {
         matches.get_flag("no-compress-debug-symbols").then_some(CompressDebugSymbols::No)
     });
 
+    let deb_output = matches.get_one::<String>("output").map(|path_str| {
+        let path = Path::new(path_str);
+        let is_dir = path_str.ends_with('/') ||
+            path.is_dir() ||
+            // assume that non-existent extensionless paths are dirs
+            (path.extension().is_none() && !path.try_exists().unwrap_or(true));
+        OutputPath {
+            path, is_dir
+        }
+    });
+
     match (CargoDeb {
-        deb_output_path: matches.get_one::<String>("output").cloned(),
         no_build: matches.get_flag("no-build"),
         verbose,
         verbose_cargo_build,
-        install,
-        install_without_dbgsym: matches.get_flag("no-install-dbgsym"),
+        install: (install, !matches.get_flag("no-install-dbgsym")),
+        deb_output,
         compress_config: CompressConfig {
             // when installing locally it won't be transferred anywhere, so allow faster compression
             fast: install || matches.get_flag("fast"),

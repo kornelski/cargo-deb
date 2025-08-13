@@ -10,7 +10,7 @@ use crate::parse::manifest::{cargo_metadata, debug_flags, find_profile, manifest
 use crate::parse::manifest::{CargoDeb, CargoDebAssetArrayOrTable, CargoMetadataTarget, CargoPackageMetadata, ManifestFound};
 use crate::parse::manifest::{DependencyList, SystemUnitsSingleOrMultiple, SystemdUnitsConfig, LicenseFile, ManifestDebugFlags};
 use crate::util::wordsplit::WordSplit;
-use crate::{debian_architecture_from_rust_triple, debian_triple_from_rust_triple, CargoLockingFlags, DEFAULT_TARGET};
+use crate::{debian_architecture_from_rust_triple, debian_triple_from_rust_triple, CargoLockingFlags, OutputPath, DEFAULT_TARGET};
 use itertools::Itertools;
 use rayon::prelude::*;
 use std::borrow::Cow;
@@ -91,10 +91,10 @@ pub struct BuildEnvironment {
     pub package_manifest_dir: PathBuf,
     /// Run `cargo` commands from this dir, or things may subtly break
     pub cargo_run_current_dir: PathBuf,
-    /// `CARGO_TARGET_DIR`
-    pub target_dir: PathBuf,
+    /// `CARGO_TARGET_DIR`, without target?/profile
+    pub target_dir_base: PathBuf,
     /// Either derived from target_dir or `-Zbuild-dir`
-    pub build_dir: PathBuf,
+    pub build_dir_base: Option<PathBuf>,
     /// List of Cargo features to use during build
     pub features: Vec<String>,
     pub default_features: bool,
@@ -343,8 +343,8 @@ impl BuildEnvironment {
             root_manifest,
             workspace_root_manifest_path,
             mut manifest_path,
-            build_dir,
-            mut target_dir,
+            build_dir: build_dir_base,
+            target_dir: target_dir_base,
             mut manifest,
         } = cargo_metadata(manifest_path, selected_package_name, cargo_locking_flags)?;
 
@@ -365,7 +365,6 @@ impl BuildEnvironment {
                 listener.warning(format!("specified invalid target: '{rust_target_triple}'"));
                 return Err(CargoDebError::Str("invalid build target triple"));
             }
-            target_dir.push(rust_target_triple);
         }
 
         let cargo_package = manifest.package.as_mut().ok_or("Cargo.toml is a workspace, not a package")?;
@@ -421,8 +420,8 @@ impl BuildEnvironment {
         let config = Self {
             reproducible,
             package_manifest_dir: manifest_dir,
-            build_dir: build_dir.as_deref().unwrap_or(&target_dir).join("debian"),
-            target_dir,
+            build_dir_base,
+            target_dir_base,
             features,
             all_features: overrides.all_features,
             default_features: if overrides.no_default_features { false } else { deb.default_features.unwrap_or(true) },
@@ -854,14 +853,31 @@ impl BuildEnvironment {
     }
 
     /// Based on target dir, not build dir
-    pub(crate) fn path_in_build_products<P: AsRef<Path>>(&self, rel_path: P) -> PathBuf {
-        self.path_in_target_dir(rel_path.as_ref())
+    pub(crate) fn path_in_build_products<P: AsRef<Path>>(&self, rel_path: P, package_deb: &PackageConfig) -> PathBuf {
+        self.path_in_target_dir(rel_path.as_ref(), package_deb.rust_target_triple.as_deref())
     }
 
-    fn path_in_target_dir(&self, rel_path: &Path) -> PathBuf {
+    fn target_dependent_path(base: &PathBuf, rust_target_triple: Option<&str>, capacity: usize) -> PathBuf {
+        let mut path = PathBuf::with_capacity(
+            base.as_os_str().len() +
+            rust_target_triple.map(|t| 1 + t.len()).unwrap_or(0) +
+            capacity
+        );
+        path.clone_from(base);
+        if let Some(target) = rust_target_triple {
+            path.push(target);
+        }
+        path
+    }
+
+    fn path_in_target_dir(&self, rel_path: &Path, rust_target_triple: Option<&str>) -> PathBuf {
         let profile = self.build_profile.profile_dir_name();
-        let mut path = PathBuf::with_capacity(2 + self.target_dir.as_os_str().len() + profile.as_os_str().len() + rel_path.as_os_str().len());
-        path.push(&self.target_dir);
+        let mut path = Self::target_dependent_path(
+            &self.target_dir_base,
+            rust_target_triple,
+            1 + profile.as_os_str().len() +
+            1 + rel_path.as_os_str().len()
+        );
         path.push(profile);
         path.push(rel_path);
         path
@@ -877,11 +893,18 @@ impl BuildEnvironment {
 
     /// Store intermediate files here
     pub(crate) fn deb_temp_dir(&self, package_deb: &PackageConfig) -> PathBuf {
-        self.build_dir.join(&package_deb.cargo_crate_name)
+        let build_dir = self.build_dir_base.as_ref().unwrap_or(&self.target_dir_base);
+        let mut temp_dir = Self::target_dependent_path(
+            build_dir,
+            package_deb.rust_target_triple.as_deref(),
+            1 + package_deb.cargo_crate_name.len(),
+        );
+        temp_dir.push(&package_deb.cargo_crate_name);
+        temp_dir
     }
 
     pub(crate) fn default_deb_output_dir(&self) -> PathBuf {
-        self.target_dir.join("debian")
+        self.target_dir_base.join("debian")
     }
 
     pub(crate) fn cargo_config(&self) -> CDResult<Option<CargoConfig>> {
@@ -891,10 +914,10 @@ impl BuildEnvironment {
     /// Creates empty (removes files if needed) target/debian/foo directory so that we can start fresh.
     fn reset_deb_temp_directory(&self, package_deb: &PackageConfig) -> io::Result<()> {
         let deb_temp_dir = self.deb_temp_dir(package_deb);
-        log::debug!("clearing build dir {}", deb_temp_dir.display());
-        let _ = fs::remove_dir(&deb_temp_dir);
         // Delete previous .deb from target/debian, but only other versions of the same package
         let deb_dir = self.default_deb_output_dir();
+        log::debug!("clearing build dir {}; dest {}/*.deb", deb_temp_dir.display(), deb_dir.display());
+        let _ = fs::remove_dir(&deb_temp_dir);
         for base_name in [
             format!("{}_*_{}.deb", package_deb.deb_name, package_deb.architecture),
             format!("{}-dbgsym_*_{}.ddeb", package_deb.deb_name, package_deb.architecture),
@@ -1308,9 +1331,9 @@ impl PackageConfig {
     }
 
     /// Save final .deb here
-    pub(crate) fn deb_output_path(&self, base_path: &Path, is_dir: bool) -> PathBuf {
-        if is_dir {
-            base_path.join(format!(
+    pub(crate) fn deb_output_path(&self, path: &OutputPath<'_>) -> PathBuf {
+        if path.is_dir {
+            path.path.join(format!(
                 "{}_{}_{}.{}",
                 self.deb_name,
                 self.deb_version,
@@ -1318,9 +1341,9 @@ impl PackageConfig {
                 if self.is_split_dbgsym_package { "ddeb" } else { "deb" }
             ))
         } else if self.is_split_dbgsym_package {
-            base_path.with_extension("ddeb")
+            path.path.with_extension("ddeb")
         } else {
-            base_path.to_owned()
+            path.path.to_owned()
         }
     }
 
@@ -1499,7 +1522,7 @@ impl BuildEnvironment {
                 .or_else(|| source_path.strip_prefix(custom_profile_target_dir.as_deref()?).ok());
             let (is_built, source_path, is_example) = if let Some(rel_path) = target_artifact_rel_path {
                 let is_example = rel_path.starts_with("examples");
-                (self.find_is_built_file_in_package(rel_path, if is_example { "example" } else { "bin" }), self.path_in_build_products(rel_path), is_example)
+                (self.find_is_built_file_in_package(rel_path, if is_example { "example" } else { "bin" }), self.path_in_build_products(rel_path, package_deb), is_example)
             } else {
                 if source_path.to_str().is_some_and(|s| s.starts_with(['/','.']) && s.contains("/target/")) {
                     listener.warning(format!("Only source paths starting with exactly 'target/release/' are detected as Cargo target dir. '{}' does not match the pattern, and will not be built", source_path.display()));
@@ -1529,7 +1552,7 @@ impl BuildEnvironment {
             .filter_map(|t| {
                 if t.crate_types.iter().any(|ty| ty == "bin") && t.kind.iter().any(|k| k == "bin") {
                     Some(Asset::new(
-                        AssetSource::Path(self.path_in_build_products(&t.name)),
+                        AssetSource::Path(self.path_in_build_products(&t.name, package_deb)),
                         Path::new("usr/bin").join(&t.name),
                         0o755,
                         self.is_built_file_in_package(t),
@@ -1540,7 +1563,7 @@ impl BuildEnvironment {
                     let lib_name = format!("{prefix}{}{suffix}", t.name);
                     let lib_dir = package_deb.library_install_dir();
                     Some(Asset::new(
-                        AssetSource::Path(self.path_in_build_products(&lib_name)),
+                        AssetSource::Path(self.path_in_build_products(&lib_name, package_deb)),
                         lib_dir.join(lib_name),
                         0o644,
                         self.is_built_file_in_package(t),
