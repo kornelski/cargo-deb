@@ -9,7 +9,7 @@ homepage = "https://lib.rs/crates/cargo-deb"
 keywords = ["debian", "ubuntu", "deploy", "cargo-subcommand"]
 repository = "https://github.com/kornelski/cargo-deb"
 readme = "README.md"
-version = "3.4.2"
+version = "3.5.0"
 edition = "2021"
 rust-version = "1.76"
 
@@ -43,7 +43,7 @@ doc = false
 [dependencies]
 clap = "4.5.41"
 elf = { version = "0.7.4", default-features = false, features = ["std"], optional = true }
-flate2 = { version = "1.1.2", optional = true }
+flate2 = { version = "1.1.2", default-features = false, features = ["zlib-rs"], optional = true }
 zopfli = { version = "0.8", default-features = false, features = ["std", "gzip"] }
 itertools = "0.14"
 quick-error = "2.0.1"
@@ -90,15 +90,18 @@ debug = 1
 xz2 = { opt-level = 2 }
 lzma-sys = { opt-level = 2 }
 zopfli = { opt-level = 2 }
-miniz_oxide = { opt-level = 2 }
+zlib-rs = { opt-level = 2 }
 
 [profile.release.package]
 adler2 = { opt-level = 2 }
-flate2 = { opt-level = 2 }
+crc32fast = { opt-level = 2 }
+crossbeam-utils = { opt-level = 2 }
 lzma-sys = { opt-level = 2 }
-miniz_oxide = { opt-level = 2 }
+memchr = { opt-level = 2 }
+rayon-core = { opt-level = 2 }
 serde_json = { opt-level = 2 }
 xz2 = { opt-level = 2 }
+zlib-rs = { opt-level = 2 }
 zopfli = { opt-level = 2 }
 
 [profile.release]
@@ -109,7 +112,7 @@ debug = false
 [profile.dist]
 inherits = "release"
 lto = true
-opt-level = 3
+opt-level = "s"
 
 [dev-dependencies]
 mockall = "0.13.1"

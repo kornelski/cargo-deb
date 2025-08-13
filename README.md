@@ -194,7 +194,7 @@ merge-assets.by.src = [
 
 `cargo deb` supports cross-compilation. It can be run from any unix-like host, including macOS, provided that the build environment is set up for cross-compilation:
 
-* The cross-compilation target has to be [installed via rustup](https://github.com/rust-lang-nursery/rustup.rs#cross-compilation) (e.g. `rustup target add i686-unknown-linux-gnu`) and has to be [installed for the host system](https://wiki.debian.org/ToolChain/Cross) (e.g. `apt-get install libc6-dev-i386`). Note that [Rust's](https://forge.rust-lang.org/release/platform-support.html) and [Debian's architecture names](https://www.debian.org/ports/) are different. See `rustc --print target-list` for the list of supported values for the `--target` argument.
+* The cross-compilation target has to be [installed via rustup](https://github.com/rust-lang-nursery/rustup.rs#cross-compilation) (e.g. `rustup target add i686-unknown-linux-gnu`) and has to be [installed for the host system](https://wiki.debian.org/ToolChain/Cross) (e.g. `apt-get install libc6-dev-i386`). Note that [Rust's](https://forge.rust-lang.org/release/platform-support.html) and [Debian's architecture names](https://www.debian.org/ports/) are different. See `rustc --print target-list` for the list of supported values for the `--target` arguments.
 * A Linux-compatible linker and system libraries (e.g. glibc or musl) must be installed and available to Rust/Cargo,
    * `dpkg --add-architecture <debian architecture name>`
    * `apt-get install pkg-config build-essential crossbuild-essential-<debian architecture name>`
@@ -210,9 +210,10 @@ Yes, these requirements are onerous. You can also try [`cross`](https://lib.rs/c
 
 ```sh
 cargo deb --target=i686-unknown-linux-gnu
+cargo deb --target=x86_64-unknown-linux-gnu --target=aarch64-unknown-linux-gnu
 ```
 
-Cross-compiled archives are saved in `target/<target triple>/debian/*.deb`. The actual archive path is printed on success.
+Cross-compiled archives are saved in `target/debian/*.deb`. The actual archive path is printed on success. Multipe `--target` platforms can be specified at the same time to build them in parallel.
 
 Note that you can't use cross-compilation to build for an older version of Debian. If you need to support Debian releases older than the host, consider using a container or a VM, or make a completely static binary for MUSL instead.
 

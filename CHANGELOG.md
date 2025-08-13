@@ -1,5 +1,9 @@
 For more details see https://github.com/kornelski/cargo-deb/commits/main/
 
+# 3.5
+
+* Support for [Cargo multi-target builds](https://github.com/rust-lang/cargo/issues/8176).
+
 # 3.4
 
 * Added support for `build-dir` Cargo feature
