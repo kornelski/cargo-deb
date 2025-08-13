@@ -60,6 +60,7 @@ use crate::deb::control::ControlArchiveBuilder;
 use crate::deb::tar::Tarball;
 use crate::listener::{Listener, PrefixedListener};
 use config::BuildOptions;
+use rayon::prelude::*;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::{env, fs};
@@ -94,7 +95,7 @@ pub struct OutputPath<'tmp> {
 
 impl CargoDeb<'_> {
     pub fn process(mut self, listener: &dyn Listener) -> CDResult<()> {
-        if self.install.0 || self.options.rust_target_triple.is_none() {
+        if self.install.0 || self.options.rust_target_triples.is_empty() {
             warn_if_not_linux(listener); // compiling natively for non-linux = nope
         }
 
@@ -114,21 +115,37 @@ impl CargoDeb<'_> {
                 Cargo also supports custom profiles, you can make `[profile.dist]`, etc.".into());
         }
 
-        let (config, mut package_deb) = BuildEnvironment::from_manifest(self.options, listener)?;
+        let (config, package_debs) = BuildEnvironment::from_manifest(self.options, listener)?;
 
         if !self.no_build {
-            config.cargo_build(&package_deb, self.verbose, self.verbose_cargo_build, listener)?;
+            config.cargo_build(&package_debs, self.verbose, self.verbose_cargo_build, listener)?;
         }
+
+        let common_suffix_len = Self::rust_target_triple_common_suffix_len(&package_debs);
 
         let tmp_dir;
         let output = if let Some(d) = self.deb_output { d } else {
             tmp_dir = config.default_deb_output_dir();
-            OutputPath {
-                path: &tmp_dir,
-                is_dir: true,
-            }
+            OutputPath { path: &tmp_dir, is_dir: true }
         };
 
+        package_debs.into_par_iter().try_for_each(|package_deb| {
+            let tmp_prefix;
+            let tmp_listener;
+            let mut listener = listener;
+            if common_suffix_len != 0 {
+                let target = package_deb.rust_target_triple.as_deref().unwrap_or(DEFAULT_TARGET);
+                let target = target.get(..target.len().saturating_sub(common_suffix_len)).unwrap_or(target);
+                tmp_prefix = format!("{target}: ");
+                tmp_listener = PrefixedListener(&tmp_prefix, listener);
+                listener = &tmp_listener;
+            }
+
+            Self::process_package(package_deb, &config, listener, &self.compress_config, &output, self.install, asked_for_dbgsym_package)
+        })
+    }
+
+    fn process_package(mut package_deb: PackageConfig, config: &BuildEnvironment, listener: &dyn Listener, compress_config: &CompressConfig, output: &OutputPath<'_>, (install, install_dbgsym): (bool, bool), asked_for_dbgsym_package: bool) -> CDResult<()> {
         package_deb.resolve_assets(listener)?;
 
         let (depends, compressed_assets) = rayon::join(
@@ -140,7 +157,7 @@ impl CargoDeb<'_> {
         package_deb.resolved_depends = Some(depends?);
         apply_compressed_assets(&mut package_deb, compressed_assets?);
 
-        strip_binaries(&config, &mut package_deb, asked_for_dbgsym_package, listener)?;
+        strip_binaries(config, &mut package_deb, asked_for_dbgsym_package, listener)?;
 
         let generate_dbgsym_package = matches!(config.debug_symbols, DebugSymbols::Separate { generate_dbgsym_package: true, .. });
         let package_dbgsym_ddeb = generate_dbgsym_package.then(|| package_deb.split_dbgsym()).flatten();
@@ -153,20 +170,20 @@ impl CargoDeb<'_> {
             || {
                 package_deb.sort_assets_by_type();
                 write_deb(
-                    &config,
-                    package_deb.deb_output_path(&output),
+                    config,
+                    package_deb.deb_output_path(output),
                     &package_deb,
-                    &self.compress_config,
+                    compress_config,
                     listener,
                 )
             },
             || package_dbgsym_ddeb.map(|mut ddeb| {
                 ddeb.sort_assets_by_type();
                 write_deb(
-                    &config,
-                    ddeb.deb_output_path(&output),
+                    config,
+                    ddeb.deb_output_path(output),
                     &ddeb,
-                    &self.compress_config,
+                    compress_config,
                     &PrefixedListener("ddeb: ", listener),
                 )
             }),
@@ -179,14 +196,37 @@ impl CargoDeb<'_> {
         }
         listener.generated_archive(&generated_deb);
 
-        if self.install.0 {
-            if let Some(dbgsym_ddeb) = generated_dbgsym_ddeb.as_deref().filter(|_| self.install.1) {
+        if install {
+            if let Some(dbgsym_ddeb) = generated_dbgsym_ddeb.as_deref().filter(|_| install_dbgsym) {
                 install_debs(&[&generated_deb, dbgsym_ddeb])?;
             } else {
                 install_debs(&[&generated_deb])?;
             }
         }
         Ok(())
+    }
+
+    /// given [a-linux-gnu, b-linux gnu] return len to strip for [a, b]
+    fn rust_target_triple_common_suffix_len(package_debs: &[PackageConfig]) -> usize {
+        if package_debs.len() < 2 {
+            return 0;
+        }
+        let targets = package_debs.iter()
+            .map(|p| p.rust_target_triple.as_deref().unwrap_or(DEFAULT_TARGET))
+            .collect::<Vec<_>>();
+        let Some((&(mut common_suffix), rest)) = targets.split_first() else {
+            return 0;
+        };
+
+        for &label in rest {
+            let common_len = common_suffix.split('-').rev()
+                .zip(label.split('-').rev())
+                .take_while(|(a, b)| a == b)
+                .map(|(a, _)| a.len() + 1)
+                .sum::<usize>();
+            common_suffix = &common_suffix[common_suffix.len().saturating_sub(common_len)..];
+        }
+        common_suffix.len()
     }
 }
 

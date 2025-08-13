@@ -579,7 +579,7 @@ mod tests {
         // supply a systemd unit file as if it were available on disk
         let _g = add_test_fs_paths(&[to_canon_static_str("cargo-deb.service")]);
 
-        let (_config, package_deb) = BuildEnvironment::from_manifest(BuildOptions {
+        let (_config, mut package_debs) = BuildEnvironment::from_manifest(BuildOptions {
             manifest_path: Some(Path::new("Cargo.toml")),
             debug: DebugSymbolOptions {
                 #[cfg(feature = "default_enable_dbgsym")]
@@ -590,6 +590,7 @@ mod tests {
             },
             ..Default::default()
         }, &mock_listener).unwrap();
+        let package_deb = package_debs.pop().unwrap();
 
         let num_unit_assets = package_deb.assets.resolved.iter()
             .filter(|a| a.c.target_path.starts_with("usr/lib/systemd/system/"))
@@ -606,7 +607,7 @@ mod tests {
         // supply a systemd unit file as if it were available on disk
         let _g = add_test_fs_paths(&[to_canon_static_str("cargo-deb.service")]);
 
-        let (_config, package_deb) = BuildEnvironment::from_manifest(BuildOptions {
+        let (_config, mut package_debs) = BuildEnvironment::from_manifest(BuildOptions {
             manifest_path: Some(Path::new("Cargo.toml")),
             debug: DebugSymbolOptions {
                 #[cfg(feature = "default_enable_dbgsym")]
@@ -622,6 +623,7 @@ mod tests {
             },
             ..Default::default()
         }, &mock_listener).unwrap();
+        let package_deb = package_debs.pop().unwrap();
 
         let num_unit_assets = package_deb.assets.resolved
             .iter()

@@ -14,7 +14,8 @@ fn main() -> ExitCode {
         .arg(Arg::new("output").short('o').long("output").help("Write .deb to this file or directory [default: target/debian]").num_args(1).value_name("path"))
         .arg(Arg::new("package").short('p').long("package").help("Select which package to use in a Cargo workspace").num_args(1).value_name("name"))
         .arg(Arg::new("manifest-path").long("manifest-path").help("Select package by the path to Cargo.toml project file").num_args(1).value_name("./Cargo.toml"))
-        .arg(Arg::new("target").long("target").help("Rust target platform for cross-compilation").num_args(1).value_name("triple"))
+        .arg(Arg::new("target").long("target").num_args(1).action(ArgAction::Append)
+            .help("Rust target platform for cross-compilation").value_name("triple"))
         .arg(Arg::new("multiarch").long("multiarch")
             .num_args(1).value_parser(["none", "same", "foreign"])
             .help("Put libs in /usr/lib/$arch-linux-gnu/")
@@ -143,15 +144,25 @@ fn main() -> ExitCode {
         matches.get_flag("no-compress-debug-symbols").then_some(CompressDebugSymbols::No)
     });
 
+    let target_tmp;
+    let rust_target_triples = if let Some(v) = matches.get_many::<String>("target") { v.map(|s| s.as_str()).collect() } else {
+        target_tmp = std::env::var("CARGO_BUILD_TARGET").ok();
+        target_tmp.as_deref().map(|v| vec![v]).unwrap_or_default()
+    };
+
     let deb_output = matches.get_one::<String>("output").map(|path_str| {
-        let path = Path::new(path_str);
-        let is_dir = path_str.ends_with('/') ||
+        let mut path = Path::new(path_str);
+        let mut is_dir = path_str.ends_with('/') ||
             path.is_dir() ||
             // assume that non-existent extensionless paths are dirs
             (path.extension().is_none() && !path.try_exists().unwrap_or(true));
-        OutputPath {
-            path, is_dir
+
+        let multiple_targets = rust_target_triples.len() > 1;
+        if !is_dir && multiple_targets {
+            path = path.parent().unwrap_or(path);
+            is_dir = true;
         }
+        OutputPath { path, is_dir }
     });
 
     match (CargoDeb {
@@ -169,7 +180,7 @@ fn main() -> ExitCode {
         },
         options: BuildOptions {
             config_variant: matches.get_one::<String>("variant").map(|x| x.as_str()),
-            rust_target_triple: matches.get_one::<String>("target").cloned().or_else(|| std::env::var("CARGO_BUILD_TARGET").ok()).as_deref(),
+            rust_target_triples,
             multiarch,
             selected_package_name: matches.get_one::<String>("package").map(|x| x.as_str()),
             manifest_path: matches.get_one::<String>("manifest-path").map(|v| v.as_ref()),

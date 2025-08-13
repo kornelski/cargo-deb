@@ -304,7 +304,7 @@ pub struct DebugSymbolOptions {
 pub struct BuildOptions<'a> {
     pub manifest_path: Option<&'a Path>,
     pub selected_package_name: Option<&'a str>,
-    pub rust_target_triple: Option<&'a str>,
+    pub rust_target_triples: Vec<&'a str>,
     pub config_variant: Option<&'a str>,
     pub overrides: DebConfigOverrides,
     pub build_profile: BuildProfile,
@@ -323,7 +323,7 @@ impl BuildEnvironment {
         BuildOptions {
             manifest_path,
             selected_package_name,
-            rust_target_triple,
+            rust_target_triples,
             config_variant,
             overrides,
             mut build_profile,
@@ -334,7 +334,7 @@ impl BuildEnvironment {
             cargo_build_flags,
         }: BuildOptions<'_>,
         listener: &dyn Listener,
-    ) -> CDResult<(Self, PackageConfig)> {
+    ) -> CDResult<(Self, Vec<PackageConfig>)> {
         // **IMPORTANT**: This function must not create or expect to see any asset files on disk!
         // It's run before destination directory is cleaned up, and before the build start!
 
@@ -360,7 +360,7 @@ impl BuildEnvironment {
         };
 
         // Cargo cross-compiles to a dir
-        if let Some(rust_target_triple) = rust_target_triple {
+        for rust_target_triple in &rust_target_triples {
             if !is_valid_target(rust_target_triple) {
                 listener.warning(format!("specified invalid target: '{rust_target_triple}'"));
                 return Err(CargoDebError::Str("invalid build target triple"));
@@ -434,13 +434,18 @@ impl BuildEnvironment {
             cargo_run_current_dir: std::env::current_dir().unwrap_or_default(),
         };
 
-        let cargo_package = manifest.package.as_mut().ok_or("Cargo.toml is a workspace, not a package")?;
-        let mut package_deb = PackageConfig::new(&deb, cargo_package, listener, default_timestamp, &overrides, rust_target_triple, multiarch)?;
+        let targets = rust_target_triples.iter().copied().map(Some)
+            .chain(rust_target_triples.is_empty().then_some(None));
+        let packages = targets.map(|rust_target_triple| {
+            let assets = deb.assets.as_deref().unwrap_or(&[RawAssetOrAuto::Auto]);
+            let cargo_package = manifest.package.as_mut().ok_or("Cargo.toml is a workspace, not a package")?;
+            let mut package_deb = PackageConfig::new(&deb, cargo_package, listener, default_timestamp, &overrides, rust_target_triple, multiarch)?;
 
-        let assets = deb.assets.as_deref().unwrap_or(&[RawAssetOrAuto::Auto]);
-        config.add_assets(&mut package_deb, assets, listener)?;
+            config.add_assets(&mut package_deb, assets, listener)?;
+            Ok(package_deb)
+        }).collect::<CDResult<Vec<_>>>()?;
 
-        Ok((config, package_deb))
+        Ok((config, packages))
     }
 
     fn configure_debug_symbols(build_profile: &mut BuildProfile, debug: DebugSymbolOptions, deb: &CargoDeb, manifest_debug: ManifestDebugFlags, listener: &dyn Listener) -> DebugSymbols {
@@ -569,7 +574,7 @@ impl BuildEnvironment {
         Ok(())
     }
 
-    pub(crate) fn cargo_build(&self, package_deb: &PackageConfig, verbose: bool, verbose_cargo: bool, listener: &dyn Listener) -> CDResult<()> {
+    pub(crate) fn cargo_build(&self, package_debs: &[PackageConfig], verbose: bool, verbose_cargo: bool, listener: &dyn Listener) -> CDResult<()> {
         let mut cmd = Command::new("cargo");
         cmd.current_dir(&self.cargo_run_current_dir);
         cmd.args(self.cargo_build_cmd.split(' ')
@@ -578,7 +583,7 @@ impl BuildEnvironment {
                 false
             }));
 
-        self.set_cargo_build_flags_for_package(package_deb, &mut cmd);
+        self.set_cargo_build_flags_for_packages(package_debs, &mut cmd);
 
         if verbose_cargo && !self.cargo_build_flags.iter().any(|f| f == "--quiet" || f == "-q") {
             cmd.arg("--verbose");
@@ -609,7 +614,7 @@ impl BuildEnvironment {
         Ok(())
     }
 
-    pub fn set_cargo_build_flags_for_package(&self, package_deb: &PackageConfig, cmd: &mut Command) {
+    pub fn set_cargo_build_flags_for_packages(&self, package_debs: &[PackageConfig], cmd: &mut Command) {
         let manifest_path = self.manifest_path();
         debug_assert!(manifest_path.exists());
         cmd.arg("--manifest-path").arg(manifest_path);
@@ -630,13 +635,15 @@ impl BuildEnvironment {
         }
         cmd.args(self.cargo_locking_flags.flags());
 
-        if let Some(rust_target_triple) = package_deb.rust_target_triple.as_deref() {
-            cmd.args(["--target", (rust_target_triple)]);
-            // Set helpful defaults for cross-compiling
-            if std::env::var_os("PKG_CONFIG_ALLOW_CROSS").is_none() && std::env::var_os("PKG_CONFIG_PATH").is_none() {
-                let pkg_config_path = format!("/usr/lib/{}/pkgconfig", debian_triple_from_rust_triple(rust_target_triple));
-                if Path::new(&pkg_config_path).exists() {
-                    cmd.env("PKG_CONFIG_PATH", pkg_config_path);
+        for package_deb in package_debs {
+            if let Some(rust_target_triple) = package_deb.rust_target_triple.as_deref() {
+                cmd.args(["--target", (rust_target_triple)]);
+                // Set helpful defaults for cross-compiling
+                if std::env::var_os("PKG_CONFIG_PATH").is_none() {
+                    let pkg_config_path = format!("/usr/lib/{}/pkgconfig", debian_triple_from_rust_triple(rust_target_triple));
+                    if Path::new(&pkg_config_path).exists() {
+                        cmd.env(format!("PKG_CONFIG_PATH_{rust_target_triple}"), pkg_config_path);
+                    }
                 }
             }
         }
@@ -656,6 +663,11 @@ impl BuildEnvironment {
         if flags_already_build_a_workspace {
             return;
         }
+
+        // Assumes all package_debs are same Rust package, only different architectures
+        let Some(package_deb) = package_debs.first() else {
+            return;
+        };
 
         for a in package_deb.assets.unresolved.iter().filter(|a| a.c.is_built()) {
             if is_glob_pattern(&a.source_path) {
