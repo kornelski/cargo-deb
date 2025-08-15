@@ -1,7 +1,7 @@
 [package]
 name = "cargo-deb"
 license = "MIT"
-authors = ["Kornel Lesiński <kornel@geekhood.net>", "Michael Aaron Murphy <mmstickman@gmail.com>"]
+authors = ["Kornel Lesiński <kornel@geekhood.net>", "Ximon Eighteen (https://github.com/ximon18)"]
 categories = ["command-line-utilities", "development-tools::cargo-plugins", "development-tools::build-utils"]
 description = "Make Debian packages (.deb) easily with a Cargo subcommand"
 documentation = "https://docs.rs/cargo-deb"
@@ -9,7 +9,7 @@ homepage = "https://lib.rs/crates/cargo-deb"
 keywords = ["debian", "ubuntu", "deploy", "cargo-subcommand"]
 repository = "https://github.com/kornelski/cargo-deb"
 readme = "README.md"
-version = "3.5.1"
+version = "3.6.0"
 edition = "2021"
 rust-version = "1.76"
 
