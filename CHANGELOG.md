@@ -1,5 +1,9 @@
 For more details see https://github.com/kornelski/cargo-deb/commits/main/
 
+# 3.6
+
+* Support `STRIP_<target arch>` and `OBJCOPY_<target arch>` when cross-compiling.
+
 # 3.5
 
 * Support for [Cargo multi-target builds](https://github.com/rust-lang/cargo/issues/8176).

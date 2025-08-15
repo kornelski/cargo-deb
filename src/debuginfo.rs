@@ -7,7 +7,7 @@ use rayon::prelude::*;
 use std::borrow::Cow;
 use std::path::{Path, PathBuf};
 use std::process::{Command, ExitStatus};
-use std::{fs, io};
+use std::{env, fs, io};
 
 fn ensure_success(status: ExitStatus) -> io::Result<()> {
     if status.success() {
@@ -206,13 +206,21 @@ fn run_strip(strip_cmd: &Path, stripped_temp_path: &PathBuf, path: &Path, args: 
     Ok(())
 }
 
-fn target_specific_command<'a>(cargo_config: Option<&'a CargoConfig>, command_name: &str, target_triple: &str) -> Option<Cow<'a, Path>> {
-    if let Some(cmd) = cargo_config.and_then(|c| c.explicit_target_specific_command(command_name, target_triple)) {
+fn target_specific_command<'a>(cargo_config: Option<&'a CargoConfig>, command_name: &str, rust_target_triple: &str) -> Option<Cow<'a, Path>> {
+    if let Some(cmd) = cargo_config.and_then(|c| c.explicit_target_specific_command(command_name, rust_target_triple)) {
         return Some(cmd.into());
     }
 
-    let debian_target_triple = crate::debian_triple_from_rust_triple(target_triple);
-    if let Some(linker) = cargo_config.and_then(|c| c.explicit_linker_command(target_triple)) {
+    let debian_target_triple = crate::debian_triple_from_rust_triple(rust_target_triple);
+    let env_prefix = command_name.to_ascii_uppercase();
+    for env_name in &[format!("{env_prefix}_{debian_target_triple}"), format!("{env_prefix}_{rust_target_triple}")] {
+        if let Some(path) = env::var_os(env_name).filter(|p| !p.is_empty()).map(PathBuf::from) {
+            log::debug!("found env {env_name}={}", path.display());
+            return Some(path.into());
+        }
+    }
+
+    if let Some(linker) = cargo_config.and_then(|c| c.explicit_linker_command(rust_target_triple)) {
         if linker.parent().is_some() {
             let linker_file_name = linker.file_name()?.to_str()?;
             // checks whether it's `/usr/bin/triple-ld` or `/custom-toolchain/ld`
@@ -226,6 +234,7 @@ fn target_specific_command<'a>(cargo_config: Option<&'a CargoConfig>, command_na
             }
         }
     }
+
     let path = PathBuf::from(format!("/usr/bin/{debian_target_triple}-{command_name}"));
     if path.exists() {
         return Some(path.into());
