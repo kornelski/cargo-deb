@@ -103,6 +103,7 @@ impl CargoDeb<'_> {
             let _ = self.options.debug.separate_debug_symbols.get_or_insert(true);
         }
         let asked_for_dbgsym_package = self.options.debug.generate_dbgsym_package.unwrap_or(false);
+        let single_target_needs_back_compat = self.deb_output.is_none() && self.options.rust_target_triples.len() == 1;
 
         // The profile is selected based on the given ClI options and then passed to
         // cargo build accordingly. you could argue that the other way around is
@@ -141,11 +142,11 @@ impl CargoDeb<'_> {
                 listener = &tmp_listener;
             }
 
-            Self::process_package(package_deb, &config, listener, &self.compress_config, &output, self.install, asked_for_dbgsym_package)
+            Self::process_package(package_deb, &config, listener, &self.compress_config, &output, self.install, asked_for_dbgsym_package, single_target_needs_back_compat)
         })
     }
 
-    fn process_package(mut package_deb: PackageConfig, config: &BuildEnvironment, listener: &dyn Listener, compress_config: &CompressConfig, output: &OutputPath<'_>, (install, install_dbgsym): (bool, bool), asked_for_dbgsym_package: bool) -> CDResult<()> {
+    fn process_package(mut package_deb: PackageConfig, config: &BuildEnvironment, listener: &dyn Listener, compress_config: &CompressConfig, output: &OutputPath<'_>, (install, install_dbgsym): (bool, bool), asked_for_dbgsym_package: bool, needs_back_compat: bool) -> CDResult<()> {
         package_deb.resolve_assets(listener)?;
 
         let (depends, compressed_assets) = rayon::join(
@@ -192,8 +193,10 @@ impl CargoDeb<'_> {
         let generated_dbgsym_ddeb = generated_dbgsym_ddeb.transpose()?;
 
         if let Some(generated) = &generated_dbgsym_ddeb {
+            let _ = back_compat_copy(generated, &package_deb, needs_back_compat);
             listener.generated_archive(generated);
         }
+        let _ = back_compat_copy(&generated_deb, &package_deb, needs_back_compat);
         listener.generated_archive(&generated_deb);
 
         if install {
@@ -443,4 +446,21 @@ fn warn_if_not_linux(_: &dyn Listener) {
 #[cfg(not(target_os = "linux"))]
 fn warn_if_not_linux(listener: &dyn Listener) {
     listener.warning(format!("You're creating a package only for {}, and not for Linux.\nUse --target if you want to cross-compile.", std::env::consts::OS));
+}
+
+// TODO: deprecated, remove
+#[cold]
+fn back_compat_copy(path: &Path, package_deb: &PackageConfig, enable: bool) -> Option<()> {
+    if !enable {
+        return None;
+    }
+    let previous_path = path.parent()?.parent()?
+        .join(package_deb.rust_target_triple.as_deref()?)
+        .join("debian")
+        .join(path.file_name()?);
+    let _ = fs::create_dir_all(previous_path.parent()?);
+    fs::hard_link(path, &previous_path)
+        .or_else(|_| fs::copy(path, &previous_path).map(drop))
+        .inspect_err(|e| log::warn!("can't copy {} to {}: {e}", path.display(), previous_path.display()))
+        .ok()
 }
