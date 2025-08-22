@@ -12,6 +12,7 @@ readme = "README.md"
 version = "3.6.0"
 edition = "2021"
 rust-version = "1.76"
+include = ["/LICENSE", "/README.md", "/build.rs", "/src/**", "/autoscripts/**"]
 
 [package.metadata.deb]
 maintainer = "Kornel Lesiński <kornel@geekhood.net>"
