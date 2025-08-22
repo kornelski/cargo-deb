@@ -551,6 +551,7 @@ impl BuildEnvironment {
             let mut has_bin = None;
             let mut has_lib = None;
             let multiarch_lib_dir_prefix = &package_deb.multiarch_lib_dirs()[0];
+            debug_assert!(!multiarch_lib_dir_prefix.is_absolute());
             for c in package_deb.assets.iter() {
                 let p = c.target_path.as_path();
                 if has_bin.is_none() && (p.starts_with("bin") || p.starts_with("usr/bin") || p.starts_with("usr/sbin")) {
@@ -1056,6 +1057,8 @@ impl PackageConfig {
     }
 
     /// Apparently, Debian uses both! The first one is preferred?
+    ///
+    /// The paths are without leading /
     pub(crate) fn multiarch_lib_dirs(&self) -> [PathBuf; 2] {
         let triple = debian_triple_from_rust_triple(self.rust_target_triple.as_deref().unwrap_or(DEFAULT_TARGET));
         let debian_multiarch = PathBuf::from(format!("usr/lib/{triple}"));
@@ -1113,7 +1116,9 @@ impl PackageConfig {
     /// run dpkg/ldd to check deps of libs
     pub fn resolved_binary_dependencies(&self, listener: &dyn Listener) -> CDResult<String> {
         // When cross-compiling, resolve dependencies using libs for the target platform (where multiarch is supported)
-        let lib_search_paths = self.rust_target_triple.is_some().then(|| self.multiarch_lib_dirs());
+        let lib_search_paths = self.rust_target_triple.is_some()
+            // the paths are without leading /
+            .then(|| self.multiarch_lib_dirs().map(|dir| Path::new("/").join(dir)));
         let lib_search_paths: Vec<_> = lib_search_paths.iter().flatten().enumerate()
             .filter_map(|(i, dir)| {
                 if dir.exists() {
@@ -1136,7 +1141,7 @@ impl PackageConfig {
                     .filter(|bin| !bin.archive_as_symlink_only())
                     .filter_map(|&p| {
                         let bname = p.path()?;
-                        match resolve_with_dpkg(bname, &lib_search_paths) {
+                        match resolve_with_dpkg(bname, &self.architecture, &lib_search_paths) {
                             Ok(bindeps) => Some(bindeps),
                             Err(err) => {
                                 listener.warning(format!("{err}\nNo $auto deps for {}", bname.display()));

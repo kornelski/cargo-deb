@@ -2,6 +2,7 @@ For more details see https://github.com/kornelski/cargo-deb/commits/main/
 
 # 3.6
 
+* Fixed auto `Depends` when cross-compiling.
 * Support `STRIP_<target arch>` and `OBJCOPY_<target arch>` when cross-compiling.
 
 # 3.5

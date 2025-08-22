@@ -5,7 +5,7 @@ use std::process::Command;
 const DPKG_SHLIBDEPS_COMMAND: &str = "dpkg-shlibdeps";
 
 /// Resolves the dependencies based on the output of dpkg-shlibdeps on the binary.
-pub(crate) fn resolve_with_dpkg(path: &Path, lib_dir_search_paths: &[&Path]) -> CDResult<Vec<String>> {
+pub(crate) fn resolve_with_dpkg(path: &Path, debian_arch: &str, lib_dir_search_paths: &[&Path]) -> CDResult<Vec<String>> {
     let temp_folder = tempfile::tempdir().map_err(CargoDebError::Io)?;
     let debian_folder = temp_folder.path().join("debian");
     let control_file_path = debian_folder.join("control");
@@ -16,28 +16,24 @@ pub(crate) fn resolve_with_dpkg(path: &Path, lib_dir_search_paths: &[&Path]) -> 
         .map_err(|e| CargoDebError::IoFile("can't make temp file", e, control_file_path))?;
 
     let mut cmd = Command::new(DPKG_SHLIBDEPS_COMMAND);
-    // Print result to stdout instead of a file.
-    cmd.arg("-O");
+    cmd.env("DEB_HOST_ARCH", debian_arch);
+    cmd.arg("-xlibgcc");
     // determine library search path from target
     for dir in lib_dir_search_paths {
         debug_assert!(dir.exists());
-        cmd.args(["-l".as_ref(), dir.as_os_str()]);
+        cmd.arg(format!("-l{}", dir.display()));
     }
+    // Print result to stdout instead of a file.
+    cmd.arg("-O");
     let output = cmd
         .arg(path)
         .current_dir(temp_folder.path())
         .output()
         .map_err(|e| CargoDebError::CommandFailed(e, DPKG_SHLIBDEPS_COMMAND.into()))?;
     if !output.status.success() {
-        use std::fmt::Write;
-        let mut args = String::new();
-        for lib_dir_search_path in lib_dir_search_paths {
-            let _ = write!(&mut args, "-l {} ", lib_dir_search_path.display());
-        }
-        let _ = write!(&mut args, "{}", path.display());
         return Err(CargoDebError::CommandError(
             DPKG_SHLIBDEPS_COMMAND,
-            args,
+            format!("{cmd:?}"),
             output.stderr,
         ));
     }
@@ -61,8 +57,10 @@ pub(crate) fn resolve_with_dpkg(path: &Path, lib_dir_search_paths: &[&Path]) -> 
 #[test]
 #[cfg(target_os = "linux")]
 fn resolve_test() {
+    use crate::{debian_architecture_from_rust_triple, DEFAULT_TARGET};
+
     let exe = std::env::current_exe().unwrap();
-    let deps = resolve_with_dpkg(&exe, &[]).unwrap();
+    let deps = resolve_with_dpkg(&exe, debian_architecture_from_rust_triple(DEFAULT_TARGET), &[]).unwrap();
     assert!(deps.iter().any(|d| d.starts_with("libc")));
     assert!(!deps.iter().any(|d| d.starts_with("libgcc")), "{deps:?}");
 }
