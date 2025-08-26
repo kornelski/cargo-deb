@@ -1,0 +1,47 @@
+name: Self-Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: stable
+      - name: Self-Install
+        run: cargo install --path .
+      - name: Self-Package
+        run: cargo deb -v -o .
+      - name: Get version
+        run: |
+          echo "VERSION_TAG_WITHOUT_V=${GITHUB_REF_NAME:1}" >> $GITHUB_ENV
+      - name: Upload .deb
+        uses: actions/upload-artifact@v4
+        with:
+          name: deb-package
+          if-no-files-found: error
+          path: "*_${{ env.VERSION_TAG_WITHOUT_V }}-*.deb"
+          compression-level: 0
+          retention-days: 1
+          overwrite: true
+
+  release:
+    runs-on: ubuntu-latest
+    needs: [build]
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v5
+      - name: Download .deb
+        uses: actions/download-artifact@v4
+        with:
+          name: deb-package
+      - name: Release
+        env:
+            GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh release create --verify-tag --fail-on-no-commits --title "${{ github.ref_name }}" --notes "[Changelog](https://github.com/kornelski/cargo-deb/blob/main/CHANGELOG.md)" "${{ github.ref_name }}" *.deb
