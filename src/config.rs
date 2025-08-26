@@ -1133,16 +1133,21 @@ impl PackageConfig {
             .collect();
 
         let mut deps = BTreeSet::new();
+        let mut used_auto_deps = false;
         for word in self.wildcard_depends.split(',') {
             let word = word.trim();
             if word == "$auto" {
+                used_auto_deps = true;
                 let bin = self.all_binaries();
                 let resolved = bin.par_iter()
-                    .filter(|bin| !bin.archive_as_symlink_only())
-                    .filter_map(|&p| {
-                        let bname = p.path()?;
+                    .filter(|bin| !bin.source.archive_as_symlink_only())
+                    .filter_map(|&bin| {
+                        let bname = bin.source.path()?;
                         match resolve_with_dpkg(bname, &self.architecture, &lib_search_paths) {
-                            Ok(bindeps) => Some(bindeps),
+                            Ok(bindeps) => {
+                                log::debug!("$auto depends for '{}': {bindeps:?}", bin.c.target_path.display());
+                                Some(bindeps)
+                            },
                             Err(err) => {
                                 listener.warning(format!("{err}\nNo $auto deps for {}", bname.display()));
                                 None
@@ -1164,17 +1169,21 @@ impl PackageConfig {
                 }
             }
         }
-        Ok(itertools::Itertools::join(&mut deps.into_iter(), ", "))
+
+        let deps_str = itertools::Itertools::join(&mut deps.into_iter(), ", ");
+        if used_auto_deps {
+            listener.progress("Depends", if deps_str.is_empty() { "(none)" } else { deps_str.as_str() }.into());
+        }
+        Ok(deps_str)
     }
 
     /// Executables AND dynamic libraries. May include symlinks.
-    fn all_binaries(&self) -> Vec<&AssetSource> {
+    fn all_binaries(&self) -> Vec<&Asset> {
         self.assets.resolved.iter()
             .filter(|asset| {
                 // Assumes files in build dir which have executable flag set are binaries
                 asset.c.is_dynamic_library() || asset.is_binary_executable()
             })
-            .map(|asset| &asset.source)
             .collect()
     }
 
