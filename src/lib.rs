@@ -362,6 +362,7 @@ fn debian_triple_from_rust_triple(rust_target_triple: &str) -> String {
         (mips @ ("mips64" | "mips64el"), "musl" | "muslabi64") => (mips, "gnuabi64"),
         ("loongarch64", _) => ("loongarch64", "gnu"), // architecture is loong64, tuple is loongarch64!
         (risc, _) if risc.starts_with("riscv64") => ("riscv64", "gnu"),
+        (risc, _) if risc.starts_with("riscv32") => ("riscv32", "gnu"),
         (arch, "muslspe") => (arch, "gnuspe"),
         (arch, "musl" | "uclibc") => (arch, "gnu"),
         (arch, abi) => (arch, abi),
@@ -391,11 +392,11 @@ pub(crate) fn debian_architecture_from_rust_triple(rust_target_triple: &str) -> 
         ("powerpc64", _) => "ppc64",
         ("powerpc64le", _) => "ppc64el",
         ("riscv32gc", _) => "riscv32",
-        ("riscv64gc", _) => "riscv64",
         ("i586" | "i686" | "x86", _) => "i386",
         ("x86_64", "gnux32") => "x32",
         ("x86_64", _) => "amd64",
         ("loongarch64", _) => "loong64",
+        (risc, _) if risc.starts_with("riscv64") => "riscv64",
         (arm, gnueabi) if arm.starts_with("arm") && gnueabi.ends_with("hf") => "armhf",
         (arm, _) if arm.starts_with("arm") || arm.starts_with("thumb") => "armel",
         (other_arch, _) => other_arch,
@@ -426,7 +427,7 @@ fn ensure_all_rust_targets_map_to_debian_targets() {
     "powerpc-linux-gnu", "powerpc-linux-gnuspe", "powerpc64-linux-gnu", "powerpc64le-linux-gnu",
     "riscv64-linux-gnu", "s390-linux-gnu", "s390x-linux-gnu", "sh4-linux-gnu",
     "sparc-linux-gnu", "sparc64-linux-gnu", "x86_64-gnu", "x86_64-kfreebsd-gnu",
-    "x86_64-linux-gnu", "x86_64-linux-gnux32", "x86_64-uefi"];
+    "x86_64-linux-gnu", "x86_64-linux-gnux32", "x86_64-uefi", "riscv32-linux-gnu"];
 
     let list = std::process::Command::new("rustc").arg("--print=target-list").output().unwrap().stdout;
     for rust_target in std::str::from_utf8(&list).unwrap().lines().filter(|a| a.contains("linux")) {
