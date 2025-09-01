@@ -110,7 +110,7 @@ impl<'l, W: Write> ControlArchiveBuilder<'l, W> {
                     continue;
                 }
                 let file = read_file_to_string(&script_path)
-                    .map_err(|e| CargoDebError::IoFile("can't read script", e, script_path.clone()))?;
+                    .map_err(|e| CargoDebError::IoFile("Can't read script", e, script_path.clone()))?;
                 (file, Some(script_path.as_path()))
             };
 
@@ -151,7 +151,7 @@ impl<'l, W: Write> ControlArchiveBuilder<'l, W> {
         let path = config.path_in_cargo_crate(rel_path);
         let content = match fs::read(&path) {
             Ok(p) => p,
-            Err(e) => return Err(CargoDebError::IoFile("triggers file", e, path)),
+            Err(e) => return Err(CargoDebError::IoFile("Triggers file", e, path)),
         };
         self.add_file_with_log("./triggers".as_ref(), &content, 0o644, Some(&path))
     }

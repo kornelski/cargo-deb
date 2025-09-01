@@ -451,7 +451,7 @@ fn pick_default_package_from_workspace(metadata: &CargoMetadata) -> Option<usize
 
 fn parse_manifest_only(manifest_path: &Path) -> Result<cargo_toml::Manifest<CargoPackageMetadata>, CargoDebError> {
     let manifest_bytes = fs::read(manifest_path)
-        .map_err(|e| CargoDebError::IoFile("unable to read manifest", e, manifest_path.to_owned()))?;
+        .map_err(|e| CargoDebError::IoFile("Unable to read manifest", e, manifest_path.to_owned()))?;
 
     cargo_toml::Manifest::<CargoPackageMetadata>::from_slice_with_metadata(&manifest_bytes)
             .map_err(|e| CargoDebError::TomlParsing(e, manifest_path.into()))

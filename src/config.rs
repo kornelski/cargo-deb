@@ -753,7 +753,7 @@ impl BuildEnvironment {
         Ok(if let Some(path) = &package_deb.license_file_rel_path {
             let source_path = self.path_in_cargo_crate(path);
             let license_string = fs::read_to_string(&source_path)
-                .map_err(|e| CargoDebError::IoFile("unable to read license file", e, path.clone()))?;
+                .map_err(|e| CargoDebError::IoFile("Unable to read license file", e, path.clone()))?;
 
             let (mut copyright, incomplete) = if has_copyright_metadata(&license_string) {
                 (String::new(), false)
@@ -798,7 +798,7 @@ impl BuildEnvironment {
         if let Some(ref path) = package_deb.changelog {
             let source_path = self.path_in_cargo_crate(path);
             let changelog = fs::read(&source_path)
-                .map_err(|e| CargoDebError::IoFile("unable to read changelog file", e, source_path.clone()))
+                .map_err(|e| CargoDebError::IoFile("Unable to read changelog file", e, source_path.clone()))
                 .and_then(|content| {
                     // allow pre-compressed
                     if source_path.extension().is_some_and(|e| e == "gz") {
@@ -1216,7 +1216,7 @@ impl PackageConfig {
             ExtendedDescription::ReadmeFallback(p) => Cow::Owned(config.path_in_cargo_crate(p)),
         };
         let desc = fs::read_to_string(&path)
-            .map_err(|err| CargoDebError::IoFile("unable to read extended description from file", err, path.into_owned()))?;
+            .map_err(|err| CargoDebError::IoFile("Unable to read extended description from file", err, path.into_owned()))?;
         Ok(Some(desc.into()))
     }
 

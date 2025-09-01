@@ -71,7 +71,7 @@ impl AssetSource {
         Ok(match self {
             Self::Path(p) => {
                 let data = read_file_to_bytes(p)
-                    .map_err(|e| CargoDebError::IoFile("unable to read asset to add to archive", e, p.clone()))?;
+                    .map_err(|e| CargoDebError::IoFile("Unable to read asset to add to archive", e, p.clone()))?;
                 Cow::Owned(data)
             },
             Self::Data(d) => Cow::Borrowed(d),

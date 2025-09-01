@@ -36,7 +36,7 @@ impl<W: Write> Tarball<W> {
 
             if let AssetSource::Symlink(source_path) = &asset.source {
                 let link_name = fs::read_link(source_path)
-                    .map_err(|e| CargoDebError::IoFile("symlink asset", e, source_path.clone()))?;
+                    .map_err(|e| CargoDebError::IoFile("Symlink asset", e, source_path.clone()))?;
                 self.symlink(&asset.c.target_path, &link_name)?;
             } else {
                 let out_data = asset.source.data()?;
@@ -85,7 +85,7 @@ impl<W: Write> Tarball<W> {
             if !self.added_directories.contains(&directory) {
                 self.added_directories.insert(directory.clone());
                 self.directory(&directory)
-                    .map_err(|e| CargoDebError::IoFile("can't add directory to tarball", e, directory.clone()))?;
+                    .map_err(|e| CargoDebError::IoFile("Can't add directory to tarball", e, directory.clone()))?;
             }
         }
         Ok(())
@@ -104,7 +104,7 @@ impl<W: Write> Tarball<W> {
         header.set_size(out_data.len() as u64);
         header.set_cksum();
         self.tar.append_data(&mut header, path, out_data)
-            .map_err(|e| CargoDebError::IoFile("can't add file to tarball", e, path.into()))?;
+            .map_err(|e| CargoDebError::IoFile("Can't add file to tarball", e, path.into()))?;
         Ok(())
     }
 
@@ -118,7 +118,7 @@ impl<W: Write> Tarball<W> {
         header.set_mode(0o777);
         header.set_cksum();
         self.tar.append_link(&mut header, path, link_name)
-            .map_err(|e| CargoDebError::IoFile("can't add symlink to tarball", e, path.into()))?;
+            .map_err(|e| CargoDebError::IoFile("Can't add symlink to tarball", e, path.into()))?;
         Ok(())
     }
 

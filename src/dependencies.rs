@@ -13,7 +13,7 @@ pub(crate) fn resolve_with_dpkg(path: &Path, debian_arch: &str, lib_dir_search_p
     // dpkg-shlibdeps requires a (possibly empty) debian/control file to exist in its working
     // directory. The executable location doesn't matter.
     let _ = std::fs::File::create(&control_file_path)
-        .map_err(|e| CargoDebError::IoFile("can't make temp file", e, control_file_path))?;
+        .map_err(|e| CargoDebError::IoFile("Can't make temp file", e, control_file_path))?;
 
     let mut cmd = Command::new(DPKG_SHLIBDEPS_COMMAND);
     cmd.env("DEB_HOST_ARCH", debian_arch);

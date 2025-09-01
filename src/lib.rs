@@ -390,6 +390,7 @@ pub(crate) fn debian_architecture_from_rust_triple(rust_target_triple: &str) -> 
         ("powerpc", "gnuspe" | "muslspe") => "powerpcspe",
         ("powerpc64", _) => "ppc64",
         ("powerpc64le", _) => "ppc64el",
+        ("riscv32gc", _) => "riscv32",
         ("riscv64gc", _) => "riscv64",
         ("i586" | "i686" | "x86", _) => "i386",
         ("x86_64", "gnux32") => "x32",
@@ -409,7 +410,7 @@ fn ensure_all_rust_targets_map_to_debian_targets() {
     "armhf", "hppa", "hurd-i386", "hurd-amd64", "i386", "ia64", "kfreebsd-amd64",
     "kfreebsd-i386", "loong64", "m68k", "mips", "mipsel", "mips64", "mips64el",
     "mipsn32", "mipsn32el", "mipsr6", "mipsr6el", "mips64r6", "mips64r6el", "mipsn32r6",
-    "mipsn32r6el", "powerpc", "powerpcspe", "ppc64", "ppc64el", "riscv64", "s390",
+    "mipsn32r6el", "powerpc", "powerpcspe", "ppc64", "ppc64el", "riscv64", "riscv32", "s390",
     "s390x", "sh4", "sparc", "sparc64", "uefi-amd6437", "uefi-arm6437", "uefi-armhf37",
     "uefi-i38637", "x32"];
 
@@ -429,7 +430,7 @@ fn ensure_all_rust_targets_map_to_debian_targets() {
 
     let list = std::process::Command::new("rustc").arg("--print=target-list").output().unwrap().stdout;
     for rust_target in std::str::from_utf8(&list).unwrap().lines().filter(|a| a.contains("linux")) {
-        if ["csky", "hexagon", "riscv32gc", "wasm32"].contains(&rust_target.split_once('-').unwrap().0) {
+        if ["csky", "hexagon", "wasm32"].contains(&rust_target.split_once('-').unwrap().0) {
             continue; // Rust supports more than Debian!
         }
         let deb_arch = debian_architecture_from_rust_triple(rust_target);

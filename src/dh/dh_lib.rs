@@ -276,7 +276,7 @@ fn debhelper_script_subst(user_scripts_dir: &Path, scripts: &mut ScriptFragments
         // if no generated script exists, we still need to remove #DEBHELPER# if
         // present otherwise the script will be syntactically invalid
         let user_text = read_file_to_string(&user_file_path)
-            .map_err(|e| CargoDebError::IoFile("unable to read maintainer script file", e, user_file_path.clone()))?;
+            .map_err(|e| CargoDebError::IoFile("Unable to read maintainer script file", e, user_file_path.clone()))?;
         let new_text = user_text.replace("#DEBHELPER#", &generated_text);
         if new_text == user_text {
             return Err(CargoDebError::DebHelperReplaceFailed(user_file_path));
@@ -739,7 +739,7 @@ mod tests {
 
         assert!(matches!(result, Err(CargoDebError::IoFile(..))));
         if let CargoDebError::IoFile(_, err, _) = result.unwrap_err() {
-            assert_eq!(error, std::fmt::format(std::format_args!("{:?}", err.kind())));
+            assert_eq!(error, format!("{:?}", err.kind()));
         } else {
             unreachable!()
         }

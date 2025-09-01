@@ -18,7 +18,11 @@ quick_error! {
             source(err)
         }
         IoFile(msg: &'static str, err: io::Error, file: PathBuf) {
-            display("{msg}: {}", file.display())
+            display("{msg}: {}{}{}",
+                file.display(),
+                file.is_relative().then(|| env::current_dir().ok()).flatten().map(|cwd| format!("\nnote: The current dir is '{}'", cwd.display())).unwrap_or_default(),
+                file.ancestors().find(|p| p.exists() && p.parent().is_some()).map(|p| format!("\nnote: '{}' exists", p.display())).unwrap_or_default(),
+            )
             source(err)
         }
         CommandFailed(err: io::Error, cmd: Cow<'static, str>) {
