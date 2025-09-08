@@ -66,9 +66,10 @@ impl<W: Write> Tarball<W> {
         if !path_str.ends_with('/') {
             path_str += "/";
         }
+        set_header_path(&mut header, path_str.as_ref())?;
         header.set_entry_type(EntryType::Directory);
         header.set_cksum();
-        self.tar.append_data(&mut header, path_str, &mut io::empty())
+        self.tar.append(&header, &mut io::empty())
     }
 
     fn add_parent_directories(&mut self, path: &Path) -> CDResult<()> {
@@ -102,8 +103,10 @@ impl<W: Write> Tarball<W> {
         header.set_mtime(self.time);
         header.set_mode(chmod);
         header.set_size(out_data.len() as u64);
+        set_header_path(&mut header, path)
+            .map_err(|e| CargoDebError::IoFile("Can't set header path", e, path.into()))?;
         header.set_cksum();
-        self.tar.append_data(&mut header, path, out_data)
+        self.tar.append(&header, out_data)
             .map_err(|e| CargoDebError::IoFile("Can't add file to tarball", e, path.into()))?;
         Ok(())
     }
@@ -116,8 +119,12 @@ impl<W: Write> Tarball<W> {
         header.set_entry_type(EntryType::Symlink);
         header.set_size(0);
         header.set_mode(0o777);
+        set_header_path(&mut header, path)
+            .map_err(|e| CargoDebError::IoFile("Can't set header path", e, path.into()))?;
+        header.set_link_name(link_name)
+            .map_err(|e| CargoDebError::IoFile("Can't set header link name", e, path.into()))?;
         header.set_cksum();
-        self.tar.append_link(&mut header, path, link_name)
+        self.tar.append(&header, &mut io::empty())
             .map_err(|e| CargoDebError::IoFile("Can't add symlink to tarball", e, path.into()))?;
         Ok(())
     }
@@ -129,6 +136,26 @@ impl<W: Write> Tarball<W> {
     pub fn into_inner(self) -> io::Result<W> {
         self.tar.into_inner()
     }
+}
+
+fn set_header_path(header: &mut TarHeader, path: &Path) -> io::Result<()> {
+    const PREFIX: &[u8] = b"./";
+    let header = header.as_old_mut();
+    let slot = &mut header.name;
+    let bytes = path.as_os_str().as_encoded_bytes();
+    if slot.len() < bytes.len() + PREFIX.len() {
+        return Err(io::Error::other("Path too long"));
+    }
+    let (prefix, rest) = slot.split_at_mut(PREFIX.len());
+    prefix.copy_from_slice(PREFIX);
+    rest[..bytes.len()].copy_from_slice(bytes);
+    if cfg!(target_os = "windows") {
+        rest.iter_mut().for_each(|b| if *b == b'\\' { *b = b'/' });
+    }
+    if rest.len() < bytes.len() {
+        rest[bytes.len()] = 0;
+    }
+    Ok(())
 }
 
 fn log_asset(asset: &Asset, log_display_base_dir: &Path, listener: &dyn Listener) {
