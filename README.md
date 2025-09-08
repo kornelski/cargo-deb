@@ -60,7 +60,6 @@ Everything is optional:
     3. `mode`: the third argument is the permissions (octal string) to assign that file.
 - **merge-assets**: [See "Merging Assets" section under "Advanced Usage"](#merging-assets)
 - **maintainer-scripts**: directory containing `templates`, `preinst`, `postinst`, `prerm`, or `postrm` [scripts](https://www.debian.org/doc/debian-policy/ch-maintainerscripts.html).
-- **conf-files**: [List of configuration files](https://www.debian.org/doc/manuals/maint-guide/dother.en.html#conffiles) that the package management system will not overwrite when the package is upgraded.
 - **triggers-file**: Path to triggers control file for use by the dpkg trigger facility.
 - **changelog**: Path to Debian-formatted [changelog file](https://www.debian.org/doc/manuals/maint-guide/dreq.en.html#changelog).
 - **features**: List of [Cargo features](https://doc.rust-lang.org/cargo/reference/manifest.html#the-features-section) to use when building the package.
@@ -68,7 +67,7 @@ Everything is optional:
 - **separate-debug-symbols**: whether to keep debug symbols, but strip them from executables and save them in separate files (default `false`). If it is enabled, then `cargo deb --no-separate-debug-symbols` can be used to suppress extraction of the debug symbols.
 - **preserve-symlinks**: Whether to preserve symlinks in the asset files (default `false`).
 - **systemd-units**: Optional configuration settings for automated installation of [systemd units](./systemd.md).
-- **conf-files**: List of absolute paths of [config files outside `/etc`](https://www.debian.org/doc/manuals/maint-guide/dother.en.html#conffiles) `["/not-etc/app/config"]`. You still need to list the files in `assets` to have them packaged.
+- **conf-files**: List of absolute paths of [config files outside `/etc`](https://www.debian.org/doc/manuals/maint-guide/dother.en.html#conffiles) `["/not-etc/app/config"]` that the package management system will not overwrite when the package is upgraded. You still need to list the files in `assets` to have them packaged. Config files in `/etc` are treated as configuration files automatically and don't need to be listed here.
 - **profile**: Cargo build profile to use. Defaults to `release`.
 
 ### Example of custom `Cargo.toml` additions
