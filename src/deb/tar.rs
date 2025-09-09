@@ -3,7 +3,7 @@ use crate::error::{CDResult, CargoDebError};
 use crate::listener::Listener;
 use crate::PackageConfig;
 use std::collections::HashSet;
-use std::io::Write;
+use std::io::{Read, Write};
 use std::path::{Component, Path, PathBuf};
 use std::{fs, io};
 use tar::{EntryType, Header as TarHeader};
@@ -66,9 +66,10 @@ impl<W: Write> Tarball<W> {
         if !path_str.ends_with('/') {
             path_str += "/";
         }
+        self.set_header_path(&mut header, path_str.as_ref())?;
         header.set_entry_type(EntryType::Directory);
         header.set_cksum();
-        self.tar.append_data(&mut header, path_str, &mut io::empty())
+        self.tar.append(&header, &mut io::empty())
     }
 
     fn add_parent_directories(&mut self, path: &Path) -> CDResult<()> {
@@ -102,8 +103,10 @@ impl<W: Write> Tarball<W> {
         header.set_mtime(self.time);
         header.set_mode(chmod);
         header.set_size(out_data.len() as u64);
+        self.set_header_path(&mut header, path)
+            .map_err(|e| CargoDebError::IoFile("Can't set header path", e, path.into()))?;
         header.set_cksum();
-        self.tar.append_data(&mut header, path, out_data)
+        self.tar.append(&header, out_data)
             .map_err(|e| CargoDebError::IoFile("Can't add file to tarball", e, path.into()))?;
         Ok(())
     }
@@ -116,10 +119,50 @@ impl<W: Write> Tarball<W> {
         header.set_entry_type(EntryType::Symlink);
         header.set_size(0);
         header.set_mode(0o777);
+        self.set_header_path(&mut header, path)
+            .map_err(|e| CargoDebError::IoFile("Can't set header path", e, path.into()))?;
+        header.set_link_name(link_name)
+            .map_err(|e| CargoDebError::IoFile("Can't set header link name", e, path.into()))?;
         header.set_cksum();
-        self.tar.append_link(&mut header, path, link_name)
+        self.tar.append(&header, &mut io::empty())
             .map_err(|e| CargoDebError::IoFile("Can't add symlink to tarball", e, path.into()))?;
         Ok(())
+    }
+
+    fn set_header_path(&mut self, header: &mut TarHeader, path: &Path) -> io::Result<()> {
+        const PREFIX: &[u8] = b"./";
+        let header = header.as_old_mut();
+        let slot = &mut header.name;
+        let bytes = path.as_os_str().as_encoded_bytes();
+        let (prefix, rest) = slot.split_at_mut(PREFIX.len());
+        prefix.copy_from_slice(PREFIX);
+        let truncated_bytes = &bytes[..usize::min(bytes.len(), rest.len())];
+        rest[..truncated_bytes.len()].copy_from_slice(truncated_bytes);
+        if cfg!(target_os = "windows") {
+            rest.iter_mut().for_each(|b| if *b == b'\\' { *b = b'/' });
+        }
+        if bytes.len() < rest.len() {
+            rest[bytes.len()] = 0;
+        }
+        if bytes.len() <= rest.len() {
+            return Ok(());
+        }
+
+        // GNU long name extension, copied from
+        // https://github.com/alexcrichton/tar-rs/blob/a1c3036af48fa02437909112239f0632e4cfcfae/src/builder.rs#L731-L744
+        let mut header = TarHeader::new_gnu();
+        const LONG_LINK: &[u8] = b"././@LongLink";
+        header.as_gnu_mut().unwrap()
+            .name[..LONG_LINK.len()].copy_from_slice(LONG_LINK);
+        header.set_mode(0o644);
+        header.set_uid(0);
+        header.set_gid(0);
+        header.set_mtime(0);
+        // + 1 to be compliant with GNU tar
+        header.set_size((PREFIX.len() + bytes.len()) as u64 + 1);
+        header.set_entry_type(EntryType::new(b'L'));
+        header.set_cksum();
+        self.tar.append(&header, PREFIX.chain(bytes).chain(b"\0".as_ref()))
     }
 
     fn flush(&mut self) -> io::Result<()> {
@@ -160,4 +203,113 @@ fn human_size(len: u64) -> (u64, &'static str) {
         return (len.div_ceil(1000), "KB");
     }
     (len.div_ceil(1_000_000), "MB")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::Tarball;
+    use std::{io::{Cursor, Read}, path::Path};
+    use tar::{Archive, EntryType};
+
+    struct ExpectedEntry<'a> {
+        path: &'a str,
+        entry_type: EntryType,
+        mode: u32,
+        check: Option<Box<dyn Fn(&mut tar::Entry<Cursor<Vec<u8>>>) + 'a>>,
+    }
+
+    impl<'a> ExpectedEntry<'a> {
+        fn with_check<F>(mut self, check: F) -> Self
+            where F: Fn(&mut tar::Entry<Cursor<Vec<u8>>>) + 'a
+        {
+            self.check = Some(Box::new(check));
+            self
+        }
+    }
+
+    fn expected_entry<'a>(path: &'a str, entry_type: EntryType, mode: u32) -> ExpectedEntry<'a> {
+        ExpectedEntry { path, entry_type, mode, check: None }
+    }
+
+    fn check_tarball_content(tarball: Vec<u8>, expected_entries: &[ExpectedEntry]) {
+        let cursor = Cursor::new(tarball);
+        let mut archive = Archive::new(cursor);
+        let mut entries = archive.entries().unwrap();
+        let mut expected_entries = expected_entries.iter();
+        loop {
+            let (entry_result, expected_entry) = match (entries.next(), expected_entries.next()) {
+                (Some(entry_result), Some(expected_entry)) => (entry_result, expected_entry),
+                (None, None) => break,
+                _ => panic!("mismatched number of entries"),
+            };
+            let mut entry = entry_result.unwrap();
+            let path = entry.path().unwrap().to_string_lossy().to_string();
+            let entry_type = entry.header().entry_type();
+            let mode = entry.header().mode().unwrap();
+            let mtime = entry.header().mtime().unwrap();
+            assert_eq!(path.strip_prefix("./").unwrap(), expected_entry.path);
+            assert_eq!(entry_type, expected_entry.entry_type);
+            assert_eq!(mode, expected_entry.mode);
+            assert_eq!(mtime, 1234567890);
+            if let Some(check) = &expected_entry.check {
+                check(&mut entry);
+            }
+        }
+    }
+
+    #[test]
+    fn basic() {
+        let buffer = Vec::new();
+        let mut tarball = Tarball::new(buffer, 1234567890);
+        let file_content = b"Hello, world!";
+        tarball.file("test/file.txt", file_content, 0o644).unwrap();
+        let script_content = b"#!/bin/bash\necho 'test'";
+        tarball.file("usr/bin/script", script_content, 0o755).unwrap();
+        tarball.symlink(Path::new("usr/bin/link"), Path::new("script")).unwrap();
+
+        let buffer = tarball.into_inner().unwrap();
+        check_tarball_content(buffer, &[
+            expected_entry("test/", EntryType::Directory, 0o755),
+            expected_entry("test/file.txt", EntryType::Regular, 0o644).with_check(|entry| {
+                let mut content = Vec::new();
+                entry.read_to_end(&mut content).unwrap();
+                assert_eq!(content, file_content);
+            }),
+            expected_entry("usr/", EntryType::Directory, 0o755),
+            expected_entry("usr/bin/", EntryType::Directory, 0o755),
+            expected_entry("usr/bin/script", EntryType::Regular, 0o755).with_check(|entry| {
+                let mut content = Vec::new();
+                entry.read_to_end(&mut content).unwrap();
+                assert_eq!(content, script_content);
+            }),
+            expected_entry("usr/bin/link", EntryType::Symlink, 0o777).with_check(|entry| {
+                let link_name = entry.header().link_name().unwrap().unwrap();
+                assert_eq!(link_name.to_string_lossy(), "script");
+            }),
+        ]);
+    }
+
+    #[test]
+    fn long_path() {
+        let buffer = Vec::new();
+        let mut tarball = Tarball::new(buffer, 1234567890);
+
+        tarball.file("a.txt", b"start", 0o644).unwrap();
+        let level = "long/";
+        let deep_path = level.repeat(25) + "file.txt";
+        tarball.file(&deep_path, b"long path", 0o644).unwrap();
+        let long_filename = "very_".repeat(25) + "long_filename.txt";
+        tarball.file(&long_filename, b"long filename", 0o644).unwrap();
+        tarball.file("b.txt", b"end", 0o644).unwrap();
+        let buffer = tarball.into_inner().unwrap();
+
+        let mut expected_entries = vec![expected_entry("a.txt", EntryType::Regular, 0o644)];
+        expected_entries.extend((1..=25).map(|i| expected_entry(&deep_path[..i * level.len()], EntryType::Directory, 0o755)));
+        expected_entries.extend([
+            expected_entry(&deep_path, EntryType::Regular, 0o644),
+            expected_entry(&long_filename, EntryType::Regular, 0o644),
+            expected_entry("b.txt", EntryType::Regular, 0o644),
+        ]);
+        check_tarball_content(buffer, &expected_entries);
+    }
 }

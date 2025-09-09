@@ -138,13 +138,13 @@ impl<'l, W: Write> ControlArchiveBuilder<'l, W> {
 
     // Add the control file to the tar archive.
     fn add_control(&mut self, control: &[u8]) -> CDResult<()> {
-        self.archive.file("./control", control, 0o644)?;
+        self.archive.file("control", control, 0o644)?;
         Ok(())
     }
 
     /// If configuration files are required, the conffiles file will be created.
     fn add_conf_files(&mut self, list: &str) -> CDResult<()> {
-        self.add_file_with_log("./conffiles".as_ref(), list.as_bytes(), 0o644, None)
+        self.add_file_with_log("conffiles".as_ref(), list.as_bytes(), 0o644, None)
     }
 
     fn add_triggers_file(&mut self, config: &BuildEnvironment, rel_path: &Path) -> CDResult<()> {
@@ -153,7 +153,7 @@ impl<'l, W: Write> ControlArchiveBuilder<'l, W> {
             Ok(p) => p,
             Err(e) => return Err(CargoDebError::IoFile("Triggers file", e, path)),
         };
-        self.add_file_with_log("./triggers".as_ref(), &content, 0o644, Some(&path))
+        self.add_file_with_log("triggers".as_ref(), &content, 0o644, Some(&path))
     }
 }
 
@@ -193,7 +193,8 @@ mod tests {
     use std::path::PathBuf;
 
     fn filename_from_path_str(path: &str) -> String {
-        Path::new(path).file_name().unwrap().to_string_lossy().to_string()
+        let filename = Path::new(path).file_name().unwrap();
+        Path::new(".").join(filename).to_string_lossy().to_string()
     }
 
     fn decode_name<R>(entry: &tar::Entry<'_, R>) -> String where R: Read {
