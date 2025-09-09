@@ -65,8 +65,6 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::{env, fs};
 
-const TAR_REJECTS_CUR_DIR: bool = true;
-
 /// Set by `build.rs`
 const DEFAULT_TARGET: &str = env!("CARGO_DEB_DEFAULT_TARGET");
 

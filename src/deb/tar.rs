@@ -5,13 +5,13 @@ use crate::PackageConfig;
 use crate::util::pathbytes::AsUnixPathBytes;
 use std::collections::HashSet;
 use std::io::{Read, Write};
-use std::path::{Component, Path, PathBuf};
+use std::path::Path;
 use std::{fs, io};
 use tar::{EntryType, Header as TarHeader};
 
 /// Tarball for control and data files
 pub(crate) struct Tarball<W: Write> {
-    added_directories: HashSet<PathBuf>,
+    added_directories: HashSet<Box<Path>>,
     time: u64,
     tar: tar::Builder<W>,
 }
@@ -58,37 +58,29 @@ impl<W: Write> Tarball<W> {
     }
 
     fn directory(&mut self, path: &Path) -> io::Result<()> {
-        let mut header = TarHeader::new_gnu();
+        let mut header = self.header_for_path(path, true)?;
         header.set_mtime(self.time);
         header.set_size(0);
         header.set_mode(0o755);
-        // Lintian insists on dir paths ending with /, which Rust doesn't
-        let mut path_str = path.to_string_lossy().to_string();
-        if !path_str.ends_with('/') {
-            path_str += "/";
-        }
-        self.set_header_path(&mut header, path_str.as_ref())?;
         header.set_entry_type(EntryType::Directory);
         header.set_cksum();
         self.tar.append(&header, &mut io::empty())
     }
 
     fn add_parent_directories(&mut self, path: &Path) -> CDResult<()> {
-        // Append each of the directories found in the file's pathname to the archive before adding the file
-        // For each directory pathname found, attempt to add it to the list of directories
-        let asset_relative_dir = Path::new(".").join(path.parent().ok_or("invalid asset path")?);
-        let mut directory = PathBuf::new();
-        for comp in asset_relative_dir.components() {
-            match comp {
-                Component::CurDir if !crate::TAR_REJECTS_CUR_DIR => directory.push("."),
-                Component::Normal(c) => directory.push(c),
-                _ => continue,
+        debug_assert!(path.is_relative());
+
+        let dirs = path.ancestors().skip(1)
+            .take_while(|&d| !self.added_directories.contains(d))
+            .filter(|&d| d != "")
+            .map(Box::from)
+            .collect::<Vec<_>>();
+
+        for directory in dirs.into_iter().rev() {
+            if let Err(e) = self.directory(&directory) {
+                return Err(CargoDebError::IoFile("Can't add directory to tarball", e, directory.into()));
             }
-            if !self.added_directories.contains(&directory) {
-                self.added_directories.insert(directory.clone());
-                self.directory(&directory)
-                    .map_err(|e| CargoDebError::IoFile("Can't add directory to tarball", e, directory.clone()))?;
-            }
+            self.added_directories.insert(directory);
         }
         Ok(())
     }
@@ -98,14 +90,14 @@ impl<W: Write> Tarball<W> {
     }
 
     fn file_(&mut self, path: &Path, out_data: &[u8], chmod: u32) -> CDResult<()> {
+        debug_assert!(path.is_relative());
         self.add_parent_directories(path)?;
 
-        let mut header = TarHeader::new_gnu();
+        let mut header = self.header_for_path(path, false)
+            .map_err(|e| CargoDebError::IoFile("Can't set header path", e, path.into()))?;
         header.set_mtime(self.time);
         header.set_mode(chmod);
         header.set_size(out_data.len() as u64);
-        self.set_header_path(&mut header, path)
-            .map_err(|e| CargoDebError::IoFile("Can't set header path", e, path.into()))?;
         header.set_cksum();
         self.tar.append(&header, out_data)
             .map_err(|e| CargoDebError::IoFile("Can't add file to tarball", e, path.into()))?;
@@ -113,15 +105,15 @@ impl<W: Write> Tarball<W> {
     }
 
     pub(crate) fn symlink(&mut self, path: &Path, link_name: &Path) -> CDResult<()> {
+        debug_assert!(path.is_relative());
         self.add_parent_directories(path.as_ref())?;
 
-        let mut header = TarHeader::new_gnu();
+        let mut header = self.header_for_path(path, false)
+            .map_err(|e| CargoDebError::IoFile("Can't set header path", e, path.into()))?;
         header.set_mtime(self.time);
         header.set_entry_type(EntryType::Symlink);
         header.set_size(0);
         header.set_mode(0o777);
-        self.set_header_path(&mut header, path)
-            .map_err(|e| CargoDebError::IoFile("Can't set header path", e, path.into()))?;
         header.set_link_name(link_name)
             .map_err(|e| CargoDebError::IoFile("Can't set header link name", e, path.into()))?;
         header.set_cksum();
@@ -130,14 +122,26 @@ impl<W: Write> Tarball<W> {
         Ok(())
     }
 
-    fn set_header_path(&mut self, header: &mut TarHeader, mut path: &Path) -> io::Result<()> {
-        if path.is_absolute() {
-            path = path.strip_prefix("/").map_err(|_| io::ErrorKind::Other)?;
-        }
+    #[inline]
+    fn header_for_path(&mut self, path: &Path, is_dir: bool) -> io::Result<TarHeader> {
         debug_assert!(path.is_relative());
+        let path_bytes = path.to_bytes();
+
+        let mut header = if path_bytes.len() < 98 {
+            TarHeader::new_old()
+        } else {
+            TarHeader::new_gnu()
+        };
+        self.set_header_path(&mut header, path_bytes, is_dir)?;
+        Ok(header)
+    }
+
+    #[inline(never)]
+    fn set_header_path(&mut self, header: &mut TarHeader, path_bytes: &[u8], is_dir: bool) -> io::Result<()> {
+        debug_assert!(is_dir || path_bytes.last() != Some(&b'/'));
+        let needs_slash = is_dir && path_bytes.last() != Some(&b'/');
 
         const PREFIX: &[u8] = b"./";
-        let path_bytes = path.to_bytes();
         let (prefix, path_slot) = header.as_old_mut().name.split_at_mut(PREFIX.len());
         prefix.copy_from_slice(PREFIX);
         let (path_slot, zero) = path_slot.split_at_mut(path_bytes.len().min(path_slot.len()));
@@ -145,9 +149,18 @@ impl<W: Write> Tarball<W> {
         if cfg!(target_os = "windows") {
             path_slot.iter_mut().for_each(|b| if *b == b'\\' { *b = b'/' });
         }
-        if let Some(zero) = zero.first_mut() {
-            *zero = 0;
-            return Ok(());
+
+        if let Some((t, rest)) = zero.split_first_mut() {
+            if !needs_slash {
+                *t = 0;
+                return Ok(());
+            }
+            if let Some(t2) = rest.first_mut() {
+                // Lintian insists on dir paths ending with /, which Rust doesn't
+                *t = b'/';
+                *t2 = 0;
+                return Ok(());
+            }
         }
 
         // GNU long name extension, copied from
@@ -160,11 +173,13 @@ impl<W: Write> Tarball<W> {
         header.set_uid(0);
         header.set_gid(0);
         header.set_mtime(0);
-        // + 1 to be compliant with GNU tar
-        header.set_size((PREFIX.len() + path_bytes.len()) as u64 + 1);
+        // include \0 in len to be compliant with GNU tar
+        let suffix = b"/\0";
+        let suffix = if needs_slash { &suffix[..] } else { &suffix[1..] };
+        header.set_size((PREFIX.len() + path_bytes.len() + suffix.len()) as u64);
         header.set_entry_type(EntryType::new(b'L'));
         header.set_cksum();
-        self.tar.append(&header, PREFIX.chain(path_bytes).chain(b"\0".as_ref()))
+        self.tar.append(&header, PREFIX.chain(path_bytes).chain(suffix))
     }
 
     fn flush(&mut self) -> io::Result<()> {
