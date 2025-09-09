@@ -72,7 +72,7 @@ impl<W: Write> Tarball<W> {
 
         let dirs = path.ancestors().skip(1)
             .take_while(|&d| !self.added_directories.contains(d))
-            .filter(|&d| d != "")
+            .filter(|&d| !d.as_os_str().is_empty())
             .map(Box::from)
             .collect::<Vec<_>>();
 
