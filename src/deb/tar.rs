@@ -3,7 +3,7 @@ use crate::error::{CDResult, CargoDebError};
 use crate::listener::Listener;
 use crate::PackageConfig;
 use std::collections::HashSet;
-use std::io::Write;
+use std::io::{Read, Write};
 use std::path::{Component, Path, PathBuf};
 use std::{fs, io};
 use tar::{EntryType, Header as TarHeader};
@@ -66,7 +66,7 @@ impl<W: Write> Tarball<W> {
         if !path_str.ends_with('/') {
             path_str += "/";
         }
-        set_header_path(&mut header, path_str.as_ref())?;
+        self.set_header_path(&mut header, path_str.as_ref())?;
         header.set_entry_type(EntryType::Directory);
         header.set_cksum();
         self.tar.append(&header, &mut io::empty())
@@ -103,7 +103,7 @@ impl<W: Write> Tarball<W> {
         header.set_mtime(self.time);
         header.set_mode(chmod);
         header.set_size(out_data.len() as u64);
-        set_header_path(&mut header, path)
+        self.set_header_path(&mut header, path)
             .map_err(|e| CargoDebError::IoFile("Can't set header path", e, path.into()))?;
         header.set_cksum();
         self.tar.append(&header, out_data)
@@ -119,7 +119,7 @@ impl<W: Write> Tarball<W> {
         header.set_entry_type(EntryType::Symlink);
         header.set_size(0);
         header.set_mode(0o777);
-        set_header_path(&mut header, path)
+        self.set_header_path(&mut header, path)
             .map_err(|e| CargoDebError::IoFile("Can't set header path", e, path.into()))?;
         header.set_link_name(link_name)
             .map_err(|e| CargoDebError::IoFile("Can't set header link name", e, path.into()))?;
@@ -129,6 +129,42 @@ impl<W: Write> Tarball<W> {
         Ok(())
     }
 
+    fn set_header_path(&mut self, header: &mut TarHeader, path: &Path) -> io::Result<()> {
+        const PREFIX: &[u8] = b"./";
+        let header = header.as_old_mut();
+        let slot = &mut header.name;
+        let bytes = path.as_os_str().as_encoded_bytes();
+        let (prefix, rest) = slot.split_at_mut(PREFIX.len());
+        prefix.copy_from_slice(PREFIX);
+        let truncated_bytes = &bytes[..usize::min(bytes.len(), rest.len())];
+        rest[..truncated_bytes.len()].copy_from_slice(truncated_bytes);
+        if cfg!(target_os = "windows") {
+            rest.iter_mut().for_each(|b| if *b == b'\\' { *b = b'/' });
+        }
+        if bytes.len() < rest.len() {
+            rest[bytes.len()] = 0;
+        }
+        if bytes.len() <= rest.len() {
+            return Ok(());
+        }
+
+        // GNU long name extension, copied from
+        // https://github.com/alexcrichton/tar-rs/blob/a1c3036af48fa02437909112239f0632e4cfcfae/src/builder.rs#L731-L744
+        let mut header = TarHeader::new_gnu();
+        const LONG_LINK: &[u8] = b"././@LongLink";
+        header.as_gnu_mut().unwrap()
+            .name[..LONG_LINK.len()].copy_from_slice(LONG_LINK);
+        header.set_mode(0o644);
+        header.set_uid(0);
+        header.set_gid(0);
+        header.set_mtime(0);
+        // + 1 to be compliant with GNU tar
+        header.set_size((PREFIX.len() + bytes.len()) as u64 + 1);
+        header.set_entry_type(EntryType::new(b'L'));
+        header.set_cksum();
+        self.tar.append(&header, PREFIX.chain(bytes).chain(b"\0".as_ref()))
+    }
+
     fn flush(&mut self) -> io::Result<()> {
         self.tar.get_mut().flush()
     }
@@ -136,26 +172,6 @@ impl<W: Write> Tarball<W> {
     pub fn into_inner(self) -> io::Result<W> {
         self.tar.into_inner()
     }
-}
-
-fn set_header_path(header: &mut TarHeader, path: &Path) -> io::Result<()> {
-    const PREFIX: &[u8] = b"./";
-    let header = header.as_old_mut();
-    let slot = &mut header.name;
-    let bytes = path.as_os_str().as_encoded_bytes();
-    if slot.len() < bytes.len() + PREFIX.len() {
-        return Err(io::Error::other("Path too long"));
-    }
-    let (prefix, rest) = slot.split_at_mut(PREFIX.len());
-    prefix.copy_from_slice(PREFIX);
-    rest[..bytes.len()].copy_from_slice(bytes);
-    if cfg!(target_os = "windows") {
-        rest.iter_mut().for_each(|b| if *b == b'\\' { *b = b'/' });
-    }
-    if rest.len() < bytes.len() {
-        rest[bytes.len()] = 0;
-    }
-    Ok(())
 }
 
 fn log_asset(asset: &Asset, log_display_base_dir: &Path, listener: &dyn Listener) {
