@@ -193,7 +193,8 @@ mod tests {
     use std::path::PathBuf;
 
     fn filename_from_path_str(path: &str) -> String {
-        Path::new(path).file_name().unwrap().to_string_lossy().to_string()
+        let filename = Path::new(path).file_name().unwrap();
+        Path::new(".").join(filename).to_string_lossy().to_string()
     }
 
     fn decode_name<R>(entry: &tar::Entry<'_, R>) -> String where R: Read {
