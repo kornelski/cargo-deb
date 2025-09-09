@@ -2,6 +2,7 @@ use crate::assets::{Asset, AssetSource};
 use crate::error::{CDResult, CargoDebError};
 use crate::listener::Listener;
 use crate::PackageConfig;
+use crate::util::pathbytes::AsUnixPathBytes;
 use std::collections::HashSet;
 use std::io::{Read, Write};
 use std::path::{Component, Path, PathBuf};
@@ -129,40 +130,41 @@ impl<W: Write> Tarball<W> {
         Ok(())
     }
 
-    fn set_header_path(&mut self, header: &mut TarHeader, path: &Path) -> io::Result<()> {
+    fn set_header_path(&mut self, header: &mut TarHeader, mut path: &Path) -> io::Result<()> {
+        if path.is_absolute() {
+            path = path.strip_prefix("/").map_err(|_| io::ErrorKind::Other)?;
+        }
+        debug_assert!(path.is_relative());
+
         const PREFIX: &[u8] = b"./";
-        let header = header.as_old_mut();
-        let slot = &mut header.name;
-        let bytes = path.as_os_str().as_encoded_bytes();
-        let (prefix, rest) = slot.split_at_mut(PREFIX.len());
+        let path_bytes = path.to_bytes();
+        let (prefix, path_slot) = header.as_old_mut().name.split_at_mut(PREFIX.len());
         prefix.copy_from_slice(PREFIX);
-        let truncated_bytes = &bytes[..usize::min(bytes.len(), rest.len())];
-        rest[..truncated_bytes.len()].copy_from_slice(truncated_bytes);
+        let (path_slot, zero) = path_slot.split_at_mut(path_bytes.len().min(path_slot.len()));
+        path_slot.copy_from_slice(&path_bytes[..path_slot.len()]);
         if cfg!(target_os = "windows") {
-            rest.iter_mut().for_each(|b| if *b == b'\\' { *b = b'/' });
+            path_slot.iter_mut().for_each(|b| if *b == b'\\' { *b = b'/' });
         }
-        if bytes.len() < rest.len() {
-            rest[bytes.len()] = 0;
-        }
-        if bytes.len() <= rest.len() {
+        if let Some(zero) = zero.first_mut() {
+            *zero = 0;
             return Ok(());
         }
 
         // GNU long name extension, copied from
         // https://github.com/alexcrichton/tar-rs/blob/a1c3036af48fa02437909112239f0632e4cfcfae/src/builder.rs#L731-L744
         let mut header = TarHeader::new_gnu();
-        const LONG_LINK: &[u8] = b"././@LongLink";
-        header.as_gnu_mut().unwrap()
+        const LONG_LINK: &[u8] = b"././@LongLink\0";
+        header.as_gnu_mut().ok_or(io::ErrorKind::Other)?
             .name[..LONG_LINK.len()].copy_from_slice(LONG_LINK);
         header.set_mode(0o644);
         header.set_uid(0);
         header.set_gid(0);
         header.set_mtime(0);
         // + 1 to be compliant with GNU tar
-        header.set_size((PREFIX.len() + bytes.len()) as u64 + 1);
+        header.set_size((PREFIX.len() + path_bytes.len()) as u64 + 1);
         header.set_entry_type(EntryType::new(b'L'));
         header.set_cksum();
-        self.tar.append(&header, PREFIX.chain(bytes).chain(b"\0".as_ref()))
+        self.tar.append(&header, PREFIX.chain(path_bytes).chain(b"\0".as_ref()))
     }
 
     fn flush(&mut self) -> io::Result<()> {
