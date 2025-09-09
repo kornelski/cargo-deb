@@ -204,3 +204,112 @@ fn human_size(len: u64) -> (u64, &'static str) {
     }
     (len.div_ceil(1_000_000), "MB")
 }
+
+#[cfg(test)]
+mod tests {
+    use super::Tarball;
+    use std::{io::{Cursor, Read}, path::Path};
+    use tar::{Archive, EntryType};
+
+    struct ExpectedEntry<'a> {
+        path: &'a str,
+        entry_type: EntryType,
+        mode: u32,
+        check: Option<Box<dyn Fn(&mut tar::Entry<Cursor<Vec<u8>>>) + 'a>>,
+    }
+
+    impl<'a> ExpectedEntry<'a> {
+        fn with_check<F>(mut self, check: F) -> Self
+            where F: Fn(&mut tar::Entry<Cursor<Vec<u8>>>) + 'a
+        {
+            self.check = Some(Box::new(check));
+            self
+        }
+    }
+
+    fn expected_entry<'a>(path: &'a str, entry_type: EntryType, mode: u32) -> ExpectedEntry<'a> {
+        ExpectedEntry { path, entry_type, mode, check: None }
+    }
+
+    fn check_tarball_content(tarball: Vec<u8>, expected_entries: &[ExpectedEntry]) {
+        let cursor = Cursor::new(tarball);
+        let mut archive = Archive::new(cursor);
+        let mut entries = archive.entries().unwrap();
+        let mut expected_entries = expected_entries.iter();
+        loop {
+            let (entry_result, expected_entry) = match (entries.next(), expected_entries.next()) {
+                (Some(entry_result), Some(expected_entry)) => (entry_result, expected_entry),
+                (None, None) => break,
+                _ => panic!("mismatched number of entries"),
+            };
+            let mut entry = entry_result.unwrap();
+            let path = entry.path().unwrap().to_string_lossy().to_string();
+            let entry_type = entry.header().entry_type();
+            let mode = entry.header().mode().unwrap();
+            let mtime = entry.header().mtime().unwrap();
+            assert_eq!(path.strip_prefix("./").unwrap(), expected_entry.path);
+            assert_eq!(entry_type, expected_entry.entry_type);
+            assert_eq!(mode, expected_entry.mode);
+            assert_eq!(mtime, 1234567890);
+            if let Some(check) = &expected_entry.check {
+                check(&mut entry);
+            }
+        }
+    }
+
+    #[test]
+    fn basic() {
+        let buffer = Vec::new();
+        let mut tarball = Tarball::new(buffer, 1234567890);
+        let file_content = b"Hello, world!";
+        tarball.file("test/file.txt", file_content, 0o644).unwrap();
+        let script_content = b"#!/bin/bash\necho 'test'";
+        tarball.file("usr/bin/script", script_content, 0o755).unwrap();
+        tarball.symlink(Path::new("usr/bin/link"), Path::new("script")).unwrap();
+
+        let buffer = tarball.into_inner().unwrap();
+        check_tarball_content(buffer, &[
+            expected_entry("test/", EntryType::Directory, 0o755),
+            expected_entry("test/file.txt", EntryType::Regular, 0o644).with_check(|entry| {
+                let mut content = Vec::new();
+                entry.read_to_end(&mut content).unwrap();
+                assert_eq!(content, file_content);
+            }),
+            expected_entry("usr/", EntryType::Directory, 0o755),
+            expected_entry("usr/bin/", EntryType::Directory, 0o755),
+            expected_entry("usr/bin/script", EntryType::Regular, 0o755).with_check(|entry| {
+                let mut content = Vec::new();
+                entry.read_to_end(&mut content).unwrap();
+                assert_eq!(content, script_content);
+            }),
+            expected_entry("usr/bin/link", EntryType::Symlink, 0o777).with_check(|entry| {
+                let link_name = entry.header().link_name().unwrap().unwrap();
+                assert_eq!(link_name.to_string_lossy(), "script");
+            }),
+        ]);
+    }
+
+    #[test]
+    fn long_path() {
+        let buffer = Vec::new();
+        let mut tarball = Tarball::new(buffer, 1234567890);
+
+        tarball.file("a.txt", b"start", 0o644).unwrap();
+        let level = "long/";
+        let deep_path = level.repeat(25) + "file.txt";
+        tarball.file(&deep_path, b"long path", 0o644).unwrap();
+        let long_filename = "very_".repeat(25) + "long_filename.txt";
+        tarball.file(&long_filename, b"long filename", 0o644).unwrap();
+        tarball.file("b.txt", b"end", 0o644).unwrap();
+        let buffer = tarball.into_inner().unwrap();
+
+        let mut expected_entries = vec![expected_entry("a.txt", EntryType::Regular, 0o644)];
+        expected_entries.extend((1..=25).map(|i| expected_entry(&deep_path[..i * level.len()], EntryType::Directory, 0o755)));
+        expected_entries.extend([
+            expected_entry(&deep_path, EntryType::Regular, 0o644),
+            expected_entry(&long_filename, EntryType::Regular, 0o644),
+            expected_entry("b.txt", EntryType::Regular, 0o644),
+        ]);
+        check_tarball_content(buffer, &expected_entries);
+    }
+}
