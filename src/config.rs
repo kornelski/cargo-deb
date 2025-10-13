@@ -458,9 +458,10 @@ impl BuildEnvironment {
             .or(deb.dbgsym).inspect(|v| log::debug!("deb.dbgsym={v}"))
             .unwrap_or(allows_separate_debug_symbols && crate::DBGSYM_DEFAULT);
         log::debug!("dbgsym? {generate_dbgsym_package} default={}", crate::DBGSYM_DEFAULT);
-        let wants_separate_debug_symbols = separate_debug_symbols.inspect(|v| log::debug!("--separate-debug-symbols={v}"))
+        let explicit_wants_separate_debug_symbols = separate_debug_symbols.inspect(|v| log::debug!("--separate-debug-symbols={v}"))
             .or((!allows_strip).then_some(false)) // --no-strip means not running the strip command, even to separate symbols
-            .or(deb.separate_debug_symbols).inspect(|v| log::debug!("deb.separate-debug-symbols={v}"))
+            .or(deb.separate_debug_symbols).inspect(|v| log::debug!("deb.separate-debug-symbols={v}"));
+        let wants_separate_debug_symbols = explicit_wants_separate_debug_symbols
             .unwrap_or(generate_dbgsym_package || (allows_separate_debug_symbols && crate::SEPARATE_DEBUG_SYMBOLS_DEFAULT));
         let separate_debug_symbols = generate_dbgsym_package || wants_separate_debug_symbols;
         log::debug!("separate? {separate_debug_symbols} default={}", crate::SEPARATE_DEBUG_SYMBOLS_DEFAULT);
@@ -511,11 +512,16 @@ impl BuildEnvironment {
             ManifestDebugFlags::Default if separate_debug_symbols => {
                 listener.warning(format!("debug info hasn't been explicitly enabled\n\
                     Add `[profile.{}] debug = {suggested_debug_symbols_setting}` to Cargo.toml", build_profile.example_profile_name()));
-                if strip_override != Some(true) {
-                    build_profile.override_debug = Some(if generate_dbgsym_package { "1" } else { "line-tables-only" }.into());
+
+                if strip_override != Some(true) && (generate_dbgsym_package || explicit_wants_separate_debug_symbols.unwrap_or(false)) {
+                    if generate_dbgsym_package {
+                        build_profile.override_debug = Some("1".into());
+                    }
                     log::debug!("adding some debug symbols {:?}", build_profile.override_debug);
+                    keep_debug_symbols_default
+                } else {
+                    DebugSymbols::Strip
                 }
-                keep_debug_symbols_default
             },
             ManifestDebugFlags::FullyStrippedByCargo => {
                 if separate_debug_symbols || compress_debug_symbols != CompressDebugSymbols::No {
