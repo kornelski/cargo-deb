@@ -473,6 +473,8 @@ impl BuildEnvironment {
         log::debug!("compress? {compress_debug_symbols:?} default={}", crate::COMPRESS_DEBUG_SYMBOLS_DEFAULT);
 
         let separate_option_name = if generate_dbgsym_package { "dbgsym" } else { "separate-debug-symbols" };
+        let suggested_debug_symbols_setting = if generate_dbgsym_package { "1" } else { "\"line-tables-only\"" };
+
         if !allows_strip && separate_debug_symbols {
             listener.warning(format!("--no-strip has no effect when using {separate_option_name}"));
         }
@@ -501,14 +503,14 @@ impl BuildEnvironment {
             ManifestDebugFlags::FullSymbolsAdded => {
                 if !separate_debug_symbols {
                     listener.warning(format!("the debug symbols may be bloated\n\
-                        Use `[profile.{}] debug = \"line-tables-only\"` or --separate-debug-symbols or --dbgsym options",
+                        Use `[profile.{}] debug = {suggested_debug_symbols_setting}` or --separate-debug-symbols or --dbgsym options",
                         build_profile.example_profile_name()));
                 }
                 keep_debug_symbols_default
             },
             ManifestDebugFlags::Default if separate_debug_symbols => {
                 listener.warning(format!("debug info hasn't been explicitly enabled\n\
-                    Add `[profile.{}] debug = 1` to Cargo.toml", build_profile.example_profile_name()));
+                    Add `[profile.{}] debug = {suggested_debug_symbols_setting}` to Cargo.toml", build_profile.example_profile_name()));
                 if strip_override != Some(true) {
                     build_profile.override_debug = Some(if generate_dbgsym_package { "1" } else { "line-tables-only" }.into());
                     log::debug!("adding some debug symbols {:?}", build_profile.override_debug);
@@ -525,7 +527,7 @@ impl BuildEnvironment {
             ManifestDebugFlags::SymbolsDisabled => {
                 if separate_debug_symbols || generate_dbgsym_package {
                     listener.warning(format!("{separate_option_name} won't have any effect when debug symbols are disabled\n\
-                        Add `[profile.{}] debug = \"line-tables-only\"` to Cargo.toml", build_profile.example_profile_name()));
+                        Add `[profile.{}] debug = {suggested_debug_symbols_setting}` to Cargo.toml", build_profile.example_profile_name()));
                 }
                 // Rust still adds debug bloat from the libstd
                 strip_override_default.unwrap_or(DebugSymbols::Strip)
