@@ -26,7 +26,7 @@ use std::process::Command;
 /// For details on the other options please see `dh_installsystemd::Options`.
 #[derive(Clone, Debug, Deserialize, Default)]
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
-pub(crate) struct SystemdUnitsConfig {
+pub struct SystemdUnitsConfig {
     pub unit_scripts: Option<PathBuf>,
     pub unit_name: Option<String>,
     pub enable: Option<bool>,
@@ -119,21 +119,21 @@ pub(crate) struct CargoPackageMetadata {
 
 #[derive(Clone, Debug, Deserialize)]
 #[serde(untagged)]
-pub(crate) enum LicenseFile {
+pub enum LicenseFile {
     String(String),
     Vec(Vec<String>),
 }
 
 #[derive(Deserialize, Clone, Debug)]
 #[serde(untagged)]
-pub(crate) enum SystemUnitsSingleOrMultiple {
+pub enum SystemUnitsSingleOrMultiple {
     Single(SystemdUnitsConfig),
     Multi(Vec<SystemdUnitsConfig>),
 }
 
 #[derive(Clone, Debug, Deserialize)]
 #[serde(untagged)]
-pub(crate) enum DependencyList {
+pub enum DependencyList {
     String(String),
     Vec(Vec<String>),
 }
@@ -148,7 +148,7 @@ impl DependencyList {
 }
 
 /// Type-alias for list of assets
-pub(crate) type RawAssetList = Vec<RawAssetOrAuto>;
+pub type RawAssetList = Vec<RawAssetOrAuto>;
 
 #[derive(Default)]
 pub(crate) struct MergeMap<'a> {
@@ -174,7 +174,7 @@ pub(crate) struct CargoDebAsset {
 
 #[derive(Clone, Debug, Deserialize, Default)]
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
-pub(crate) struct CargoDeb {
+pub struct CargoDeb {
     pub name: Option<String>,
     pub maintainer: Option<String>,
     pub copyright: Option<String>,
@@ -215,7 +215,7 @@ pub(crate) struct CargoDeb {
 /// Struct containing merge configuration
 #[derive(Clone, Debug, Deserialize, Default)]
 #[serde(deny_unknown_fields)]
-pub(crate) struct MergeAssets {
+pub struct MergeAssets {
     /// Merge assets by appending this list,
     pub append: Option<RawAssetList>,
     /// Merge assets using the src as the key,
@@ -224,7 +224,7 @@ pub(crate) struct MergeAssets {
 
 /// Enumeration of merge by key strategies
 #[derive(Clone, Debug, Deserialize)]
-pub(crate) enum MergeByKey {
+pub enum MergeByKey {
     #[serde(rename = "src")]
     Src(RawAssetList),
     #[serde(rename = "dest")]

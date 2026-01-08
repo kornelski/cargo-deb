@@ -107,13 +107,13 @@ pub(crate) struct Assets {
 
 #[derive(Debug, Clone, serde::Deserialize)]
 #[serde(try_from = "CargoDebAssetArrayOrTable")]
-pub(crate) enum RawAssetOrAuto {
+pub enum RawAssetOrAuto {
     Auto,
     RawAsset(RawAsset),
 }
 
 impl RawAssetOrAuto {
-    pub fn asset(self) -> Option<RawAsset> {
+    pub(crate) fn asset(self) -> Option<RawAsset> {
         match self {
             Self::RawAsset(a) => Some(a),
             Self::Auto => None,
@@ -129,7 +129,7 @@ impl From<RawAsset> for RawAssetOrAuto {
 
 #[derive(Debug, Clone, serde::Deserialize)]
 #[serde(try_from = "RawAssetOrAuto")]
-pub(crate) struct RawAsset {
+pub struct RawAsset {
     pub source_path: PathBuf,
     pub target_path: PathBuf,
     pub chmod: u32,
