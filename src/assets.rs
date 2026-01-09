@@ -112,6 +112,16 @@ pub enum RawAssetOrAuto {
     RawAsset(RawAsset),
 }
 
+impl serde::Serialize for RawAssetOrAuto {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer {
+        let cargo_dev_asset : CargoDebAssetArrayOrTable = self.clone().into();
+        cargo_dev_asset.serialize(serializer)
+
+    }
+}
+
 impl RawAssetOrAuto {
     pub(crate) fn asset(self) -> Option<RawAsset> {
         match self {
@@ -127,7 +137,7 @@ impl From<RawAsset> for RawAssetOrAuto {
     }
 }
 
-#[derive(Debug, Clone, serde::Deserialize)]
+#[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
 #[serde(try_from = "RawAssetOrAuto")]
 pub struct RawAsset {
     pub source_path: PathBuf,

@@ -6,7 +6,7 @@ use crate::CargoLockingFlags;
 use cargo_toml::{DebugSetting, StripSetting};
 use log::debug;
 use serde::de::DeserializeOwned;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use std::borrow::Cow;
 use std::collections::{BTreeMap, HashMap};
 use std::fs;
@@ -24,7 +24,7 @@ use std::process::Command;
 /// multiple units, only process those matching this unit name.
 ///
 /// For details on the other options please see `dh_installsystemd::Options`.
-#[derive(Clone, Debug, Deserialize, Default)]
+#[derive(Clone, Debug, Deserialize, Serialize, Default)]
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
 pub struct SystemdUnitsConfig {
     pub unit_scripts: Option<PathBuf>,
@@ -112,26 +112,26 @@ pub(crate) fn manifest_version_string<'a>(package: &'a cargo_toml::Package<Cargo
     version
 }
 
-#[derive(Clone, Debug, Deserialize, Default)]
-pub(crate) struct CargoPackageMetadata {
+#[derive(Clone, Debug, Deserialize, Default, Serialize)]
+pub struct CargoPackageMetadata {
     pub deb: Option<CargoDeb>,
 }
 
-#[derive(Clone, Debug, Deserialize)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(untagged)]
 pub enum LicenseFile {
     String(String),
     Vec(Vec<String>),
 }
 
-#[derive(Deserialize, Clone, Debug)]
+#[derive(Deserialize, Serialize, Clone, Debug)]
 #[serde(untagged)]
 pub enum SystemUnitsSingleOrMultiple {
     Single(SystemdUnitsConfig),
     Multi(Vec<SystemdUnitsConfig>),
 }
 
-#[derive(Clone, Debug, Deserialize)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(untagged)]
 pub enum DependencyList {
     String(String),
@@ -156,7 +156,7 @@ pub(crate) struct MergeMap<'a> {
     has_auto: bool,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Serialize)]
 #[serde(untagged)]
 pub(crate) enum CargoDebAssetArrayOrTable {
     Table(CargoDebAsset),
@@ -165,14 +165,14 @@ pub(crate) enum CargoDebAssetArrayOrTable {
     Invalid(toml::Value),
 }
 
-#[derive(Clone, Debug, Deserialize, Default)]
+#[derive(Clone, Debug, Deserialize, Serialize, Default)]
 pub(crate) struct CargoDebAsset {
     pub source: String,
     pub dest: String,
     pub mode: String,
 }
 
-#[derive(Clone, Debug, Deserialize, Default)]
+#[derive(Clone, Debug, Deserialize, Serialize, Default)]
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
 pub struct CargoDeb {
     pub name: Option<String>,
@@ -213,7 +213,7 @@ pub struct CargoDeb {
 }
 
 /// Struct containing merge configuration
-#[derive(Clone, Debug, Deserialize, Default)]
+#[derive(Clone, Debug, Deserialize, Serialize, Default)]
 #[serde(deny_unknown_fields)]
 pub struct MergeAssets {
     /// Merge assets by appending this list,
@@ -223,7 +223,7 @@ pub struct MergeAssets {
 }
 
 /// Enumeration of merge by key strategies
-#[derive(Clone, Debug, Deserialize)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 pub enum MergeByKey {
     #[serde(rename = "src")]
     Src(RawAssetList),
@@ -301,7 +301,47 @@ impl MergeByKey {
     }
 }
 
+#[derive(Debug)]
+pub enum CargoDebConversionError {
+    JsonError(serde_json::Error),
+}
+
+impl From<serde_json::Error> for CargoDebConversionError {
+    fn from(value: serde_json::Error) -> Self {
+        CargoDebConversionError::JsonError(value)
+    }
+}
+
 impl CargoDeb {
+
+    /// Convert cargo deb manifest part into a simple Cargo.toml
+    pub fn try_into_cargo_toml<V>(
+        self,
+        version: V,
+        name: Option<impl Into<String>>,
+    ) -> Result<cargo_toml::Manifest<CargoPackageMetadata>, CargoDebConversionError>
+        where
+            V: Into<String>,
+    {
+        use serde::de::Error as _;
+
+        let name = name.map(Into::into).unwrap_or(
+            self.name.clone().ok_or(serde_json::Error::missing_field("name"))?
+        );
+
+        let metadata = CargoPackageMetadata {
+            deb: Some(self),
+        };
+
+        let mut package = cargo_toml::Package::new(name, version);
+        package.metadata = Some(metadata);
+
+        Ok(cargo_toml::Manifest {
+            package: Some(package),
+            ..Default::default()
+        })
+    }
+
     /// Inherit unset fields from parent,
     ///
     /// **Note**: For backwards compat, if `merge_assets` is set, this will apply **after** the variant has overridden the assets.

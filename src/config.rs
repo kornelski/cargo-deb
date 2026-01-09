@@ -1447,6 +1447,21 @@ fn license_doesnt_need_author_info(license_identifier: &str) -> bool {
 
 const EXPECTED: &str = "Expected items in `assets` to be either `[source, dest, mode]` array, or `{source, dest, mode}` object, or `\"$auto\"`";
 
+
+impl From<RawAssetOrAuto> for CargoDebAssetArrayOrTable {
+    fn from(value: RawAssetOrAuto) -> Self {
+        match value {
+            RawAssetOrAuto::Auto => CargoDebAssetArrayOrTable::Auto("auto".to_string()),
+            RawAssetOrAuto::RawAsset(raw_asset) => 
+                CargoDebAssetArrayOrTable::Table(crate::parse::manifest::CargoDebAsset {
+                    source: raw_asset.source_path.to_string_lossy().to_string(),
+                    dest: raw_asset.target_path.to_string_lossy().to_string(),
+                    mode: raw_asset.chmod.to_string(),
+                }),
+        }
+    }
+}
+
 impl TryFrom<CargoDebAssetArrayOrTable> for RawAssetOrAuto {
     type Error = String;
 

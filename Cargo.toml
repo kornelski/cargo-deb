@@ -123,6 +123,7 @@ lazy_static = "1.5.0"
 [workspace]
 resolver = "2"
 exclude = ["example", "tests/*", "test-resources"]
+members = ["tests/package-deb-gen"]
 
 [package.metadata.docs.rs]
 targets = ["x86_64-unknown-linux-gnu"]
