@@ -1,4 +1,7 @@
+mod common;
+
 use std::path::{Path, PathBuf};
+use common::dir_test_run_in_subdir;
 
 use cargo_deb::assets::{RawAsset, RawAssetOrAuto};
 use cargo_deb::parse::manifest::CargoDeb as ManifestCargoDeb;
@@ -44,8 +47,43 @@ pub fn check_serialization_deserialization() {
         maintainer: Some("anon".into()),
         assets,
         ..Default::default()
-    }.try_into_cargo_toml("0.1.0", Some("a")).unwrap();
+    }.try_into_cargo_toml("0.1.0", Some("my-cargo-name")).unwrap();
 
-    println!("{}", toml::to_string_pretty(&manifest).unwrap());
-    assert!(false);
+
+    let manifest_package = manifest.package();
+    assert_eq!(manifest_package.name(), "my-cargo-name");
+    assert_eq!(manifest_package.version(), "0.1.0");
+
+    let manifest_metadata = manifest_package.metadata.clone().unwrap();
+    let manifest_deb = manifest_metadata.deb.unwrap();
+    assert_eq!(manifest_deb.name, Some("my-package-name".into()));
+    assert_eq!(manifest_deb.maintainer, Some("anon".into()));
 }
+
+#[test]
+pub fn check_cmd() {
+    let current_dir = PathBuf::from(file!()).parent().unwrap().to_owned();
+    let assets_dir = current_dir.join(PACKAGE_DEB_GEN).join(ASSETS_DIR);
+    let output_dir = current_dir.join(PACKAGE_DEB_GEN);
+
+    // example of dynamically chosen assets
+    let assets = Some(non_empty_assets(&assets_dir));
+
+    let manifest = ManifestCargoDeb {
+        name: Some("my-package-name".into()),
+        maintainer: Some("anon".into()),
+        assets,
+        ..Default::default()
+    };
+
+    std::fs::write(
+        output_dir.join("cargo-deb.gen.toml"),
+        toml::to_string_pretty(&manifest).unwrap()
+    ).unwrap();
+
+    let subdir_path = format!("tests/{PACKAGE_DEB_GEN}/src");
+    let ddir = dir_test_run_in_subdir(&subdir_path);
+
+    assert!(ddir.path().join("etc/package/id/2137").is_dir(), "must package assets");
+}
+

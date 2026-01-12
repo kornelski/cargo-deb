@@ -312,6 +312,8 @@ impl From<serde_json::Error> for CargoDebConversionError {
     }
 }
 
+pub const STR_NONE: Option<&str> = None;
+
 impl CargoDeb {
 
     /// Convert cargo deb manifest part into a simple Cargo.toml
