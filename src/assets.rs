@@ -38,8 +38,8 @@ impl AssetSource {
     #[must_use]
     pub fn path(&self) -> Option<&Path> {
         match self {
-            Self::Symlink(ref p) |
-            Self::Path(ref p) => Some(p),
+            Self::Symlink(p) |
+            Self::Path(p) => Some(p),
             Self::Data(_) => None,
         }
     }
