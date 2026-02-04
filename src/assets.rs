@@ -364,7 +364,7 @@ impl Asset {
 
     pub(crate) fn is_binary_executable(&self) -> bool {
         self.c.is_executable()
-            && self.c.target_path.extension().map_or(true, |ext| ext != "sh")
+            && self.c.target_path.extension().is_none_or(|ext| ext != "sh")
             && (self.c.is_built() || self.smells_like_elf())
     }
 

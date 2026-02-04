@@ -112,7 +112,7 @@ fn extract_built_package_from_manifest(manifest_path: &str, ext: &str, args: &[&
             !args.contains(&"--no-strip");
         if !allowed {
             drop(tmpdir.keep());
-            panic!("{ddeb:?} built unexpectedly");
+            panic!("{:?} built unexpectedly", ddeb.display());
         }
     }
     extract_package(&deb_path, ext)

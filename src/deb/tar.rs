@@ -147,7 +147,9 @@ impl<W: Write> Tarball<W> {
         let (path_slot, zero) = path_slot.split_at_mut(path_bytes.len().min(path_slot.len()));
         path_slot.copy_from_slice(&path_bytes[..path_slot.len()]);
         if cfg!(target_os = "windows") {
-            path_slot.iter_mut().for_each(|b| if *b == b'\\' { *b = b'/' });
+            for b in path_slot {
+                if *b == b'\\' { *b = b'/' }
+            }
         }
 
         if let Some((t, rest)) = zero.split_first_mut() {
@@ -244,7 +246,7 @@ mod tests {
         }
     }
 
-    fn expected_entry<'a>(path: &'a str, entry_type: EntryType, mode: u32) -> ExpectedEntry<'a> {
+    fn expected_entry(path: &str, entry_type: EntryType, mode: u32) -> ExpectedEntry<'_> {
         ExpectedEntry { path, entry_type, mode, check: None }
     }
 

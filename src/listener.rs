@@ -56,7 +56,7 @@ impl StdErrListener {
         }
     }
 
-    fn error_with_notes(&self, out: &mut AutoStream<StderrLock<'static>>, err: &(dyn Error + 'static), primary_error: bool) {
+    fn error_with_notes(out: &mut AutoStream<StderrLock<'static>>, err: &(dyn Error + 'static), primary_error: bool) {
         let err_msg = err.to_string();
         let mut messages = err_msg.split("\nnote: ");
         let err_msg = messages.next().unwrap_or_default();
@@ -88,7 +88,7 @@ impl Listener for StdErrListener {
 
     fn error(&self, err: &(dyn Error + 'static)) {
         let mut out = AutoStream::new(std::io::stderr(), self.color).lock();
-        self.error_with_notes(&mut out, err, true);
+        Self::error_with_notes(&mut out, err, true);
 
         let mut cause = err.source();
         let mut max_causes = 5;
@@ -97,7 +97,7 @@ impl Listener for StdErrListener {
             if max_causes == 0 {
                 break;
             }
-            self.error_with_notes(&mut out, err, false);
+            Self::error_with_notes(&mut out, err, false);
             cause = err.source();
         }
     }

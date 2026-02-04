@@ -426,7 +426,7 @@ mod tests {
         assert_eq!("a'b", unquote("'a'b'"));
         assert_eq!(r#"a"b"#, unquote(r#"'a"b'"#));
         assert_eq!(r#"a"b"#, unquote(r#""a"b""#));
-        assert_eq!(r#"a'b"#, unquote(r#""a'b""#));
+        assert_eq!(r"a'b", unquote(r#""a'b""#));
     }
 
     #[test]

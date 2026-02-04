@@ -206,7 +206,7 @@ pub(crate) struct CargoDeb {
     pub compress_debug_symbols: Option<bool>,
     pub preserve_symlinks: Option<bool>,
     pub systemd_units: Option<SystemUnitsSingleOrMultiple>,
-    pub variants: Option<HashMap<String, CargoDeb>>,
+    pub variants: Option<HashMap<String, Self>>,
 
     /// Cargo build profile, defaults to `release`
     pub profile: Option<String>,

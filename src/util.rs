@@ -104,12 +104,9 @@ impl MyJoin for BTreeSet<String> {
 
 #[cfg(test)]
 pub(crate) mod tests {
-    use lazy_static::lazy_static;
     use std::collections::HashMap;
 
-    lazy_static! {
-        static ref ERROR_REGEX: regex::Regex = regex::Regex::new(r"^error:(?P<error_name>.+)$").unwrap();
-    }
+    static ERROR_REGEX: LazyLock<regex::Regex> = LazyLock::new(|| regex::Regex::new(r"^error:(?P<error_name>.+)$").unwrap());
 
     // ---------------------------------------------------------------------
     // Begin: test virtual filesystem
@@ -139,7 +136,7 @@ pub(crate) mod tests {
     //   - set_test_fs_path_content() - set the file content (initially "")
     //   - with_test_fs() - passes the current tests virtual fs vector to
     //                      a user defined callback function.
-    use std::sync::Mutex;
+    use std::sync::{LazyLock, Mutex};
 
     pub(crate) struct TestPath {
         _filename: &'static str,

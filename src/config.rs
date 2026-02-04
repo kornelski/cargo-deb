@@ -292,7 +292,7 @@ pub enum Multiarch {
     Foreign,
 }
 
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Copy, Clone, Default)]
 pub struct DebugSymbolOptions {
     pub generate_dbgsym_package: Option<bool>,
     pub separate_debug_symbols: Option<bool>,
