@@ -38,9 +38,9 @@ mod dh {
     pub(crate) mod dh_lib;
 }
 pub mod listener;
-pub(crate) mod parse {
+pub mod parse {
     pub(crate) mod cargo;
-    pub(crate) mod manifest;
+    pub mod manifest;
 }
 pub use crate::config::{BuildEnvironment, BuildProfile, DebugSymbols, PackageConfig};
 pub use crate::deb::ar::DebArchive;
