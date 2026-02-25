@@ -151,7 +151,7 @@ pub fn strip_binaries(config: &BuildEnvironment, package_deb: &mut PackageConfig
                 Some(Asset::new(
                     AssetSource::Path(debug_temp_path),
                     debug_target_path,
-                    0o666 & asset.c.chmod,
+                    Some(0o666 & asset.c.chmod.unwrap_or(0o644)),
                     IsBuilt::No,
                     crate::assets::AssetKind::SeparateDebugSymbols,
                 ).processed(if compress_debug_symbols != CompressDebugSymbols::No {"compress"} else {"separate"}, path.to_path_buf()))

@@ -50,7 +50,7 @@ impl<W: Write> Tarball<W> {
                     prev_is_built = asset.c.is_built();
                     archive_data_added += out_data.len();
                 }
-                self.file(&asset.c.target_path, &out_data, asset.c.chmod)?;
+                self.file(&asset.c.target_path, &out_data, asset.c.chmod.unwrap_or(0o644))?;
             }
         }
 

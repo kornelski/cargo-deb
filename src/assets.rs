@@ -9,6 +9,7 @@ use std::borrow::Cow;
 use std::env::consts::DLL_SUFFIX;
 use std::path::{Path, PathBuf};
 use std::{fmt, fs};
+use std::os::unix::fs::PermissionsExt;
 
 #[derive(Debug, Clone)]
 pub enum AssetSource {
@@ -132,7 +133,7 @@ impl From<RawAsset> for RawAssetOrAuto {
 pub(crate) struct RawAsset {
     pub source_path: PathBuf,
     pub target_path: PathBuf,
-    pub chmod: u32,
+    pub chmod: Option<u32>,
 }
 
 impl TryFrom<RawAssetOrAuto> for RawAsset {
@@ -171,6 +172,16 @@ pub enum IsBuilt {
     Workspace,
 }
 
+fn get_file_mode(path: &Path) -> CDResult<u32> {
+    let metadata = fs::metadata(path)
+        .map_err(|e| CargoDebError::IoFile(
+            "Unable to read file metadata for permissions", 
+            e, 
+            path.to_owned()
+        ))?;
+    
+    Ok(metadata.permissions().mode() & 0o7777)
+}
 #[derive(Debug, Clone)]
 pub struct UnresolvedAsset {
     pub source_path: PathBuf,
@@ -178,7 +189,7 @@ pub struct UnresolvedAsset {
 }
 
 impl UnresolvedAsset {
-    pub(crate) fn new(source_path: PathBuf, target_path: PathBuf, chmod: u32, is_built: IsBuilt, asset_kind: AssetKind) -> Self {
+    pub(crate) fn new(source_path: PathBuf, target_path: PathBuf, chmod: Option<u32>, is_built: IsBuilt, asset_kind: AssetKind) -> Self {
         Self {
             source_path,
             c: AssetCommon { target_path, chmod, asset_kind, is_built },
@@ -219,8 +230,8 @@ impl UnresolvedAsset {
                 let source_file = entry?;
                 Ok(if source_file.is_dir() { None } else { Some(source_file) })
             })
-            .filter_map(|res| {
-                Some(res.transpose()?.map(|source_file| {
+            .filter_map(|res: Result<Option<PathBuf>, glob::GlobError>| {
+                Some(res.transpose()?.map_err(CargoDebError::from).and_then(|source_file| {
                     let target_file = if let Some(source_prefix_len) = source_prefix_len {
                         target_path.join(
                             source_file
@@ -230,18 +241,24 @@ impl UnresolvedAsset {
                     } else {
                         target_path.clone()
                     };
-                    log::debug!("asset {} -> {} {} {:o}", source_file.display(), target_file.display(), if is_built != IsBuilt::No {"copy"} else {"build"}, chmod);
+                    // Use provided chmod or read from filesystem
+                    let file_chmod = match chmod {
+                        Some(chmod) => chmod,
+                        None => get_file_mode(&source_file)?,
+                    };
+                    log::debug!("asset {} -> {} {} {:o}", source_file.display(), target_file.display(), if is_built != IsBuilt::No {"copy"} else {"build"}, file_chmod);
+                    
                     let asset = Asset::new(
                         AssetSource::from_path(source_file, preserve_symlinks),
                         target_file,
-                        chmod,
+                        Some(file_chmod),
                         is_built,
                         asset_kind,
                     );
                     if source_prefix_len.is_some() {
-                        asset.processed("glob", None)
+                        Ok(asset.processed("glob", None))
                     } else {
-                        asset
+                        Ok(asset)
                     }
                 }))
             })
@@ -261,7 +278,7 @@ impl UnresolvedAsset {
 #[derive(Debug, Clone)]
 pub struct AssetCommon {
     pub target_path: PathBuf,
-    pub chmod: u32,
+    pub chmod: Option<u32>,
     pub(crate) asset_kind: AssetKind,
     is_built: IsBuilt,
 }
@@ -343,7 +360,7 @@ impl Asset {
     }
 
     #[must_use]
-    pub fn new(source: AssetSource, target_path: PathBuf, chmod: u32, is_built: IsBuilt, asset_kind: AssetKind) -> Self {
+    pub fn new(source: AssetSource, target_path: PathBuf, chmod: Option<u32>, is_built: IsBuilt, asset_kind: AssetKind) -> Self {
         let target_path = Self::normalized_target_path(target_path, source.path());
         Self {
             source,
@@ -375,7 +392,11 @@ impl Asset {
 
 impl AssetCommon {
     pub(crate) const fn is_executable(&self) -> bool {
-        0 != self.chmod & 0o111
+        if let Some(chmod) = self.chmod {
+            0 != chmod & 0o111
+        } else {
+            false
+        }
     }
 
     pub(crate) fn is_dynamic_library(&self) -> bool {
@@ -475,7 +496,7 @@ mod tests {
         let a = Asset::new(
             AssetSource::Path(PathBuf::from("target/release/bar")),
             PathBuf::from("baz/"),
-            0o644,
+            Some(0o644),
             IsBuilt::SamePackage,
             AssetKind::Any,
         );
@@ -485,12 +506,62 @@ mod tests {
         let a = Asset::new(
             AssetSource::Path(PathBuf::from("foo/bar")),
             PathBuf::from("/baz/quz"),
-            0o644,
+            Some(0o644),
             IsBuilt::No,
             AssetKind::Any,
         );
         assert_eq!("baz/quz", a.c.target_path.to_str().unwrap());
         assert!(a.c.is_built == IsBuilt::No);
+    }
+
+    #[test]
+    fn resolve_without_permissions_reads_from_filesystem() {
+        // When chmod is None, resolve() should read the file's permissions from disk
+        let source_path = PathBuf::from("test-resources/testroot/src/main.rs");
+        assert!(source_path.exists(), "test file must exist");
+
+        let asset = UnresolvedAsset {
+            source_path: source_path.clone(),
+            c: AssetCommon {
+                target_path: PathBuf::from("usr/share/test/"),
+                chmod: None, // no permissions specified
+                asset_kind: AssetKind::Any,
+                is_built: IsBuilt::No,
+            },
+        };
+
+        let resolved = asset.resolve(false).unwrap();
+        assert_eq!(resolved.len(), 1);
+
+        let resolved_asset = &resolved[0];
+        // The chmod should have been populated from the filesystem
+        assert!(resolved_asset.c.chmod.is_some(), "chmod should be read from filesystem when not specified in manifest");
+
+        // Verify the permission value matches what the filesystem reports
+        use std::os::unix::fs::PermissionsExt;
+        let expected_mode = fs::metadata(&source_path).unwrap().permissions().mode() & 0o7777;
+        assert_eq!(resolved_asset.c.chmod.unwrap(), expected_mode);
+    }
+
+    #[test]
+    fn resolve_with_explicit_permissions_ignores_filesystem() {
+        // When chmod is Some, resolve() should use the specified value, not the filesystem
+        let source_path = PathBuf::from("test-resources/testroot/src/main.rs");
+        assert!(source_path.exists(), "test file must exist");
+
+        let asset = UnresolvedAsset {
+            source_path: source_path.clone(),
+            c: AssetCommon {
+                target_path: PathBuf::from("usr/share/test/"),
+                chmod: Some(0o755), // explicit permissions
+                asset_kind: AssetKind::Any,
+                is_built: IsBuilt::No,
+            },
+        };
+
+        let resolved = asset.resolve(false).unwrap();
+        assert_eq!(resolved.len(), 1);
+        assert_eq!(resolved[0].c.chmod, Some(0o755), "explicit chmod should be preserved");
     }
 
     #[test]
@@ -509,7 +580,7 @@ mod tests {
                 source_path: PathBuf::from(glob),
                 c: AssetCommon {
                     target_path: PathBuf::from("bar/"),
-                    chmod: 0o644,
+                    chmod: Some(0o644),
                     asset_kind: AssetKind::Any,
                     is_built: IsBuilt::SamePackage,
                 },
@@ -541,7 +612,7 @@ mod tests {
         let a = Asset::new(
             AssetSource::Path(PathBuf::from("target/release/bar")),
             PathBuf::from("/usr/bin/baz/"),
-            0o644,
+            Some(0o644),
             IsBuilt::SamePackage,
             AssetKind::Any,
         );
@@ -556,7 +627,7 @@ mod tests {
         let a = Asset::new(
             AssetSource::Path(PathBuf::from("target/release/bar")),
             PathBuf::from("baz/"),
-            0o644,
+            Some(0o644),
             IsBuilt::Workspace,
             AssetKind::Any,
         );

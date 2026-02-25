@@ -749,7 +749,7 @@ impl BuildEnvironment {
         package_deb.assets.resolved.push(Asset::new(
             AssetSource::Data(copyright_file.into()),
             destination_path,
-            0o644,
+            Some(0o644),
             IsBuilt::No,
             AssetKind::Any,
         ).processed("generated", source_path));
@@ -792,7 +792,7 @@ impl BuildEnvironment {
                 package_deb.assets.resolved.push(Asset::new(
                     AssetSource::Data(changelog_file),
                     Path::new("usr/share/doc").join(&package_deb.deb_name).join("changelog.Debian.gz"),
-                    0o644,
+                    Some(0o644),
                     IsBuilt::No,
                     AssetKind::Any,
                 ).processed("generated", source_path));
@@ -864,7 +864,7 @@ impl BuildEnvironment {
                 package_deb.assets.resolved.push(Asset::new(
                     AssetSource::from_path(source, package_deb.preserve_symlinks), // should this even support symlinks at all?
                     target.path,
-                    target.mode,
+                    Some(target.mode),
                     IsBuilt::No,
                     AssetKind::Any,
                 ).processed("systemd", search_path.clone()));
@@ -1445,7 +1445,7 @@ fn license_doesnt_need_author_info(license_identifier: &str) -> bool {
         .any(|l| l.eq_ignore_ascii_case(license_identifier))
 }
 
-const EXPECTED: &str = "Expected items in `assets` to be either `[source, dest, mode]` array, or `{source, dest, mode}` object, or `\"$auto\"`";
+const EXPECTED: &str = "Expected items in `assets` to be either `[source, dest, mode]` or `[source, dest]` array, or `{source, dest, mode}` object, or `\"$auto\"`";
 
 impl TryFrom<CargoDebAssetArrayOrTable> for RawAssetOrAuto {
     type Error = String;
@@ -1458,14 +1458,17 @@ impl TryFrom<CargoDebAssetArrayOrTable> for RawAssetOrAuto {
             CargoDebAssetArrayOrTable::Table(a) => Self::RawAsset(RawAsset {
                 source_path: a.source.into(),
                 target_path: a.dest.into(),
-                chmod: parse_chmod(&a.mode)?,
+                chmod: a.mode.as_deref().map(parse_chmod).transpose()?,
             }),
             CargoDebAssetArrayOrTable::Array(a) => {
+                if a.len() < 2 || a.len() > 3 {
+                    return Err(format!("{EXPECTED}, but found an array with {} elements", a.len()));
+                }
                 let mut a = a.into_iter();
                 Self::RawAsset(RawAsset {
                     source_path: PathBuf::from(a.next().ok_or("Missing source path (first array element) in an asset in Cargo.toml")?),
                     target_path: PathBuf::from(a.next().ok_or("missing dest path (second array entry) for asset in Cargo.toml. Use something like \"usr/local/bin/\".")?),
-                    chmod: parse_chmod(&a.next().ok_or("Missing mode (third array element) in an asset")?)?
+                    chmod: a.next().map(|s| parse_chmod(&s)).transpose()?
                 })
             },
             CargoDebAssetArrayOrTable::Auto(s) if s == "$auto" => Self::Auto,
@@ -1588,7 +1591,7 @@ impl BuildEnvironment {
                     Some(Asset::new(
                         AssetSource::Path(self.path_in_build_products(&t.name, package_deb)),
                         Path::new("usr/bin").join(&t.name),
-                        0o755,
+                        Some(0o755),
                         self.is_built_file_in_package(t),
                         AssetKind::Any,
                     ).processed("$auto", t.src_path.clone()))
@@ -1599,7 +1602,7 @@ impl BuildEnvironment {
                     Some(Asset::new(
                         AssetSource::Path(self.path_in_build_products(&lib_name, package_deb)),
                         lib_dir.join(lib_name),
-                        0o644,
+                        Some(0o644),
                         self.is_built_file_in_package(t),
                         AssetKind::Any,
                     ).processed("$auto", t.src_path.clone()))
@@ -1616,7 +1619,7 @@ impl BuildEnvironment {
             let target_path = Path::new("usr/share/doc")
                 .join(&package_deb.deb_name)
                 .join(path.file_name().ok_or("bad README path")?);
-            implied_assets.push(Asset::new(AssetSource::Path(path), target_path, 0o644, IsBuilt::No, AssetKind::Any)
+            implied_assets.push(Asset::new(AssetSource::Path(path), target_path, Some(0o644), IsBuilt::No, AssetKind::Any)
                 .processed("$auto", readme_rel_path.to_path_buf()));
         }
         Ok(implied_assets)
