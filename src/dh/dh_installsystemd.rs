@@ -555,7 +555,7 @@ mod tests {
         let assets = vec![Asset::new(
             AssetSource::Path(PathBuf::new()),
             PathBuf::new(),
-            0o0,
+            Some(0o0),
             IsBuilt::No,
             AssetKind::Any,
         )];
@@ -572,7 +572,7 @@ mod tests {
         let assets = vec![Asset::new(
             AssetSource::Path(PathBuf::new()), // path source with empty source path makes no sense
             Path::new("usr/lib/tmpfiles.d/blah").to_path_buf(),
-            0o0,
+            Some(0o0),
             IsBuilt::No,
             AssetKind::Any,
         )];
@@ -588,7 +588,7 @@ mod tests {
         let assets = vec![Asset::new(
             AssetSource::Data(vec![]), // only assets of type Path are currently supported
             Path::new("usr/lib/tmpfiles.d/blah").to_path_buf(),
-            0o0,
+            Some(0o0),
             IsBuilt::No,
             AssetKind::Any,
         )];
@@ -609,7 +609,7 @@ mod tests {
         let assets = vec![Asset::new(
             AssetSource::Path(tmp_file_path),
             Path::new("usr/lib/tmpfiles.d/blah").to_path_buf(),
-            0o0,
+            Some(0o0),
             IsBuilt::No,
             AssetKind::Any,
         )];
@@ -659,7 +659,7 @@ mod tests {
         let assets = vec![Asset::new(
             AssetSource::Path(PathBuf::from("debian/my_unit@.service")),
             Path::new("usr/lib/systemd/system/").to_path_buf(),
-            0o0,
+            Some(0o0),
             IsBuilt::No,
             AssetKind::Any,
         )];
@@ -676,7 +676,7 @@ mod tests {
         let assets = vec![Asset::new(
             AssetSource::Path(PathBuf::from("debian/10-extra-hardening.conf")),
             Path::new("usr/lib/systemd/system/foobar.service.d/").to_path_buf(),
-            0o0,
+            Some(0o0),
             IsBuilt::No,
             AssetKind::Any,
         )];
@@ -694,7 +694,7 @@ mod tests {
         let assets = vec![Asset::new(
             AssetSource::Path(PathBuf::from("debian/my_unit.service")),
             Path::new("some/other/path/").to_path_buf(),
-            0o0,
+            Some(0o0),
             IsBuilt::No,
             AssetKind::Any,
         )];
@@ -760,7 +760,7 @@ mod tests {
         let assets = vec![Asset::new(
             AssetSource::Path(PathBuf::from(unit_file_path)),
             format!("{install_base_path}/mypkg.service").into(),
-            0o0,
+            Some(0o0),
             IsBuilt::No,
             AssetKind::Any,
         )];
