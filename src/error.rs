@@ -111,6 +111,9 @@ quick_error! {
         LzmaCompressionError(err: xz2::stream::Error) {
             display("Lzma compression error: {:?}", err)
         }
+        ImplicitFileModeFromPathNotSupported(path: PathBuf) {
+            display("cannot determine file mode from path on non-unix systems and mode not explicityl specified for path {}", path.display())
+        }
     }
 }
 
