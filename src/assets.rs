@@ -9,7 +9,7 @@ use std::borrow::Cow;
 use std::env::consts::DLL_SUFFIX;
 use std::path::{Path, PathBuf};
 use std::{fmt, fs};
-use std::os::unix::fs::PermissionsExt;
+
 
 #[derive(Debug, Clone)]
 pub enum AssetSource {
@@ -173,15 +173,25 @@ pub enum IsBuilt {
 }
 
 fn get_file_mode(path: &Path) -> CDResult<u32> {
-    let metadata = fs::metadata(path)
-        .map_err(|e| CargoDebError::IoFile(
-            "Unable to read file metadata for permissions", 
-            e, 
-            path.to_owned()
-        ))?;
     
-    Ok(metadata.permissions().mode() & 0o7777)
+    #[cfg(not(unix))]
+    {
+        Err(CargoDebError::ImplicitFileModeFromPathNotSupported(path.to_path_buf()))
+    }
+    
+    #[cfg(unix)]
+    {
+        let metadata = fs::metadata(path)
+            .map_err(|e| CargoDebError::IoFile(
+                "Unable to read file metadata for permissions", 
+                e, 
+                path.to_owned()
+            ))?;
+        use std::os::unix::fs::PermissionsExt;
+        Ok(metadata.permissions().mode() & 0o7777)
+    }
 }
+
 #[derive(Debug, Clone)]
 pub struct UnresolvedAsset {
     pub source_path: PathBuf,
@@ -515,6 +525,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(unix)]
     fn resolve_without_permissions_reads_from_filesystem() {
         // When chmod is None, resolve() should read the file's permissions from disk
         let source_path = PathBuf::from("test-resources/testroot/src/main.rs");
