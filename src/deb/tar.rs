@@ -105,6 +105,9 @@ impl<W: Write> Tarball<W> {
     }
 
     pub(crate) fn symlink(&mut self, path: &Path, link_name: &Path) -> CDResult<()> {
+        // TODO: normalize symlinks according to https://www.debian.org/doc/debian-policy/ch-files.html#symbolic-links 
+        // like dh_link https://manpages.debian.org/testing/debhelper/dh_link.1.en.html#DESCRIPTION 
+        
         debug_assert!(path.is_relative());
         self.add_parent_directories(path.as_ref())?;
 
