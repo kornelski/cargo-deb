@@ -5,7 +5,7 @@ use crate::PackageConfig;
 use crate::util::pathbytes::AsUnixPathBytes;
 use std::collections::HashSet;
 use std::io::{Read, Write};
-use std::path::Path;
+use std::path::{Component, Path, PathBuf};
 use std::{fs, io};
 use tar::{EntryType, Header as TarHeader};
 
@@ -38,7 +38,12 @@ impl<W: Write> Tarball<W> {
             if let AssetSource::Symlink(source_path) = &asset.source {
                 let link_name = fs::read_link(source_path)
                     .map_err(|e| CargoDebError::IoFile("Symlink asset", e, source_path.clone()))?;
-                self.symlink(&asset.c.target_path, &link_name)?;
+
+                let Some(normalized_link_name) = normalize_link_name(&asset.c.target_path, &link_name) else {
+                    return Err(CargoDebError::InvalidSymlink(asset.c.target_path.clone(), link_name.clone()));
+                };
+                
+                self.symlink(&asset.c.target_path, &normalized_link_name)?;
             } else {
                 let out_data = asset.source.data()?;
                 if rsyncable {
@@ -190,6 +195,107 @@ impl<W: Write> Tarball<W> {
 
     pub fn into_inner(self) -> io::Result<W> {
         self.tar.into_inner()
+    }
+}
+
+fn normalize_link_name(target_path: &Path, link_name: &Path) -> Option<PathBuf> {
+    // normalize symlinks according to https://www.debian.org/doc/debian-policy/ch-files.html#symbolic-links 
+    // like dh_link https://manpages.debian.org/testing/debhelper/dh_link.1.en.html#DESCRIPTION
+
+    
+    let normalized_target_path = join_lexically("/".as_ref(), target_path)?;
+
+    let target_parent = normalized_target_path.parent().expect("the root path is an invalid target");
+
+    let resolved_link = join_lexically(target_parent, link_name)?;
+
+    // normalized_target_path and resolved_link are now absolute and don't contain /./ or /../ components
+
+    let mut target_components = target_parent.components();
+    let mut link_components = resolved_link.components();
+
+    if target_components.nth(1) != link_components.nth(1) {
+        // the paths differ in the top level folder (after the root dir) so the link must be absolute
+        return Some(resolved_link);
+    }
+
+    let mut link = PathBuf::new();
+
+    loop {
+        let next_target = target_components.next();
+        let next_link = link_components.next();
+
+        match (next_target, next_link) {
+            (None, None) => break Some(link),
+            (None, Some(comp)) => {
+                link.push(comp);
+                link.extend(link_components);
+                break Some(link);
+                
+            },
+            (Some(_), None) => {
+                for _ in 0..=target_components.count() {
+                    link = AsRef::<Path>::as_ref("..").join(link)
+                }
+                break Some(link);
+            },
+            (Some(l), Some(r)) => {
+                if l == r {
+                    continue;
+                }
+
+                for _ in 0..=(&mut target_components).count()  {
+                    link = AsRef::<Path>::as_ref("..").join(link)
+                }
+
+                link.push(r);
+            },
+        }
+    }
+}
+
+// Join the two paths while normalizing them lexically, so that the final path contains no /./ or /../ components
+// Assumes that base is already lexically normalized.
+// returns None if we at some point we attempted to ascend beyond the first component of base
+fn join_lexically(base: &Path, adjoint_path: &Path) -> Option<PathBuf> {
+    let mut resolved_link = base.to_path_buf();
+    for comp in adjoint_path.components() {
+        match comp {
+            Component::Prefix(_) => unreachable!(),
+            Component::RootDir => {
+                resolved_link = PathBuf::from("/");
+            },
+            Component::CurDir => {},
+            Component::ParentDir => {
+                
+                if !resolved_link.pop() {
+                    return None;
+                }
+            },
+            Component::Normal(os_str) => {
+                resolved_link.push(os_str);
+            },
+        }
+    }
+    Some(resolved_link)
+}
+
+#[test]
+fn normalized_links() {
+    let examples = [
+        ("usr/lib/foo", "/usr/share/bar", Some("../share/bar")),
+        ("usr/lib/foo", "/usr/share/./bar", Some("../share/bar")),
+        ("usr/lib/foo", "/usr/share/foo/../bar", Some("../share/bar")),
+        ("usr/lib/foo", "/var/lib/foo/../bar", Some("/var/lib/bar")),
+        ("usr/lib/foo", "/var/lib/foo/./bar", Some("/var/lib/foo/bar")),
+        ("var/run", "/run", Some("/run")),
+        ("usr/share/foo", "../../../var/lib/baz", None),
+        ("usr/share/foo", "../../var/lib/baz", Some("/var/lib/baz")),
+        ("usr/share/foo", "../../usr/lib/baz", Some("../lib/baz")),
+    ];
+
+    for (target, link_name, result) in examples {
+        assert_eq!(normalize_link_name(target.as_ref(), link_name.as_ref()).as_deref(), result.map(AsRef::<Path>::as_ref), "{target} -> {link_name} should normalize to {result:?}")
     }
 }
 

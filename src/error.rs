@@ -114,6 +114,9 @@ quick_error! {
         ImplicitFileModeFromPathNotSupported(path: PathBuf) {
             display("cannot determine file mode from path on non-unix systems and mode not explicityl specified for path {}", path.display())
         }
+        InvalidSymlink(target: PathBuf, link_name: PathBuf) {
+            display("Invalid Symlink {} -> {}, would ascend beyond the root dir.", target.display(), link_name.display())
+        }
     }
 }
 
