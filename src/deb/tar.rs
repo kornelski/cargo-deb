@@ -5,7 +5,7 @@ use crate::PackageConfig;
 use crate::util::pathbytes::AsUnixPathBytes;
 use std::collections::HashSet;
 use std::io::{Read, Write};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::{fs, io};
 use tar::{EntryType, Header as TarHeader};
 
@@ -48,10 +48,9 @@ impl<W: Write> Tarball<W> {
                     },
                 };
 
-                // TODO: normalize symlinks according to https://www.debian.org/doc/debian-policy/ch-files.html#symbolic-links 
-                // like dh_link https://manpages.debian.org/testing/debhelper/dh_link.1.en.html#DESCRIPTION
+                let normalized_link_name = normalize_link_name(&asset.c.target_path, link_name);
                 
-                self.symlink(&asset.c.target_path, link_name)?;
+                self.symlink(&asset.c.target_path, &normalized_link_name)?;
             } else {
                 let out_data = asset.source.data()?;
                 if rsyncable {
@@ -204,6 +203,83 @@ impl<W: Write> Tarball<W> {
 
     pub fn into_inner(self) -> io::Result<W> {
         self.tar.into_inner()
+    }
+}
+
+fn normalize_link_name<'dest>(target_path: &Path, link_name: &'dest Path) -> PathBuf {
+    // TODO: normalize symlinks according to https://www.debian.org/doc/debian-policy/ch-files.html#symbolic-links 
+    // like dh_link https://manpages.debian.org/testing/debhelper/dh_link.1.en.html#DESCRIPTION
+
+    // `Assets::normalized_target_path` should have ensured that the path is relative
+    
+
+    let abs_target_path= AsRef::<Path>::as_ref("/").join(target_path);
+
+    let resolved_link = abs_target_path.join(link_name);
+
+    let mut target_components = abs_target_path.components();
+    let mut link_components = resolved_link.components();
+
+    // if the component after the root are unequal this it a cross top-level folder symlink 
+    // and as such it should be absolute
+    if target_components.nth(1) != link_components.nth(1) {
+        // we cannot take resolved links as is as it might contain superfluous /./ and /../ components
+        // the loop below already does the right thing if target components is empty and resolved_links is the full components iterator
+        link_components = resolved_link.components();
+        (&mut target_components).for_each(|_| {});
+    } else {
+        // skip the last component of the target
+        target_components.next_back();
+    }
+
+
+    let mut link = PathBuf::new();
+
+    loop {
+        let next_target = target_components.next();
+        let next_link = link_components.next();
+
+        match (next_target, next_link) {
+            (None, None) => break link,
+            (None, Some(comp)) => {
+                match comp {
+                    std::path::Component::Prefix(_)  => unreachable!(),
+                    std::path::Component::RootDir => link.push(comp),
+                    std::path::Component::CurDir => continue,
+                    std::path::Component::ParentDir => {link.pop();},
+                    std::path::Component::Normal(_) => link.push(comp),
+                }
+                
+            },
+            (Some(_), None) => link = AsRef::<Path>::as_ref("..").join(link),
+            (Some(l), Some(r)) => {
+                if l == r {
+                    continue;
+                }
+
+                for _ in 0..=(&mut target_components).count()  {
+                    link = AsRef::<Path>::as_ref("..").join(link)
+                }
+
+                link.push(r);
+            },
+        }
+    }
+}
+
+#[test]
+fn normalized_links() {
+    let examples = [
+        ("usr/lib/foo", "/usr/share/bar", "../share/bar"),
+        ("usr/lib/foo", "/usr/share/./bar", "../share/bar"),
+        ("usr/lib/foo", "/usr/share/foo/../bar", "../share/bar"),
+        ("usr/lib/foo", "/var/lib/foo/../bar", "/var/lib/bar"),
+        ("usr/lib/foo", "/var/lib/foo/./bar", "/var/lib/foo/bar"),
+        ("var/run", "/run", "/run")
+    ];
+
+    for (target, link_name, result) in examples {
+        assert_eq!(normalize_link_name(target.as_ref(), link_name.as_ref()), AsRef::<Path>::as_ref(result))
     }
 }
 
