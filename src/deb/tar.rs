@@ -36,9 +36,22 @@ impl<W: Write> Tarball<W> {
             log_asset(asset, &log_display_base_dir, listener);
 
             if let AssetSource::Symlink(source_path) = &asset.source {
-                let link_name = fs::read_link(source_path)
-                    .map_err(|e| CargoDebError::IoFile("Symlink asset", e, source_path.clone()))?;
-                self.symlink(&asset.c.target_path, &link_name)?;
+                let link_name;
+                let link_name = match source_path {
+                    crate::assets::SymlinkKind::Manifested(source_path) => {
+                        link_name = fs::read_link(source_path)
+                            .map_err(|e| CargoDebError::IoFile("Symlink asset", e, source_path.clone()))?;
+                        &link_name
+                    },
+                    crate::assets::SymlinkKind::Virtual(path_buf) => {
+                        path_buf
+                    },
+                };
+
+                // TODO: normalize symlinks according to https://www.debian.org/doc/debian-policy/ch-files.html#symbolic-links 
+                // like dh_link https://manpages.debian.org/testing/debhelper/dh_link.1.en.html#DESCRIPTION
+                
+                self.symlink(&asset.c.target_path, link_name)?;
             } else {
                 let out_data = asset.source.data()?;
                 if rsyncable {
@@ -105,8 +118,6 @@ impl<W: Write> Tarball<W> {
     }
 
     pub(crate) fn symlink(&mut self, path: &Path, link_name: &Path) -> CDResult<()> {
-        // TODO: normalize symlinks according to https://www.debian.org/doc/debian-policy/ch-files.html#symbolic-links 
-        // like dh_link https://manpages.debian.org/testing/debhelper/dh_link.1.en.html#DESCRIPTION 
         
         debug_assert!(path.is_relative());
         self.add_parent_directories(path.as_ref())?;

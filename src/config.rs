@@ -1,4 +1,4 @@
-use crate::assets::{AssetFmt, AssetKind, RawAssetOrAuto, Asset, AssetSource, Assets, IsBuilt, UnresolvedAsset, RawAsset};
+use crate::assets::{Asset, AssetFmt, AssetKind, AssetSource, Assets, IsBuilt, RawAsset, RawAssetOrAuto, SymlinkKind, UnresolvedAsset};
 use crate::assets::is_dynamic_library_filename;
 use crate::util::compress::gzipped;
 use crate::dependencies::resolve_with_dpkg;
@@ -6,7 +6,7 @@ use crate::dh::dh_installsystemd;
 use crate::error::{CDResult, CargoDebError};
 use crate::listener::Listener;
 use crate::parse::cargo::CargoConfig;
-use crate::parse::manifest::{cargo_metadata, debug_flags, find_profile, manifest_version_string};
+use crate::parse::manifest::{CargoDebSymlinkArrayOrTable, Symlink, cargo_metadata, debug_flags, find_profile, manifest_version_string};
 use crate::parse::manifest::{CargoDeb, CargoDebAssetArrayOrTable, CargoMetadataTarget, CargoPackageMetadata, ManifestFound};
 use crate::parse::manifest::{DependencyList, SystemUnitsSingleOrMultiple, SystemdUnitsConfig, LicenseFile, ManifestDebugFlags};
 use crate::util::wordsplit::WordSplit;
@@ -198,7 +198,6 @@ pub struct PackageConfig {
     pub conf_files: Vec<String>,
     /// All of the files that are to be packaged.
     pub(crate) assets: Assets,
-
     /// Added to usr/share/doc as a fallback
     pub readme_rel_path: Option<PathBuf>,
     /// The location of the triggers file
@@ -438,10 +437,11 @@ impl BuildEnvironment {
             .chain(rust_target_triples.is_empty().then_some(None));
         let packages = targets.map(|rust_target_triple| {
             let assets = deb.assets.as_deref().unwrap_or(&[RawAssetOrAuto::Auto]);
+            let symlinks = deb.symlinks.as_deref().unwrap_or(&[]);
             let cargo_package = manifest.package.as_mut().ok_or("Cargo.toml is a workspace, not a package")?;
             let mut package_deb = PackageConfig::new(&deb, cargo_package, listener, default_timestamp, &overrides, rust_target_triple, multiarch)?;
 
-            config.add_assets(&mut package_deb, assets, listener)?;
+            config.add_assets(&mut package_deb, assets, symlinks, listener)?;
             Ok(package_deb)
         }).collect::<CDResult<Vec<_>>>()?;
 
@@ -551,8 +551,10 @@ impl BuildEnvironment {
         debug_symbols
     }
 
-    fn add_assets(&self, package_deb: &mut PackageConfig, assets: &[RawAssetOrAuto], listener: &dyn Listener) -> CDResult<()> {
+    fn add_assets(&self, package_deb: &mut PackageConfig, assets: &[RawAssetOrAuto], symlinks: &[Symlink], listener: &dyn Listener) -> CDResult<()> {
         package_deb.assets = self.explicit_assets(package_deb, assets, listener)?;
+
+        self.add_virtual_symlinks(package_deb, symlinks);
 
         // https://wiki.debian.org/Multiarch/Implementation
         if package_deb.multiarch != Multiarch::None {
@@ -950,6 +952,20 @@ impl BuildEnvironment {
             }
         }
         fs::create_dir_all(deb_temp_dir)
+    }
+    
+    fn add_virtual_symlinks(&self, package_deb: &mut PackageConfig, symlinks : &[Symlink]) {
+        for link in symlinks {
+            package_deb.assets.resolved.push(Asset::new(
+                AssetSource::Symlink(SymlinkKind::Virtual(link.dest.clone())),
+                link.source.clone(),
+                // permissions of ordinary symlinks never used, are always 0x777 and cannot be changed
+                // see Section `Symbolic link ownership, permissions, and timestamps` of https://man7.org/linux/man-pages/man7/symlink.7.html
+                Some(0x777), 
+                IsBuilt::No, 
+                AssetKind::Any
+            ));
+        }
     }
 
 }
@@ -1443,6 +1459,22 @@ impl PackageConfig {
 fn license_doesnt_need_author_info(license_identifier: &str) -> bool {
     ["UNLICENSED", "PROPRIETARY", "CC-PDDC", "CC0-1.0"].iter()
         .any(|l| l.eq_ignore_ascii_case(license_identifier))
+}
+
+impl From<CargoDebSymlinkArrayOrTable> for Symlink {
+
+    fn from(value: CargoDebSymlinkArrayOrTable) -> Self {
+        match value {
+            CargoDebSymlinkArrayOrTable::Table(l) => Symlink {
+                source: PathBuf::from(l.source),
+                dest: PathBuf::from(l.dest),
+            } ,
+            CargoDebSymlinkArrayOrTable::Array([source, dest]) => Symlink {
+                source: PathBuf::from(source),
+                dest: PathBuf::from(dest),
+            },
+        }
+    }
 }
 
 const EXPECTED: &str = "Expected items in `assets` to be either `[source, dest, mode]` or `[source, dest]` array, or `{source, dest, mode}` object, or `\"$auto\"`";

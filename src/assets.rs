@@ -15,10 +15,21 @@ use std::{fmt, fs};
 pub enum AssetSource {
     /// Copy file from the path (and strip binary if needed).
     Path(PathBuf),
-    /// A symlink existing in the file system
-    Symlink(PathBuf),
+    /// A symlink existing in the file system or specified in the manifest
+    Symlink(SymlinkKind),
     /// Write data to destination as-is.
     Data(Vec<u8>),
+}
+
+#[derive(Debug, Clone)]
+pub enum SymlinkKind {
+    /// A symlink existing in the file system
+    /// If reserve symlinks is enabled the links source path will be read from this path,
+    /// otherwise the file content of the symlink destination will be added as a normal file
+    Manifested(PathBuf),
+    /// A symlink specified in the manifest
+    /// The path is the destination of the symlink
+    Virtual(PathBuf),
 }
 
 impl AssetSource {
@@ -29,7 +40,7 @@ impl AssetSource {
         if preserve_existing_symlink || !path.exists() { // !exists means a symlink to bogus path
             if let Ok(md) = fs::symlink_metadata(&path) {
                 if md.is_symlink() {
-                    return Self::Symlink(path);
+                    return Self::Symlink(SymlinkKind::Manifested(path));
                 }
             }
         }
@@ -39,18 +50,20 @@ impl AssetSource {
     #[must_use]
     pub fn path(&self) -> Option<&Path> {
         match self {
-            Self::Symlink(p) |
+            Self::Symlink(SymlinkKind::Manifested(p)) |
             Self::Path(p) => Some(p),
-            Self::Data(_) => None,
+            Self::Data(_) | 
+            Self::Symlink(SymlinkKind::Virtual(_)) => None ,
         }
     }
 
     #[must_use]
     pub fn into_path(self) -> Option<PathBuf> {
         match self {
-            Self::Symlink(p) |
+            Self::Symlink(SymlinkKind::Manifested(p)) |
             Self::Path(p) => Some(p),
-            Self::Data(_) => None,
+            Self::Data(_) | 
+            Self::Symlink(SymlinkKind::Virtual(_))  => None,
         }
     }
 
@@ -64,7 +77,7 @@ impl AssetSource {
         match *self {
             Self::Path(ref p) => fs::metadata(p).ok().map(|m| m.len()),
             Self::Data(ref d) => Some(d.len() as u64),
-            Self::Symlink(_) => None,
+            Self::Symlink(_)  => None,
         }
     }
 
@@ -76,17 +89,20 @@ impl AssetSource {
                 Cow::Owned(data)
             },
             Self::Data(d) => Cow::Borrowed(d),
-            Self::Symlink(p) => {
+            Self::Symlink(SymlinkKind::Manifested(p))  => {
                 let data = read_file_to_bytes(p)
                     .map_err(|e| CargoDebError::IoFile("Symlink unexpectedly used to read file data", e, p.clone()))?;
                 Cow::Owned(data)
             },
+            Self::Symlink(SymlinkKind::Virtual(p)) => {
+                return Err(CargoDebError::CannotReadVirtualSymlink(p.clone()))
+            }
         })
     }
 
     pub(crate) fn magic_bytes(&self) -> Option<[u8; 4]> {
         match self {
-            Self::Path(p) | Self::Symlink(p) => {
+            Self::Path(p) | Self::Symlink(SymlinkKind::Manifested(p)) => {
                 let mut buf = [0; 4];
                 use std::io::Read;
                 let mut file = std::fs::File::open(p).ok()?;
@@ -96,6 +112,7 @@ impl AssetSource {
             Self::Data(d) => {
                 d.get(..4).and_then(|b| b.try_into().ok())
             },
+            Self::Symlink(SymlinkKind::Virtual(_)) => None
         }
     }
 }

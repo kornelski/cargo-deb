@@ -147,6 +147,17 @@ impl DependencyList {
     }
 }
 
+/// Type-alias for list of links
+pub(crate) type Symlinks = Vec<Symlink>;
+
+/// A symlink
+#[derive(Debug, Clone, serde::Deserialize)]
+#[serde(try_from = "CargoDebSymlinkArrayOrTable")]
+pub(crate) struct Symlink {
+    pub source: PathBuf,
+    pub dest: PathBuf
+}
+
 /// Type-alias for list of assets
 pub(crate) type RawAssetList = Vec<RawAssetOrAuto>;
 
@@ -155,6 +166,21 @@ pub(crate) struct MergeMap<'a> {
     by_path: BTreeMap<&'a PathBuf, (&'a PathBuf, Option<u32>)>,
     has_auto: bool,
 }
+
+
+#[derive(Deserialize)]
+#[serde(untagged)]
+pub(crate) enum CargoDebSymlinkArrayOrTable {
+    Table(CargoDebSymlink),
+    Array([String; 2]),
+}
+
+#[derive(Clone, Debug, Deserialize, Default)]
+pub(crate) struct CargoDebSymlink {
+    pub source: String,
+    pub dest: String,
+}
+
 
 #[derive(Deserialize)]
 #[serde(untagged)]
@@ -197,6 +223,7 @@ pub(crate) struct CargoDeb {
     pub conf_files: Option<Vec<String>>,
     pub assets: Option<RawAssetList>,
     pub merge_assets: Option<MergeAssets>,
+    pub symlinks: Option<Symlinks>,
     pub triggers_file: Option<String>,
     pub maintainer_scripts: Option<String>,
     pub features: Option<Vec<String>>,
@@ -346,6 +373,7 @@ impl CargoDeb {
             conf_files: self.conf_files.or(parent.conf_files),
             assets,
             merge_assets: None,
+            symlinks: self.symlinks.or(parent.symlinks),
             triggers_file: self.triggers_file.or(parent.triggers_file),
             maintainer_scripts: self.maintainer_scripts.or(parent.maintainer_scripts),
             features: self.features.or(parent.features),

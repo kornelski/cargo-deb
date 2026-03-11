@@ -114,6 +114,9 @@ quick_error! {
         ImplicitFileModeFromPathNotSupported(path: PathBuf) {
             display("cannot determine file mode from path on non-unix systems and mode not explicityl specified for path {}", path.display())
         }
+        CannotReadVirtualSymlink(dest: PathBuf) {
+            display("Virtual symlink {} unexpectedly used to read file data", dest.display())
+        }
     }
 }
 
