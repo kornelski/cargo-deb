@@ -301,6 +301,7 @@ fn normalized_links() {
         ("var/run", "/run", Some("/run")),
         ("usr/share/foo", "../../../var/lib/baz", None),
         ("usr/share/foo", "../../var/lib/baz", Some("/var/lib/baz")),
+        ("usr/share/foo", "../../usr/lib/baz", Some("../lib/baz")),
     ];
 
     for (target, link_name, result) in examples {
