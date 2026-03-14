@@ -304,7 +304,7 @@ fn normalized_links() {
     ];
 
     for (target, link_name, result) in examples {
-        assert_eq!(normalize_link_name(target.as_ref(), link_name.as_ref()).as_deref(), result.map(|path| AsRef::<Path>::as_ref(path)), "{target} -> {link_name} should normalize to {result:?}")
+        assert_eq!(normalize_link_name(target.as_ref(), link_name.as_ref()).as_deref(), result.map(AsRef::<Path>::as_ref), "{target} -> {link_name} should normalize to {result:?}")
     }
 }
 
