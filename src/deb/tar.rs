@@ -208,67 +208,28 @@ impl<W: Write> Tarball<W> {
     }
 }
 
-fn normalize_link_name<'dest>(target_path: &Path, link_name: &'dest Path) -> Option<PathBuf> {
+fn normalize_link_name(target_path: &Path, link_name: &Path) -> Option<PathBuf> {
     // normalize symlinks according to https://www.debian.org/doc/debian-policy/ch-files.html#symbolic-links 
     // like dh_link https://manpages.debian.org/testing/debhelper/dh_link.1.en.html#DESCRIPTION
 
     
-    let mut normalized_target_path = PathBuf::from("/");
-
-    for comp in target_path.components() {
-        match comp {
-            Component::Prefix(_) |
-            Component::RootDir => {
-                // `Assets::normalized_target_path` should have ensured that the path is relative
-                unreachable!()
-            },
-            Component::CurDir => {},
-            Component::ParentDir => {
-                if !normalized_target_path.pop() {
-                    return None;
-                }
-            },
-            Component::Normal(os_str) => {
-                normalized_target_path.push(os_str);
-            },
-        }
-    }
-
+    let normalized_target_path = join_lexically("/".as_ref(), target_path)?;
 
     let target_parent = normalized_target_path.parent().expect("the root path is an invalid target");
 
-    let mut resolved_link = target_parent.to_path_buf();
-
-    // lexically joint the link_name onto the absolute target path
-    for comp in link_name.components() {
-        match comp {
-            Component::Prefix(_) => unreachable!(),
-            Component::RootDir => {
-                resolved_link = PathBuf::from("/");
-            },
-            Component::CurDir => {},
-            Component::ParentDir => {
-                if !resolved_link.pop() {
-                    return None;
-                }
-            },
-            Component::Normal(os_str) => {
-                resolved_link.push(os_str);
-            },
-        }
-    }
+    let resolved_link = join_lexically(target_parent, link_name)?;
 
     // normalized_target_path and resolved_link are now absolute and don't contain /./ or /../ components
-
-    let mut link = PathBuf::new();
 
     let mut target_components = target_parent.components();
     let mut link_components = resolved_link.components();
 
-    // the paths differ in the top level folder (after the root dir) so the link must be absolute
     if target_components.nth(1) != link_components.nth(1) {
+        // the paths differ in the top level folder (after the root dir) so the link must be absolute
         return Some(resolved_link);
     }
+
+    let mut link = PathBuf::new();
 
     loop {
         let next_target = target_components.next();
@@ -301,6 +262,32 @@ fn normalize_link_name<'dest>(target_path: &Path, link_name: &'dest Path) -> Opt
             },
         }
     }
+}
+
+// Join the two paths while normalizing them lexically, so that the final path contains no /./ or /../ components
+// Assumes that base is already lexically normalized.
+// returns None if we at some point we attempted to ascend beyond the first component of base
+fn join_lexically(base: &Path, adjoint_path: &Path) -> Option<PathBuf> {
+    let mut resolved_link = base.to_path_buf();
+    for comp in adjoint_path.components() {
+        match comp {
+            Component::Prefix(_) => unreachable!(),
+            Component::RootDir => {
+                resolved_link = PathBuf::from("/");
+            },
+            Component::CurDir => {},
+            Component::ParentDir => {
+                
+                if !resolved_link.pop() {
+                    return None;
+                }
+            },
+            Component::Normal(os_str) => {
+                resolved_link.push(os_str);
+            },
+        }
+    }
+    Some(resolved_link)
 }
 
 #[test]
