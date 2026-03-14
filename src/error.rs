@@ -118,7 +118,7 @@ quick_error! {
             display("Virtual symlink {} unexpectedly used to read file data", dest.display())
         }
         InvalidSymlink(target: PathBuf, link_name: PathBuf) {
-            display("Invalid Symlink at {} with destination {}, would ascend beyond the filesystem root.", target.display(), link_name.display())
+            display("Invalid Symlink {} -> {}, would ascend beyond the root dir.", target.display(), link_name.display())
         }
     }
 }
