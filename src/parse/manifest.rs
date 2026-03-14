@@ -154,8 +154,8 @@ pub(crate) type Symlinks = Vec<Symlink>;
 #[derive(Debug, Clone, serde::Deserialize)]
 #[serde(try_from = "CargoDebSymlinkArrayOrTable")]
 pub(crate) struct Symlink {
-    pub source: PathBuf,
-    pub dest: PathBuf
+    pub target: PathBuf,
+    pub link_name: PathBuf
 }
 
 /// Type-alias for list of assets
@@ -177,8 +177,8 @@ pub(crate) enum CargoDebSymlinkArrayOrTable {
 
 #[derive(Clone, Debug, Deserialize, Default)]
 pub(crate) struct CargoDebSymlink {
-    pub source: String,
-    pub dest: String,
+    pub target: String,
+    pub link_name: String,
 }
 
 

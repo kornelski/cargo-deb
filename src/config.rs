@@ -957,8 +957,8 @@ impl BuildEnvironment {
     fn add_virtual_symlinks(&self, package_deb: &mut PackageConfig, symlinks : &[Symlink]) {
         for link in symlinks {
             package_deb.assets.resolved.push(Asset::new(
-                AssetSource::Symlink(SymlinkKind::Virtual(link.dest.clone())),
-                link.source.clone(),
+                AssetSource::Symlink(SymlinkKind::Virtual(link.link_name.clone())),
+                link.target.clone(),
                 // permissions of ordinary symlinks never used, are always 0x777 and cannot be changed
                 // see Section `Symbolic link ownership, permissions, and timestamps` of https://man7.org/linux/man-pages/man7/symlink.7.html
                 Some(0x777), 
@@ -1466,12 +1466,12 @@ impl From<CargoDebSymlinkArrayOrTable> for Symlink {
     fn from(value: CargoDebSymlinkArrayOrTable) -> Self {
         match value {
             CargoDebSymlinkArrayOrTable::Table(l) => Symlink {
-                source: PathBuf::from(l.source),
-                dest: PathBuf::from(l.dest),
+                target: PathBuf::from(l.target),
+                link_name: PathBuf::from(l.link_name),
             } ,
             CargoDebSymlinkArrayOrTable::Array([source, dest]) => Symlink {
-                source: PathBuf::from(source),
-                dest: PathBuf::from(dest),
+                target: PathBuf::from(source),
+                link_name: PathBuf::from(dest),
             },
         }
     }
