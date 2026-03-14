@@ -58,6 +58,9 @@ Everything is optional:
         - If is argument ends with `/` it will be inferred that the target is the directory where the file will be copied.
         - Otherwise, it will be inferred that the source argument will be renamed when copied.
     3. `mode`: the third argument is the permissions (octal string) to assign that file.
+- **symlinks**: Symlinks to include in the package. 
+    1. `target`: the first argument of each symlink is the where the symlink will be places.
+    2. `link_name`: the second argument is the relative or absolute path the symlink points to.
 - **merge-assets**: [See "Merging Assets" section under "Advanced Usage"](#merging-assets)
 - **maintainer-scripts**: directory containing `templates`, `preinst`, `postinst`, `prerm`, or `postrm` [scripts](https://www.debian.org/doc/debian-policy/ch-maintainerscripts.html).
 - **triggers-file**: Path to triggers control file for use by the dpkg trigger facility.
