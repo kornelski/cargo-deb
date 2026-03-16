@@ -288,8 +288,8 @@ impl UnresolvedAsset {
                 let target_path = Asset::normalized_target_path(c.target_path.to_owned(), Some(link_name));               
 
                 return Ok(vec![Asset{ 
-                    source: AssetSource::Symlink(SymlinkKind::Created { target_path, link_name: link_name.to_owned() }), 
-                    processed_from: Some(ProcessedFrom { original_path: None, action: "symlink" }), c: c.clone()
+                    source: AssetSource::Symlink(SymlinkKind::Created { target_path: target_path.clone(), link_name: link_name.to_owned() }), 
+                    processed_from: Some(ProcessedFrom { original_path: None, action: "symlink" }), c: AssetCommon { target_path, ..c.clone() }
                 }])
             },
             UnresolvedAsset::Asset { source_path, preserve_symlinks, c } =>  {
@@ -677,6 +677,24 @@ mod tests {
         let resolved = asset.resolve().unwrap();
         assert_eq!(resolved.len(), 1);
         assert_eq!(resolved[0].c.chmod, Some(0o755), "explicit chmod should be preserved");
+    }
+
+    
+    #[test]
+    fn resolve_created_symlink() {
+        let asset = UnresolvedAsset::Symlink {
+            link_name: PathBuf::from("../some.service"), 
+            c: AssetCommon {
+                target_path: PathBuf::from("usr/lib/systemd/system/multi-user.target.wants/"),
+                chmod: None, 
+                asset_kind: AssetKind::Any,
+                is_built: IsBuilt::No,
+            },
+        };
+
+        let resolved = asset.resolve().unwrap();
+        assert_eq!(resolved.len(), 1);
+        assert_eq!(&resolved[0].c.target_path, "usr/lib/systemd/system/multi-user.target.wants/some.service");
     }
 
     #[test]
