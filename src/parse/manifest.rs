@@ -536,15 +536,19 @@ mod tests {
     use crate::listener::NoOpListener;
     use itertools::Itertools;
 
+    
+    fn create_test_asset(src: impl Into<PathBuf>, target_path: impl Into<PathBuf>, perm: u32) -> RawAsset {
+        RawAsset::Asset {
+            source_path: src.into(), target_path: target_path.into(), chmod: Some(perm), preserve_symlinks: None,
+        }
+    }
+
+    fn create_test_symlink(target_path: impl Into<PathBuf>, link_name: impl Into<PathBuf>) -> RawAsset {
+        RawAsset::Symlink { target_path: target_path.into(), link_name: link_name.into() } 
+    }
+
     #[test]
     fn test_merge_assets() {
-        // Test merging assets by dest
-        fn create_test_asset(src: impl Into<PathBuf>, target_path: impl Into<PathBuf>, perm: u32) -> RawAsset {
-            RawAsset::Asset {
-                source_path: src.into(), target_path: target_path.into(), chmod: Some(perm), preserve_symlinks: None,
-            }
-        }
-
         // Test merging assets by dest
         let original_asset = create_test_asset(
             "lib/test/empty.txt",
@@ -566,7 +570,7 @@ mod tests {
         let merged_asset = merged.pop().expect("should have an asset");
         assert_eq!("lib/test_variant/empty.txt", merged_asset.source_path().unwrap().as_os_str(), "should have merged the source location");
         assert_eq!("/opt/test/empty.txt", merged_asset.target_path().as_os_str(), "should preserve dest location");
-        assert_eq!(Some(0o655), merged_asset.chmod(), "should have merged the dest location");
+        assert_eq!(Some(0o655), merged_asset.chmod(), "should have merged the chmod");
 
         // Test merging assets by src
         let original_asset = create_test_asset(
@@ -589,7 +593,7 @@ mod tests {
         let merged_asset = merged.pop().expect("should have an asset");
         assert_eq!("lib/test/empty.txt", merged_asset.source_path().unwrap().as_os_str(), "should have merged the source location");
         assert_eq!("/opt/test_variant/empty.txt", merged_asset.target_path().as_os_str(), "should preserve dest location");
-        assert_eq!(Some(0o655), merged_asset.chmod(), "should have merged the dest location");
+        assert_eq!(Some(0o655), merged_asset.chmod(), "should have merged the chmod");
 
         // Test merging assets by appending
         let original_asset = create_test_asset(
@@ -613,12 +617,12 @@ mod tests {
         let merged_asset = merged.pop().expect("should have an asset");
         assert_eq!("lib/test/empty.txt", merged_asset.source_path().unwrap().as_os_str(), "should have merged the source location");
         assert_eq!("/opt/test_variant/empty.txt", merged_asset.target_path().as_os_str(), "should preserve dest location");
-        assert_eq!(Some(0o655), merged_asset.chmod(), "should have merged the dest location");
+        assert_eq!(Some(0o655), merged_asset.chmod(), "should have merged the chmod");
 
         let merged_asset = merged.pop().expect("should have an asset");
         assert_eq!("lib/test/empty.txt", merged_asset.source_path().unwrap().as_os_str(), "should have merged the source location");
         assert_eq!("/opt/test/empty.txt", merged_asset.target_path().as_os_str(), "should preserve dest location");
-        assert_eq!(Some(0o777), merged_asset.chmod(), "should have merged the dest location");
+        assert_eq!(Some(0o777), merged_asset.chmod(), "should have merged the chmod");
 
         // Test backwards compatibility for variants that have set assets
         let original_asset = create_test_asset(
@@ -647,12 +651,84 @@ mod tests {
         let merged_asset = merged.remove(0).asset().unwrap();
         assert_eq!("lib/test_variant/empty.txt", merged_asset.source_path().unwrap().as_os_str(), "should have merged the source location");
         assert_eq!("/opt/test/empty.txt", merged_asset.target_path().as_os_str(), "should preserve dest location");
-        assert_eq!(Some(0o655), merged_asset.chmod(), "should have merged the dest location");
+        assert_eq!(Some(0o655), merged_asset.chmod(), "should have merged the chmod");
 
         let additional_asset = merged.remove(0).asset().unwrap();
         assert_eq!("lib/test/other-empty.txt", additional_asset.source_path().unwrap().as_os_str(), "should have merged the source location");
         assert_eq!("/opt/test/other-empty.txt", additional_asset.target_path().as_os_str(), "should preserve dest location");
-        assert_eq!(Some(0o655), additional_asset.chmod(), "should have merged the dest location");
+        assert_eq!(Some(0o655), additional_asset.chmod(), "should have merged the chmod");
+    }
+
+
+    #[test]
+    fn test_merge_symlinks() {
+        // Test merging assets by dest as symlinks don't have a src to merge by
+
+        // replace file by symlink
+        let original_asset = create_test_asset(
+            "lib/test/empty.txt",
+            "/opt/test/empty.txt",
+            0o777
+        );
+
+        let merge_asset = create_test_symlink(
+            "/opt/test/empty.txt",
+            "lib/test_variant/empty.txt",
+        );
+
+        let parent = CargoDeb { assets: Some(vec![ original_asset.into() ]), .. Default::default() };
+        let variant = CargoDeb { merge_assets: Some(MergeAssets { append: None, by: Some(MergeByKey::Dest(vec![ merge_asset.into() ])) }), .. Default::default() };
+
+        let merged = variant.inherit_from(parent, &NoOpListener);
+        let mut merged = merged.assets.expect("should have assets").into_iter().filter_map(|a| a.asset()).collect_vec();
+        let merged_asset = merged.pop().expect("should have an asset");
+        assert!( merged_asset.source_path().is_none(), "should have removed the source location");
+        assert_eq!("/opt/test/empty.txt", merged_asset.target_path().as_os_str(), "should preserve dest location");
+        assert_eq!(Some(Path::new("lib/test_variant/empty.txt")), merged_asset.link_name().map(|ln|ln.as_path()), "should have merged the link_name");
+
+        // replace symlink by symlink
+        let original_asset = create_test_symlink(
+            "/opt/test/empty.txt",
+            "lib/test_variant/empty.txt",
+        );
+
+        let merge_asset = create_test_symlink(
+            "/opt/test/empty.txt",
+            "lib/test_variant/non-empty.txt",
+        );
+
+        let parent = CargoDeb { assets: Some(vec![ original_asset.into() ]), .. Default::default() };
+        let variant = CargoDeb { merge_assets: Some(MergeAssets { append: None, by: Some(MergeByKey::Dest(vec![ merge_asset.into() ])) }), .. Default::default() };
+
+        let merged = variant.inherit_from(parent, &NoOpListener);
+        let mut merged = merged.assets.expect("should have assets").into_iter().filter_map(|a| a.asset()).collect_vec();
+        let merged_asset = merged.pop().expect("should have an asset");
+        assert!( merged_asset.source_path().is_none(), "should have kept no source location");
+        assert_eq!("/opt/test/empty.txt", merged_asset.target_path().as_os_str(), "should preserve dest location");
+        assert_eq!(Some(Path::new("lib/test_variant/non-empty.txt")), merged_asset.link_name().map(|ln|ln.as_path()), "should have merged the link_name");
+
+        
+        // replace symlink by file
+        let original_asset = create_test_symlink(
+            "/opt/test/empty.txt",
+            "lib/test_variant/empty.txt",
+        );
+
+        let merge_asset = create_test_asset(
+            "lib/test_variant/empty.txt",
+            "/opt/test/empty.txt",
+            0o655,
+        );
+
+        let parent = CargoDeb { assets: Some(vec![ original_asset.into() ]), .. Default::default() };
+        let variant = CargoDeb { merge_assets: Some(MergeAssets { append: None, by: Some(MergeByKey::Dest(vec![ merge_asset.into() ])) }), .. Default::default() };
+
+        let merged = variant.inherit_from(parent, &NoOpListener);
+        let mut merged = merged.assets.expect("should have assets").into_iter().filter_map(|a| a.asset()).collect_vec();
+        let merged_asset = merged.pop().expect("should have an asset");
+        assert_eq!("lib/test_variant/empty.txt", merged_asset.source_path().unwrap().as_os_str(), "should have merged the source location");
+        assert_eq!("/opt/test/empty.txt", merged_asset.target_path().as_os_str(), "should preserve dest location");
+        assert_eq!(Some(0o655), merged_asset.chmod(), "should have merged the chmod");
     }
 }
 

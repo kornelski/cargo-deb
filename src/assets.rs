@@ -187,6 +187,14 @@ impl RawAsset {
             RawAsset::Symlink { .. } => None /* or should this return 0o777 ? */,
         }
     }
+
+    #[cfg(test)]
+    pub(crate) fn link_name(&self) -> Option<&PathBuf>{
+        match self {
+            RawAsset::Asset { .. } => None,
+            RawAsset::Symlink { link_name ,..} => Some(link_name),
+        }
+    }
 }
 
 impl TryFrom<RawAssetOrAuto> for RawAsset {
