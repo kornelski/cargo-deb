@@ -1,5 +1,5 @@
 [workspace]
-members = ["test-ws1", "test-ws2"]
+members = ["test-ws1", "test-ws2", "test-ws3"]
 
 [workspace.package]
 version = "1.0.0-ws"
