@@ -55,9 +55,11 @@ Everything is optional:
 - **assets**: Files to be included in the package and the permissions to assign them. If assets are not specified, they default to `["$auto"]`, which takes binaries built by Cargo (copied to `/usr/bin/`) and the package's `readme` (copied to `usr/share/doc/…`).
     1. `source`: the first argument of each asset is the location of that asset in the Rust project. Glob patterns are allowed. Always use `target/release/` path prefix for packaging binaries built by Cargo, *even if that's not the real path* to your target directory. Cargo-deb uses this prefix to detect what to compile, and will replace it with the actual target dir path, taking into account cross-compilation, build profiles, workspaces, `CARGO_TARGET_DIR`, custom configs, etc. If you try to "fix" the hardcoded `target/release` paths, you will break cargo-deb, and make it package stale files and mishandle debug info.
     2. `dest`: the second argument is where the file will be copied. If it starts with `usr/lib`, it will be changed to `usr/lib/$tuple` when multiarch option is enabled.
-        - If is argument ends with `/` it will be inferred that the target is the directory where the file will be copied.
+        - If this argument ends with `/` it will be inferred that the target is the directory where the file will be copied.
         - Otherwise, it will be inferred that the source argument will be renamed when copied.
     3. `mode`: the third argument is the permissions (octal string) to assign that file.
+    Asset entries can also be defined as a table. When using a table you can optionally override `preserve-symlinks`.
+    Symlinks can be defined by using a table with the entries `dest` (as above) and `link_name`.
 - **merge-assets**: [See "Merging Assets" section under "Advanced Usage"](#merging-assets)
 - **maintainer-scripts**: directory containing `templates`, `preinst`, `postinst`, `prerm`, or `postrm` [scripts](https://www.debian.org/doc/debian-policy/ch-maintainerscripts.html).
 - **triggers-file**: Path to triggers control file for use by the dpkg trigger facility.
