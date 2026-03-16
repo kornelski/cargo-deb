@@ -1,4 +1,4 @@
-use crate::assets::{Asset, AssetSource};
+use crate::assets::{Asset, AssetSource, SymlinkKind};
 use crate::error::{CDResult, CargoDebError};
 use crate::listener::Listener;
 use crate::PackageConfig;
@@ -35,12 +35,22 @@ impl<W: Write> Tarball<W> {
         for asset in &package_deb.assets.resolved {
             log_asset(asset, &log_display_base_dir, listener);
 
-            if let AssetSource::Symlink(source_path) = &asset.source {
-                let link_name = fs::read_link(source_path)
-                    .map_err(|e| CargoDebError::IoFile("Symlink asset", e, source_path.clone()))?;
+            if let AssetSource::Symlink(symlink_kind) = &asset.source {
 
-                let Some(normalized_link_name) = normalize_link_name(&asset.c.target_path, &link_name) else {
-                    return Err(CargoDebError::InvalidSymlink(asset.c.target_path.clone(), link_name.clone()));
+                let link_name;
+                let link_name = match symlink_kind {
+                    SymlinkKind::Copied {source_path} => {
+                        link_name = fs::read_link(source_path)
+                            .map_err(|e| CargoDebError::IoFile("Symlink asset", e, source_path.clone()))?;
+                        &link_name
+                    }
+                    SymlinkKind::Created { target_path:_, link_name } => {
+                        link_name
+                    }
+                };
+
+                let Some(normalized_link_name) = normalize_link_name(&asset.c.target_path, link_name) else {
+                    return Err(CargoDebError::InvalidSymlink(asset.c.target_path.clone(), link_name.clone(), "would ascend beyond the root dir"));
                 };
                 
                 self.symlink(&asset.c.target_path, &normalized_link_name)?;
@@ -306,7 +316,7 @@ fn log_asset(asset: &Asset, log_display_base_dir: &Path, listener: &dyn Listener
         "Adding"
     };
     let mut log_line = format!("'{}' {}-> {}",
-        asset.processed_from.as_ref().and_then(|p| p.original_path.as_deref()).or(asset.source.path())
+        asset.processed_from.as_ref().and_then(|p| p.original_path.as_deref()).or(asset.source.source_path())
             .map(|p| p.strip_prefix(log_display_base_dir).unwrap_or(p))
             .unwrap_or_else(|| Path::new("-")).display(),
         asset.processed_from.as_ref().map(|p| p.action).unwrap_or_default(),

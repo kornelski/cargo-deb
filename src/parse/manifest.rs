@@ -152,7 +152,7 @@ pub(crate) type RawAssetList = Vec<RawAssetOrAuto>;
 
 #[derive(Default)]
 pub(crate) struct MergeMap<'a> {
-    by_path: BTreeMap<&'a PathBuf, (&'a PathBuf, Option<u32>)>,
+    by_path: BTreeMap<&'a PathBuf, &'a RawAsset>,
     has_auto: bool,
 }
 
@@ -160,6 +160,7 @@ pub(crate) struct MergeMap<'a> {
 #[serde(untagged)]
 pub(crate) enum CargoDebAssetArrayOrTable {
     Table(CargoDebAsset),
+    Symlink(CargoDebSymlink),
     Array(Vec<String>),
     Auto(String),
     Invalid(toml::Value),
@@ -170,6 +171,13 @@ pub(crate) struct CargoDebAsset {
     pub source: String,
     pub dest: String,
     pub mode: Option<String>,
+    pub preserve_symlinks: Option<bool>,
+}
+
+#[derive(Clone, Debug, Deserialize, Default)]
+pub(crate) struct CargoDebSymlink {
+    pub dest: String,
+    pub link_name: String,
 }
 
 #[derive(Clone, Debug, Deserialize, Default)]
@@ -247,13 +255,28 @@ impl MergeByKey {
 
     /// Folds the parent asset into a merge-map preparing to prepare for a merge,
     ///
-    fn prep_parent_item<'a>(&'a self, merge_map: &mut MergeMap<'a>, RawAsset { source_path: src,target_path: dest, chmod: perm }: &'a RawAsset) {
-        match &self {
-            Self::Src(_) => {
-                merge_map.by_path.insert(src, (dest, *perm));
+    fn prep_parent_item<'a>(&'a self, merge_map: &mut MergeMap<'a>, asset: &'a RawAsset) {
+        
+        match asset {
+            RawAsset::Asset { source_path:src, target_path:dest, .. } => {
+                match &self {
+                    Self::Src(_) => {
+                        merge_map.by_path.insert(src, asset);
+                    },
+                    Self::Dest(_) => {
+                        merge_map.by_path.insert(dest, asset);
+                    },
+                }
             },
-            Self::Dest(_) => {
-                merge_map.by_path.insert(dest, (src, *perm));
+            RawAsset::Symlink { target_path:dest, .. } => {
+                match self {
+                    MergeByKey::Src(_) => {
+                        // symlinks defined in the manifest don't have a source path
+                    },
+                    MergeByKey::Dest(_) => {
+                        merge_map.by_path.insert(dest, asset);
+                    },
+                }
             },
         }
     }
@@ -261,24 +284,26 @@ impl MergeByKey {
     /// Merges w/ a parent merge map and returns the resulting asset list,
     ///
     fn merge_with<'a>(&'a self, mut merge_map: MergeMap<'a>) -> RawAssetList {
-        let (assets, merge_fn, combine_fn): (_, fn(&mut MergeMap<'a>, &'a RawAsset), fn(_) -> RawAsset) = match self {
+        let (assets, merge_fn): (_, fn(&mut MergeMap<'a>, &'a RawAsset)) = match self {
             Self::Src(assets) => (
                 assets,
-                |parent, RawAsset { source_path: src, target_path: dest, chmod: perm }| {
-                    if let Some((replaced_dest, replaced_perm)) = parent.by_path.insert(src, (dest, *perm)) {
-                        debug!("Replacing {:?} w/ {:?}", (replaced_dest, replaced_perm), (dest, perm));
+                |parent, asset| {
+                    // symlinks defined in the manifest don't have a source_path and as such can't be replaced by source
+                    if let Some(src) = asset.source_path() {
+                        if let Some(replaced_asset) = parent.by_path.insert(src, asset) {
+                            debug!("Replacing {:?} w/ {:?}", (replaced_asset.target_path(), replaced_asset.chmod()), (asset.target_path(), asset.chmod()));
+                        }
                     }
                 },
-                |(src, (dest, perm))| RawAsset { source_path: src, target_path: dest, chmod: perm },
             ),
             Self::Dest(assets) => (
                 assets,
-                |parent, RawAsset { source_path: src, target_path: dest, chmod: perm }| {
-                    if let Some((replaced_src, replaced_perm)) = parent.by_path.insert(dest, (src, *perm)) {
-                        debug!("Replacing {:?} w/ {:?}", (replaced_src, replaced_perm), (src, perm));
+                |parent, asset| {
+                    if let Some(replaces_asset) = parent.by_path.insert(asset.target_path(), asset) {
+                        debug!("Replacing {:?} w/ {:?}", (replaces_asset.source_path(), replaces_asset.chmod()), (asset.source_path(), asset.chmod()));
                     }
+                    
                 },
-                |(dest, (src, perm))| RawAsset { source_path: src, target_path: dest, chmod: perm },
             ),
         };
 
@@ -291,10 +316,8 @@ impl MergeByKey {
             }
         }
 
-        merge_map.by_path
-            .into_iter()
-            .map(|(path1, (path2, perm))| (path1.clone(), (path2.clone(), perm)))
-            .map(combine_fn)
+        merge_map.by_path.into_values()
+            .cloned()
             .map(RawAssetOrAuto::RawAsset)
             .chain(merge_map.has_auto.then_some(RawAssetOrAuto::Auto))
             .collect()
@@ -517,8 +540,8 @@ mod tests {
     fn test_merge_assets() {
         // Test merging assets by dest
         fn create_test_asset(src: impl Into<PathBuf>, target_path: impl Into<PathBuf>, perm: u32) -> RawAsset {
-            RawAsset {
-                source_path: src.into(), target_path: target_path.into(), chmod: Some(perm)
+            RawAsset::Asset {
+                source_path: src.into(), target_path: target_path.into(), chmod: Some(perm), preserve_symlinks: None,
             }
         }
 
@@ -541,9 +564,9 @@ mod tests {
         let merged = variant.inherit_from(parent, &NoOpListener);
         let mut merged = merged.assets.expect("should have assets").into_iter().filter_map(|a| a.asset()).collect_vec();
         let merged_asset = merged.pop().expect("should have an asset");
-        assert_eq!("lib/test_variant/empty.txt", merged_asset.source_path.as_os_str(), "should have merged the source location");
-        assert_eq!("/opt/test/empty.txt", merged_asset.target_path.as_os_str(), "should preserve dest location");
-        assert_eq!(Some(0o655), merged_asset.chmod, "should have merged the dest location");
+        assert_eq!("lib/test_variant/empty.txt", merged_asset.source_path().unwrap().as_os_str(), "should have merged the source location");
+        assert_eq!("/opt/test/empty.txt", merged_asset.target_path().as_os_str(), "should preserve dest location");
+        assert_eq!(Some(0o655), merged_asset.chmod(), "should have merged the dest location");
 
         // Test merging assets by src
         let original_asset = create_test_asset(
@@ -564,9 +587,9 @@ mod tests {
         let merged = variant.inherit_from(parent, &NoOpListener);
         let mut merged = merged.assets.expect("should have assets").into_iter().filter_map(|a| a.asset()).collect_vec();
         let merged_asset = merged.pop().expect("should have an asset");
-        assert_eq!("lib/test/empty.txt", merged_asset.source_path.as_os_str(), "should have merged the source location");
-        assert_eq!("/opt/test_variant/empty.txt", merged_asset.target_path.as_os_str(), "should preserve dest location");
-        assert_eq!(Some(0o655), merged_asset.chmod, "should have merged the dest location");
+        assert_eq!("lib/test/empty.txt", merged_asset.source_path().unwrap().as_os_str(), "should have merged the source location");
+        assert_eq!("/opt/test_variant/empty.txt", merged_asset.target_path().as_os_str(), "should preserve dest location");
+        assert_eq!(Some(0o655), merged_asset.chmod(), "should have merged the dest location");
 
         // Test merging assets by appending
         let original_asset = create_test_asset(
@@ -588,14 +611,14 @@ mod tests {
         let mut merged = merged.assets.expect("should have assets").into_iter().filter_map(|a| a.asset()).collect_vec();
 
         let merged_asset = merged.pop().expect("should have an asset");
-        assert_eq!("lib/test/empty.txt", merged_asset.source_path.as_os_str(), "should have merged the source location");
-        assert_eq!("/opt/test_variant/empty.txt", merged_asset.target_path.as_os_str(), "should preserve dest location");
-        assert_eq!(Some(0o655), merged_asset.chmod, "should have merged the dest location");
+        assert_eq!("lib/test/empty.txt", merged_asset.source_path().unwrap().as_os_str(), "should have merged the source location");
+        assert_eq!("/opt/test_variant/empty.txt", merged_asset.target_path().as_os_str(), "should preserve dest location");
+        assert_eq!(Some(0o655), merged_asset.chmod(), "should have merged the dest location");
 
         let merged_asset = merged.pop().expect("should have an asset");
-        assert_eq!("lib/test/empty.txt", merged_asset.source_path.as_os_str(), "should have merged the source location");
-        assert_eq!("/opt/test/empty.txt", merged_asset.target_path.as_os_str(), "should preserve dest location");
-        assert_eq!(Some(0o777), merged_asset.chmod, "should have merged the dest location");
+        assert_eq!("lib/test/empty.txt", merged_asset.source_path().unwrap().as_os_str(), "should have merged the source location");
+        assert_eq!("/opt/test/empty.txt", merged_asset.target_path().as_os_str(), "should preserve dest location");
+        assert_eq!(Some(0o777), merged_asset.chmod(), "should have merged the dest location");
 
         // Test backwards compatibility for variants that have set assets
         let original_asset = create_test_asset(
@@ -622,14 +645,14 @@ mod tests {
         let merged = variant.inherit_from(parent, &NoOpListener);
         let mut merged = merged.assets.expect("should have assets");
         let merged_asset = merged.remove(0).asset().unwrap();
-        assert_eq!("lib/test_variant/empty.txt", merged_asset.source_path.as_os_str(), "should have merged the source location");
-        assert_eq!("/opt/test/empty.txt", merged_asset.target_path.as_os_str(), "should preserve dest location");
-        assert_eq!(Some(0o655), merged_asset.chmod, "should have merged the dest location");
+        assert_eq!("lib/test_variant/empty.txt", merged_asset.source_path().unwrap().as_os_str(), "should have merged the source location");
+        assert_eq!("/opt/test/empty.txt", merged_asset.target_path().as_os_str(), "should preserve dest location");
+        assert_eq!(Some(0o655), merged_asset.chmod(), "should have merged the dest location");
 
         let additional_asset = merged.remove(0).asset().unwrap();
-        assert_eq!("lib/test/other-empty.txt", additional_asset.source_path.as_os_str(), "should have merged the source location");
-        assert_eq!("/opt/test/other-empty.txt", additional_asset.target_path.as_os_str(), "should preserve dest location");
-        assert_eq!(Some(0o655), additional_asset.chmod, "should have merged the dest location");
+        assert_eq!("lib/test/other-empty.txt", additional_asset.source_path().unwrap().as_os_str(), "should have merged the source location");
+        assert_eq!("/opt/test/other-empty.txt", additional_asset.target_path().as_os_str(), "should preserve dest location");
+        assert_eq!(Some(0o655), additional_asset.chmod(), "should have merged the dest location");
     }
 }
 

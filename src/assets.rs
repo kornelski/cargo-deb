@@ -16,20 +16,35 @@ pub enum AssetSource {
     /// Copy file from the path (and strip binary if needed).
     Path(PathBuf),
     /// A symlink existing in the file system
-    Symlink(PathBuf),
+    Symlink(SymlinkKind),
     /// Write data to destination as-is.
     Data(Vec<u8>),
+}
+
+#[derive(Debug, Clone)]
+pub enum SymlinkKind {
+    // symlinks copied due to preserve_symlinks or 
+    // because the symlink destination didn't exist
+    Copied {
+        source_path: PathBuf
+    },
+    // symlinks defined in the manifest
+    Created {
+        target_path: PathBuf,
+        link_name: PathBuf,
+    }
+    
 }
 
 impl AssetSource {
     /// Symlink must exist on disk to be preserved
     #[must_use]
-    pub fn from_path(path: impl Into<PathBuf>, preserve_existing_symlink: bool) -> Self {
+    pub fn from_path(path: impl Into<PathBuf>, preserve_symlinks: bool) -> Self {
         let path = path.into();
-        if preserve_existing_symlink || !path.exists() { // !exists means a symlink to bogus path
+        if preserve_symlinks || !path.exists() { // !exists means a symlink to bogus path
             if let Ok(md) = fs::symlink_metadata(&path) {
                 if md.is_symlink() {
-                    return Self::Symlink(path);
+                    return Self::Symlink(SymlinkKind::Copied { source_path: path });
                 }
             }
         }
@@ -37,20 +52,22 @@ impl AssetSource {
     }
 
     #[must_use]
-    pub fn path(&self) -> Option<&Path> {
+    pub fn source_path(&self) -> Option<&Path> {
         match self {
-            Self::Symlink(p) |
-            Self::Path(p) => Some(p),
-            Self::Data(_) => None,
+            Self::Symlink(SymlinkKind ::Copied { source_path:p }) 
+            | Self::Path(p) => Some(p),
+            Self::Symlink(SymlinkKind::Created { .. })
+            | Self::Data(_) => None,
         }
     }
 
     #[must_use]
     pub fn into_path(self) -> Option<PathBuf> {
         match self {
-            Self::Symlink(p) |
-            Self::Path(p) => Some(p),
-            Self::Data(_) => None,
+            Self::Symlink(SymlinkKind ::Copied { source_path:p }) 
+            | Self::Path(p) => Some(p),
+            Self::Symlink(SymlinkKind::Created { .. })
+            | Self::Data(_) => None,
         }
     }
 
@@ -76,17 +93,20 @@ impl AssetSource {
                 Cow::Owned(data)
             },
             Self::Data(d) => Cow::Borrowed(d),
-            Self::Symlink(p) => {
+            Self::Symlink(SymlinkKind::Copied { source_path:p }) => {
                 let data = read_file_to_bytes(p)
                     .map_err(|e| CargoDebError::IoFile("Symlink unexpectedly used to read file data", e, p.clone()))?;
                 Cow::Owned(data)
+            },
+            AssetSource::Symlink(SymlinkKind::Created { target_path, link_name:_ }) => {
+                return Err(CargoDebError::CannotReadVirtualSymlink(target_path.to_owned()))
             },
         })
     }
 
     pub(crate) fn magic_bytes(&self) -> Option<[u8; 4]> {
         match self {
-            Self::Path(p) | Self::Symlink(p) => {
+            Self::Path(p) | Self::Symlink(SymlinkKind::Copied { source_path:p }) => {
                 let mut buf = [0; 4];
                 use std::io::Read;
                 let mut file = std::fs::File::open(p).ok()?;
@@ -96,6 +116,9 @@ impl AssetSource {
             Self::Data(d) => {
                 d.get(..4).and_then(|b| b.try_into().ok())
             },
+            Self::Symlink(SymlinkKind::Created { .. }) => {
+                None
+            }
         }
     }
 }
@@ -130,10 +153,40 @@ impl From<RawAsset> for RawAssetOrAuto {
 
 #[derive(Debug, Clone, serde::Deserialize)]
 #[serde(try_from = "RawAssetOrAuto")]
-pub(crate) struct RawAsset {
-    pub source_path: PathBuf,
-    pub target_path: PathBuf,
-    pub chmod: Option<u32>,
+pub(crate) enum RawAsset {
+    Asset{
+        source_path: PathBuf,
+        target_path: PathBuf,
+        chmod: Option<u32>,
+        preserve_symlinks: Option<bool>,
+    },
+    Symlink {
+        target_path: PathBuf,
+        link_name: PathBuf
+    }
+}
+
+impl RawAsset {
+    pub(crate) fn source_path(&self) -> Option<&PathBuf> {
+        match self {
+            RawAsset::Asset { source_path, .. } => Some(source_path),
+            RawAsset::Symlink { .. } => None,
+        }
+    }
+
+    pub(crate) fn target_path(&self) -> &PathBuf {
+        match self {
+            RawAsset::Asset { target_path, .. } 
+            | RawAsset::Symlink { target_path,.. } => target_path,
+        }
+    }
+
+    pub(crate) fn chmod(&self) -> Option<u32> {
+        match self {
+            RawAsset::Asset {  chmod, .. } => *chmod,
+            RawAsset::Symlink { .. } => None /* or should this return 0o777 ? */,
+        }
+    }
 }
 
 impl TryFrom<RawAssetOrAuto> for RawAsset {
@@ -153,7 +206,7 @@ impl Assets {
     }
 
     pub(crate) fn iter(&self) -> impl Iterator<Item = &AssetCommon> {
-        self.resolved.iter().map(|u| &u.c).chain(self.unresolved.iter().map(|r| &r.c))
+        self.resolved.iter().map(|u| &u.c).chain(self.unresolved.iter().map(UnresolvedAsset::common))
     }
 }
 
@@ -193,22 +246,56 @@ fn get_file_mode(path: &Path) -> CDResult<u32> {
 }
 
 #[derive(Debug, Clone)]
-pub struct UnresolvedAsset {
-    pub source_path: PathBuf,
-    pub c: AssetCommon,
+pub enum UnresolvedAsset {
+    Asset {
+        source_path: PathBuf,
+        preserve_symlinks: bool,
+        c: AssetCommon,
+    },
+    Symlink {
+        link_name: PathBuf,
+        c: AssetCommon,
+    }
 }
 
 impl UnresolvedAsset {
-    pub(crate) fn new(source_path: PathBuf, target_path: PathBuf, chmod: Option<u32>, is_built: IsBuilt, asset_kind: AssetKind) -> Self {
-        Self {
+    pub(crate) fn new_asset(source_path: PathBuf, target_path: PathBuf, chmod: Option<u32>, is_built: IsBuilt, asset_kind: AssetKind, preserve_symlinks: bool) -> Self {
+        Self::Asset {
             source_path,
+            preserve_symlinks,
             c: AssetCommon { target_path, chmod, asset_kind, is_built },
         }
     }
+    pub(crate) fn new_symlink( target_path: PathBuf, link_name: PathBuf) -> Self {
+        Self::Symlink {
+            link_name,
+            c: AssetCommon { target_path, chmod: None, asset_kind: AssetKind::Any, is_built: IsBuilt::No },
+        }
+    }
+
+    pub fn common(&self) ->&AssetCommon {
+        match self {
+            UnresolvedAsset::Asset {c, .. } 
+            | UnresolvedAsset::Symlink {c, .. } => c,
+        }
+    }
+    
 
     /// Convert `source_path` (with glob or dir) to actual path
-    pub fn resolve(&self, preserve_symlinks: bool) -> CDResult<Vec<Asset>> {
-        let Self { ref source_path, c: AssetCommon { ref target_path, chmod, is_built, asset_kind } } = *self;
+    pub fn resolve(&self) -> CDResult<Vec<Asset>> {
+        let (source_path, &preserve_symlinks, &AssetCommon { ref target_path, chmod, is_built, asset_kind }) =  match self {
+            UnresolvedAsset::Symlink { link_name, c } => {
+                let target_path = Asset::normalized_target_path(c.target_path.to_owned(), Some(link_name));               
+
+                return Ok(vec![Asset{ 
+                    source: AssetSource::Symlink(SymlinkKind::Created { target_path, link_name: link_name.to_owned() }), 
+                    processed_from: Some(ProcessedFrom { original_path: None, action: "symlink" }), c: c.clone()
+                }])
+            },
+            UnresolvedAsset::Asset { source_path, preserve_symlinks, c } =>  {
+                (source_path, preserve_symlinks, c)
+            },
+        };
 
         let source_prefix_len = is_glob_pattern(source_path.as_os_str()).then(|| {
             let file_name_is_glob = source_path
@@ -283,6 +370,13 @@ impl UnresolvedAsset {
         }
         Ok(matched_assets)
     }
+    
+    pub(crate) fn source_path(&self) -> Option<&Path> {
+        match self {
+            UnresolvedAsset::Asset { source_path, .. } => Some(source_path),
+            UnresolvedAsset::Symlink { .. } => None,
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -304,18 +398,25 @@ impl<'a> AssetFmt<'a> {
     pub fn new(asset: &'a Asset, cwd: &'a Path) -> Self {
         Self {
             c: &asset.c,
-            source: asset.source.path(),
+            source: asset.source.source_path(),
             processed_from: asset.processed_from.as_ref(),
             cwd,
         }
     }
 
     pub fn unresolved(asset: &'a UnresolvedAsset, cwd: &'a Path) -> Self {
-        Self {
-            c: &asset.c,
-            source: Some(&asset.source_path),
-            processed_from: None,
-            cwd,
+        match asset {
+            UnresolvedAsset::Asset { source_path, preserve_symlinks:_, c } => {
+                Self {
+                    c,
+                    source: Some(source_path),
+                    processed_from: None,
+                    cwd,
+                }
+            },
+            UnresolvedAsset::Symlink { .. } => {
+                unreachable!()
+            },
         }
     }
 }
@@ -358,6 +459,7 @@ impl Asset {
     #[must_use]
     pub fn normalized_target_path(mut target_path: PathBuf, source_path: Option<&Path>) -> PathBuf {
         // is_dir() is only for paths that exist
+        // should this use https://doc.rust-lang.org/std/path/struct.Path.html#method.has_trailing_sep once that is stable and MSRV allows using it?
         if target_path.to_string_lossy().ends_with('/') {
             let file_name = source_path.and_then(|p| p.file_name()).expect("source must be a file");
             target_path = target_path.join(file_name);
@@ -371,7 +473,7 @@ impl Asset {
 
     #[must_use]
     pub fn new(source: AssetSource, target_path: PathBuf, chmod: Option<u32>, is_built: IsBuilt, asset_kind: AssetKind) -> Self {
-        let target_path = Self::normalized_target_path(target_path, source.path());
+        let target_path = Self::normalized_target_path(target_path, source.source_path());
         Self {
             source,
             processed_from: None,
@@ -483,7 +585,7 @@ pub fn compressed_assets(package_deb: &PackageConfig, listener: &dyn Listener) -
                 IsBuilt::No,
                 AssetKind::Any,
             ).processed("compressed",
-                orig_asset.source.path().unwrap_or(&orig_asset.c.target_path).to_path_buf()
+                orig_asset.source.source_path().unwrap_or(&orig_asset.c.target_path).to_path_buf()
             )))
         }).collect()
 }
@@ -531,8 +633,9 @@ mod tests {
         let source_path = PathBuf::from("test-resources/testroot/src/main.rs");
         assert!(source_path.exists(), "test file must exist");
 
-        let asset = UnresolvedAsset {
+        let asset = UnresolvedAsset::Asset {
             source_path: source_path.clone(),
+            preserve_symlinks: false,
             c: AssetCommon {
                 target_path: PathBuf::from("usr/share/test/"),
                 chmod: None, // no permissions specified
@@ -541,7 +644,7 @@ mod tests {
             },
         };
 
-        let resolved = asset.resolve(false).unwrap();
+        let resolved = asset.resolve().unwrap();
         assert_eq!(resolved.len(), 1);
 
         let resolved_asset = &resolved[0];
@@ -560,8 +663,9 @@ mod tests {
         let source_path = PathBuf::from("test-resources/testroot/src/main.rs");
         assert!(source_path.exists(), "test file must exist");
 
-        let asset = UnresolvedAsset {
+        let asset = UnresolvedAsset::Asset {
             source_path: source_path.clone(),
+            preserve_symlinks: false,
             c: AssetCommon {
                 target_path: PathBuf::from("usr/share/test/"),
                 chmod: Some(0o755), // explicit permissions
@@ -570,7 +674,7 @@ mod tests {
             },
         };
 
-        let resolved = asset.resolve(false).unwrap();
+        let resolved = asset.resolve().unwrap();
         assert_eq!(resolved.len(), 1);
         assert_eq!(resolved[0].c.chmod, Some(0o755), "explicit chmod should be preserved");
     }
@@ -587,8 +691,9 @@ mod tests {
             ("test-resources/testroot/**/src/*", &["bar/src/main.rs", "bar/testchild/src/main.rs"]),
             ("test-resources/testroot/**/*.rs", &["bar/src/main.rs", "bar/testchild/src/main.rs"]),
         ] {
-            let asset = UnresolvedAsset {
+            let asset = UnresolvedAsset::Asset {
                 source_path: PathBuf::from(glob),
+                preserve_symlinks: false,
                 c: AssetCommon {
                     target_path: PathBuf::from("bar/"),
                     chmod: Some(0o644),
@@ -597,7 +702,7 @@ mod tests {
                 },
             };
             let assets = asset
-                .resolve(false)
+                .resolve()
                 .unwrap()
                 .into_iter()
                 .map(|asset| asset.c.target_path.to_string_lossy().to_string())
