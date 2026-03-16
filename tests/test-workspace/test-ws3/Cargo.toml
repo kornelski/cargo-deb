@@ -1,0 +1,18 @@
+[package]
+name = "test3"
+version = "1.39.3"
+edition = "2021"
+authors = ["test3"]
+description = "test3"
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+name = "test3lib"
+path = "test3lib.rs"
+
+
+[package.metadata.deb]
+assets = [
+    { dest = "usr/lib/systemd/system/multi-user.target.wants/", link_name = "/usr/lib/systemd/system/some.service" },
+    { dest = "etc/lib/systemd/system/multi-user.target.wants/", link_name = "/usr/lib/systemd/system/some.service" },
+]

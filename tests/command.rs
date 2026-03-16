@@ -30,6 +30,15 @@ fn build_workspaces() {
     assert!(ddir.path().join("usr/bin/renamed2").exists());
     assert!(ddir.path().join(format!("usr/lib/{}-linux-gnu/{DLL_PREFIX}test2lib{DLL_SUFFIX}", std::env::consts::ARCH)).exists());
     assert!(ddir.path().join("usr/share/doc/test2/a-read-me").exists());
+    
+    let (_, ddir) = extract_built_package_from_manifest("tests/test-workspace/test-ws3/Cargo.toml", DEFAULT_COMPRESSION_EXT, &["--no-strip", "--fast", "--no-build"]);
+    assert!(ddir.path().join("usr/lib/systemd/system/multi-user.target.wants/some.service").is_symlink());
+    assert!(ddir.path().join("etc/lib/systemd/system/multi-user.target.wants/some.service").is_symlink());
+    // symlink to the same top-level folder should be relative
+    assert_eq!(fs::read_link(ddir.path().join("usr/lib/systemd/system/multi-user.target.wants/some.service")).unwrap().as_path(), Path::new("../some.service"));
+    // symlinks between different top-level folders must be absolute
+    assert_eq!(fs::read_link(ddir.path().join("etc/lib/systemd/system/multi-user.target.wants/some.service")).unwrap().as_path(), Path::new("/usr/lib/systemd/system/some.service"))
+
 }
 
 #[test]
