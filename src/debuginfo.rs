@@ -54,7 +54,7 @@ pub fn strip_binaries(config: &BuildEnvironment, package_deb: &mut PackageConfig
     let added_debug_assets = package_deb.built_binaries_mut().into_par_iter().enumerate()
         .filter(|(_, asset)| !asset.source.archive_as_symlink_only()) // data won't be included, so nothing to strip
         .map(|(i, asset)| {
-        let (new_source, new_debug_asset) = if let Some(path) = asset.source.path() {
+        let (new_source, new_debug_asset) = if let Some(path) = asset.source.source_path() {
             if !path.exists() {
                 return Err(CargoDebError::StripFailed(path.to_owned(), format!("The file doesn't exist\nnote: needed for {}", asset.c.target_path.display())));
             }
@@ -173,7 +173,7 @@ pub fn strip_binaries(config: &BuildEnvironment, package_deb: &mut PackageConfig
             listener.warning(format!("Found built asset with non-path source '{asset:?}'"));
             return Ok(None);
         };
-        log::debug!("Replacing asset {} with stripped asset {}", asset.source.path().unwrap().display(), new_source.path().unwrap().display());
+        log::debug!("Replacing asset {} with stripped asset {}", asset.source.source_path().unwrap().display(), new_source.source_path().unwrap().display());
         let old_source = std::mem::replace(&mut asset.source, new_source);
         asset.processed_from = Some(ProcessedFrom {
             original_path: old_source.into_path(),

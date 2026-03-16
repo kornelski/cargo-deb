@@ -1,4 +1,4 @@
-use crate::assets::{AssetFmt, AssetKind, RawAssetOrAuto, Asset, AssetSource, Assets, IsBuilt, UnresolvedAsset, RawAsset};
+use crate::assets::{Asset, AssetFmt, AssetKind, AssetSource, Assets, IsBuilt, RawAsset, RawAssetOrAuto, UnresolvedAsset};
 use crate::assets::is_dynamic_library_filename;
 use crate::util::compress::gzipped;
 use crate::dependencies::resolve_with_dpkg;
@@ -678,9 +678,9 @@ impl BuildEnvironment {
             return;
         };
 
-        for a in package_deb.assets.unresolved.iter().filter(|a| a.c.is_built()) {
-            if is_glob_pattern(&a.source_path) {
-                log::debug!("building entire workspace because of glob {}", a.source_path.display());
+        for a in package_deb.assets.unresolved.iter().filter(|a| a.common().is_built()) {
+            if let Some(source_path) = a.source_path() && is_glob_pattern(source_path) {
+                log::debug!("building entire workspace because of glob {}", source_path.display());
                 cmd.arg("--workspace");
                 return;
             }
@@ -690,8 +690,8 @@ impl BuildEnvironment {
         let mut build_examples = vec![];
         let mut build_libs = false;
         let mut same_package = true;
-        let resolved = package_deb.assets.resolved.iter().map(|a| (&a.c, a.source.path()));
-        let unresolved = package_deb.assets.unresolved.iter().map(|a| (&a.c, Some(a.source_path.as_ref())));
+        let resolved = package_deb.assets.resolved.iter().map(|a| (&a.c, a.source.source_path()));
+        let unresolved = package_deb.assets.unresolved.iter().map(|a| (a.common(), a.source_path()));
         for (asset_target, source_path) in resolved.chain(unresolved).filter(|(c, _)| c.is_built()) {
             if !asset_target.is_same_package() {
                 log::debug!("building workspace because {} is from another package", source_path.unwrap_or(&asset_target.target_path).display());
@@ -1079,7 +1079,7 @@ impl PackageConfig {
 
         let unresolved = std::mem::take(&mut self.assets.unresolved);
         let matched = unresolved.into_par_iter().map(|asset| {
-            asset.resolve(self.preserve_symlinks).map_err(|e| e.context(format_args!("Can't resolve asset: {}", AssetFmt::unresolved(&asset, &cwd))))
+            asset.resolve().map_err(|e| e.context(format_args!("Can't resolve asset: {}", AssetFmt::unresolved(&asset, &cwd))))
         }).collect_vec_list();
         for res in matched.into_iter().flatten() {
             self.assets.resolved.extend(res?);
@@ -1150,7 +1150,7 @@ impl PackageConfig {
                 let resolved = bin.par_iter()
                     .filter(|bin| !bin.source.archive_as_symlink_only())
                     .filter_map(|&bin| {
-                        let bname = bin.source.path()?;
+                        let bname = bin.source.source_path()?;
                         match resolve_with_dpkg(bname, &self.architecture, &lib_search_paths) {
                             Ok(bindeps) => {
                                 log::debug!("$auto depends for '{}': {bindeps:?}", bin.c.target_path.display());
@@ -1455,20 +1455,26 @@ impl TryFrom<CargoDebAssetArrayOrTable> for RawAssetOrAuto {
             u32::from_str_radix(mode, 8).map_err(|e| format!("Unable to parse mode argument (third array element) as an octal number in an asset: {e}"))
         }
         let raw_asset = match toml {
-            CargoDebAssetArrayOrTable::Table(a) => Self::RawAsset(RawAsset {
+            CargoDebAssetArrayOrTable::Table(a) => Self::RawAsset(RawAsset::Asset {
                 source_path: a.source.into(),
                 target_path: a.dest.into(),
                 chmod: a.mode.as_deref().map(parse_chmod).transpose()?,
+                preserve_symlinks: a.preserve_symlinks,
             }),
+            CargoDebAssetArrayOrTable::Symlink(a) => {
+                RawAssetOrAuto::RawAsset(RawAsset::Symlink { target_path: a.dest.into(), link_name: a.link_name.into() })
+            }
             CargoDebAssetArrayOrTable::Array(a) => {
                 if a.len() < 2 || a.len() > 3 {
                     return Err(format!("{EXPECTED}, but found an array with {} elements", a.len()));
                 }
                 let mut a = a.into_iter();
-                Self::RawAsset(RawAsset {
+                Self::RawAsset(RawAsset::Asset {
                     source_path: PathBuf::from(a.next().ok_or("Missing source path (first array element) in an asset in Cargo.toml")?),
                     target_path: PathBuf::from(a.next().ok_or("missing dest path (second array entry) for asset in Cargo.toml. Use something like \"usr/local/bin/\".")?),
-                    chmod: a.next().map(|s| parse_chmod(&s)).transpose()?
+                    chmod: a.next().map(|s| parse_chmod(&s)).transpose()?,
+                    preserve_symlinks: None,
+                    
                 })
             },
             CargoDebAssetArrayOrTable::Auto(s) if s == "$auto" => Self::Auto,
@@ -1479,12 +1485,12 @@ impl TryFrom<CargoDebAssetArrayOrTable> for RawAssetOrAuto {
                 return Err(format!("{EXPECTED}, but found {}: {bad}", bad.type_str()));
             },
         };
-        if let Self::RawAsset(a) = &raw_asset {
-            if let Some(msg) = is_trying_to_customize_target_path(&a.source_path) {
+        if let Self::RawAsset(RawAsset::Asset { source_path, .. }) = &raw_asset {
+            if let Some(msg) = is_trying_to_customize_target_path(source_path) {
                 return Err(format!("Please only use `target/release` path prefix for built products, not `{}`.
     {msg}
     The `target/release` is treated as a special prefix, and will be replaced dynamically by cargo-deb with the actual target directory path used by the build.
-    ", a.source_path.display()));
+    ", source_path.display()));
             }
         }
         Ok(raw_asset)
@@ -1553,32 +1559,35 @@ impl BuildEnvironment {
                 },
                 RawAssetOrAuto::RawAsset(asset) => Some(asset),
             }
-        }).map(|&RawAsset { ref source_path, ref target_path, chmod }| {
-            // target/release is treated as a magic prefix that resolves to any profile
-            let target_artifact_rel_path = source_path.strip_prefix("target/release").ok()
-                .or_else(|| source_path.strip_prefix(custom_profile_target_dir.as_deref()?).ok());
-            let (is_built, source_path, is_example) = if let Some(rel_path) = target_artifact_rel_path {
-                let is_example = rel_path.starts_with("examples");
-                (self.find_is_built_file_in_package(rel_path, if is_example { "example" } else { "bin" }), self.path_in_build_products(rel_path, package_deb), is_example)
-            } else {
-                if source_path.to_str().is_some_and(|s| s.starts_with(['/','.']) && s.contains("/target/")) {
-                    listener.warning(format!("Only source paths starting with exactly 'target/release/' are detected as Cargo target dir. '{}' does not match the pattern, and will not be built", source_path.display()));
-                }
-                (IsBuilt::No, self.path_in_cargo_crate(source_path), false)
-            };
-
+        }).map(|asset| {
+            let (RawAsset::Symlink { target_path, .. } | RawAsset::Asset { target_path, .. }) = asset;
+            
             let mut target_path = target_path.to_owned();
             if package_deb.multiarch != Multiarch::None {
-                if let Ok(lib_file_name) = target_path.strip_prefix("usr/lib") {
-                    let lib_dir = package_deb.library_install_dir();
-                    if !target_path.starts_with(&lib_dir) {
-                        let new_path = lib_dir.join(lib_file_name);
-                        log::debug!("multiarch: changed {} to {}", target_path.display(), new_path.display());
-                        target_path = new_path;
-                    }
-                }
+                adjust_path_for_multiarch(package_deb, &mut target_path);
             }
-            UnresolvedAsset::new(source_path, target_path, chmod, is_built, if is_example { AssetKind::CargoExampleBinary } else { AssetKind::Any })
+
+            match asset {
+                RawAsset::Asset { source_path, target_path:_, chmod, preserve_symlinks } => {
+                    // target/release is treated as a magic prefix that resolves to any profile
+                    let target_artifact_rel_path = source_path.strip_prefix("target/release").ok()
+                        .or_else(|| source_path.strip_prefix(custom_profile_target_dir.as_deref()?).ok());
+                    let (is_built, source_path, is_example) = if let Some(rel_path) = target_artifact_rel_path {
+                        let is_example = rel_path.starts_with("examples");
+                        (self.find_is_built_file_in_package(rel_path, if is_example { "example" } else { "bin" }), self.path_in_build_products(rel_path, package_deb), is_example)
+                    } else {
+                        if source_path.to_str().is_some_and(|s| s.starts_with(['/','.']) && s.contains("/target/")) {
+                            listener.warning(format!("Only source paths starting with exactly 'target/release/' are detected as Cargo target dir. '{}' does not match the pattern, and will not be built", source_path.display()));
+                        }
+                        (IsBuilt::No, self.path_in_cargo_crate(source_path), false)
+                    };
+
+                    UnresolvedAsset::new_asset(source_path, target_path, *chmod, is_built, if is_example { AssetKind::CargoExampleBinary } else { AssetKind::Any }, preserve_symlinks.unwrap_or(package_deb.preserve_symlinks))
+                },
+                RawAsset::Symlink { target_path:_, link_name } => {
+                    UnresolvedAsset::new_symlink(target_path, link_name.to_owned())
+                },
+            }
         }).collect::<Vec<_>>();
         let resolved = if has_auto { self.implicit_assets(package_deb)? } else { vec![] };
         Ok(Assets::new(unresolved_assets, resolved))
@@ -1644,6 +1653,17 @@ impl BuildEnvironment {
             IsBuilt::SamePackage
         } else {
             IsBuilt::Workspace
+        }
+    }
+}
+
+fn adjust_path_for_multiarch(package_deb: &PackageConfig, target_path: &mut PathBuf) {
+    if let Ok(lib_file_name) = target_path.strip_prefix("usr/lib") {
+        let lib_dir = package_deb.library_install_dir();
+        if !target_path.starts_with(&lib_dir) {
+            let new_path = lib_dir.join(lib_file_name);
+            log::debug!("multiarch: changed {} to {}", target_path.display(), new_path.display());
+            *target_path = new_path;
         }
     }
 }

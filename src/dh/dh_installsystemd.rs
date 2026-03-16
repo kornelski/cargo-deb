@@ -225,7 +225,7 @@ pub fn generate(package: &str, assets: &[Asset], options: &Options, listener: &d
         .iter()
         .filter(|a| a.c.target_path.starts_with(USR_LIB_TMPFILES_D_DIR))
         .map(|v| {
-            v.source.path()
+            v.source.source_path()
                 .and_then(|p| fname_from_path(&p.with_extension("conf")))
                 .ok_or(CargoDebError::Str("dh_installsystemd: invalid source path"))
         })

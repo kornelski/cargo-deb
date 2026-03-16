@@ -114,8 +114,11 @@ quick_error! {
         ImplicitFileModeFromPathNotSupported(path: PathBuf) {
             display("cannot determine file mode from path on non-unix systems and mode not explicityl specified for path {}", path.display())
         }
-        InvalidSymlink(target: PathBuf, link_name: PathBuf) {
-            display("Invalid Symlink {} -> {}, would ascend beyond the root dir.", target.display(), link_name.display())
+        InvalidSymlink(target: PathBuf, link_name: PathBuf, reason: &'static str) {
+            display("Invalid Symlink {} -> {}, {reason}.", target.display(), link_name.display())
+        }
+        CannotReadVirtualSymlink(target: PathBuf) {
+            display("Virtual symlink to be created at {} unexpectedly used to read file data", target.display())
         }
     }
 }
