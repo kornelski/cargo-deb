@@ -9,7 +9,7 @@ homepage = "https://lib.rs/crates/cargo-deb"
 keywords = ["debian", "ubuntu", "deploy", "cargo-subcommand"]
 repository = "https://github.com/kornelski/cargo-deb"
 readme = "README.md"
-version = "3.6.3"
+version = "3.6.4"
 edition = "2024"
 rust-version = "1.85"
 include = ["/LICENSE", "/README.md", "/build.rs", "/src/**", "/autoscripts/**"]
@@ -42,7 +42,7 @@ path = "src/main.rs"
 doc = false
 
 [dependencies]
-clap = "4.5.58"
+clap = "4.6.1"
 elf = { version = "0.8", default-features = false, features = ["std"], optional = true }
 flate2 = { version = "1.1.9", default-features = false, features = ["zlib-rs"], optional = true }
 zopfli = { version = "0.8", default-features = false, features = ["std", "gzip"] }
@@ -51,18 +51,18 @@ quick-error = "2.0.1"
 xz2 = { version = "0.1.7", optional = true }
 serde = { version = "1.0.228", features = ["derive"] }
 serde_json = "1.0.149"
-tar = { version = "0.4.44", default-features = false }
-toml = { version = "1.0.1", default-features = false, features = ["parse", "display", "serde",  "std"] }
+tar = { version = "0.4.45", default-features = false }
+toml = { version = "1.1.2", default-features = false, features = ["parse", "display", "serde",  "std"] }
 glob = "0.3.3"
 ar = "0.9.0"
 cargo_toml = "0.22.3"
-rayon = "1.11.0"
+rayon = "1.12.0"
 regex = { version = "1.12.3", default-features = false, features = ["std"] }
-tempfile = "3.25.0"
+tempfile = "3.27.0"
 env_logger = { version = "0.11", default-features = false, features = ["auto-color", "regex"] }
 log = "0.4.29"
 anstream = { version = "1.0.0", default-features = false, features = ["auto"] }
-anstyle = { version = "1.0.13", default-features = false, features = ["std"] }
+anstyle = { version = "1.0.14", default-features = false, features = ["std"] }
 
 [features]
 default = ["lzma", "debug-id"]
@@ -91,10 +91,8 @@ debug = 1
 xz2 = { opt-level = 2 }
 lzma-sys = { opt-level = 2 }
 zopfli = { opt-level = 2 }
-zlib-rs = { opt-level = 2 }
 
 [profile.release.package]
-adler2 = { opt-level = 2 }
 crc32fast = { opt-level = 2 }
 crossbeam-utils = { opt-level = 2 }
 lzma-sys = { opt-level = 2 }
@@ -102,7 +100,6 @@ memchr = { opt-level = 2 }
 rayon-core = { opt-level = 2 }
 serde_json = { opt-level = 2 }
 xz2 = { opt-level = 2 }
-zlib-rs = { opt-level = 2 }
 zopfli = { opt-level = 2 }
 
 [profile.release]
