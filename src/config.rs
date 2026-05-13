@@ -50,7 +50,7 @@ enum ArchSpec {
 
 fn get_architecture_specification(depend: &str) -> CDResult<(String, Option<ArchSpec>)> {
     use ArchSpec::{NegRequire, Require};
-    let re = regex::Regex::new(r"(.*)\[(!?)(.*)\]").map_err(|_| CargoDebError::Str("internal"))?;
+    let re = regex::Regex::new(r"(.*)\[(!?)(.*)]").map_err(|_| CargoDebError::Str("internal"))?;
     match re.captures(depend) {
         Some(caps) => {
             let spec = if &caps[2] == "!" {
@@ -679,10 +679,12 @@ impl BuildEnvironment {
         };
 
         for a in package_deb.assets.unresolved.iter().filter(|a| a.common().is_built()) {
-            if let Some(source_path) = a.source_path() && is_glob_pattern(source_path) {
-                log::debug!("building entire workspace because of glob {}", source_path.display());
-                cmd.arg("--workspace");
-                return;
+            if let Some(source_path) = a.source_path() {
+                if is_glob_pattern(source_path) {
+                    log::debug!("building entire workspace because of glob {}", source_path.display());
+                    cmd.arg("--workspace");
+                    return;
+                }
             }
         }
 
