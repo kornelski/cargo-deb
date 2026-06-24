@@ -5,6 +5,7 @@ use crate::error::{CDResult, CargoDebError};
 use crate::listener::Listener;
 use crate::util::{is_path_file, read_file_to_string};
 use dh_lib::ScriptFragments;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::io::Write;
 use std::path::Path;
@@ -15,6 +16,56 @@ pub struct ControlArchiveBuilder<'l, W: Write> {
 }
 
 impl<'l, W: Write> ControlArchiveBuilder<'l, W> {
+    fn unit_config_matches_asset(unit_name: Option<&str>, asset: &crate::assets::Asset) -> bool {
+        let Some(unit_name) = unit_name else {
+            return true;
+        };
+
+        let Some(file_name) = asset.c.target_path.file_name().and_then(|v| v.to_str()) else {
+            return false;
+        };
+
+        file_name == unit_name
+            || file_name.starts_with(&format!("{unit_name}."))
+            || file_name.starts_with(&format!("{unit_name}@."))
+    }
+
+    fn merge_generated_scripts(target: &mut ScriptFragments, source: ScriptFragments) {
+        for (key, value) in source {
+            if let Some(existing) = target.get_mut(&key) {
+                // Match `dh_lib::autoscript()` behaviour: prerm/postrm fragments
+                // are prepended while others are appended.
+                if key.contains(".prerm.") || key.contains(".postrm.") {
+                    existing.insert_str(0, &value);
+                } else {
+                    existing.push_str(&value);
+                }
+            } else {
+                target.insert(key, value);
+            }
+        }
+    }
+
+    fn options_group_key(options: &dh_installsystemd::Options) -> (bool, bool, bool, bool) {
+        (
+            options.no_enable,
+            options.no_start,
+            options.restart_after_upgrade,
+            options.no_stop_on_upgrade,
+        )
+    }
+
+    fn dedupe_assets_by_target_path(assets: Vec<crate::assets::Asset>) -> Vec<crate::assets::Asset> {
+        let mut seen = BTreeSet::new();
+        let mut deduped = Vec::new();
+        for asset in assets {
+            if seen.insert(asset.c.target_path.clone()) {
+                deduped.push(asset);
+            }
+        }
+        deduped
+    }
+
     pub fn new(dest: W, time: u64, listener: &'l dyn Listener) -> Self {
         Self {
             archive: Tarball::new(dest, time),
@@ -65,31 +116,78 @@ impl<'l, W: Write> ControlArchiveBuilder<'l, W> {
 
         let maintainer_scripts_dir = config.path_in_cargo_crate(maintainer_scripts_dir);
         let mut scripts = ScriptFragments::new();
+        let mut apply_unit_name: Option<&str> = None;
 
         if let Some(systemd_units_config_vec) = &package_deb.systemd_units {
+            if systemd_units_config_vec.len() == 1 {
+                apply_unit_name = systemd_units_config_vec[0].unit_name.as_deref();
+            }
+
+            let mut grouped_assets: BTreeMap<(bool, bool, bool, bool), Vec<crate::assets::Asset>> = BTreeMap::new();
+
             for systemd_units_config in systemd_units_config_vec {
+                let unit_name = systemd_units_config.unit_name.as_deref();
+                let options = dh_installsystemd::Options::from(systemd_units_config);
+
+                let matching_assets = package_deb
+                    .assets
+                    .resolved
+                    .iter()
+                    .filter(|asset| Self::unit_config_matches_asset(unit_name, asset))
+                    .cloned()
+                    .collect::<Vec<_>>();
+
+                // A config entry without `unit_name` intentionally applies to all
+                // units in scope. Keep those entries isolated to avoid changing
+                // override semantics by grouping them with unit-specific entries.
+                if unit_name.is_none() {
+                    let generated = dh_installsystemd::generate(
+                        &package_deb.deb_name,
+                        &matching_assets,
+                        &options,
+                        self.listener,
+                    )?;
+
+                    Self::merge_generated_scripts(&mut scripts, generated);
+                    continue;
+                }
+
+                grouped_assets
+                    .entry(Self::options_group_key(&options))
+                    .or_default()
+                    .extend(matching_assets);
+            }
+
+            for ((no_enable, no_start, restart_after_upgrade, no_stop_on_upgrade), assets) in grouped_assets {
+                let grouped_options = dh_installsystemd::Options {
+                    no_enable,
+                    no_start,
+                    restart_after_upgrade,
+                    no_stop_on_upgrade,
+                };
+                let deduped_assets = Self::dedupe_assets_by_target_path(assets);
+
                 // Select and populate autoscript templates relevant to the unit
                 // file(s) in this package and the configuration settings chosen.
-                scripts = dh_installsystemd::generate(
+                let generated = dh_installsystemd::generate(
                     &package_deb.deb_name,
-                    &package_deb.assets.resolved,
-                    &dh_installsystemd::Options::from(systemd_units_config),
+                    &deduped_assets,
+                    &grouped_options,
                     self.listener,
                 )?;
 
-                // Get Option<&str> from Option<String>
-                let unit_name = systemd_units_config.unit_name.as_deref();
-
-                // Replace the #DEBHELPER# token in the users maintainer scripts
-                // and/or generate maintainer scripts from scratch as needed.
-                dh_lib::apply(
-                    &maintainer_scripts_dir,
-                    &mut scripts,
-                    &package_deb.deb_name,
-                    unit_name,
-                    self.listener,
-                )?;
+                Self::merge_generated_scripts(&mut scripts, generated);
             }
+
+            // Replace the #DEBHELPER# token in the users maintainer scripts
+            // and/or generate maintainer scripts from scratch as needed.
+            dh_lib::apply(
+                &maintainer_scripts_dir,
+                &mut scripts,
+                &package_deb.deb_name,
+                apply_unit_name,
+                self.listener,
+            )?;
         }
 
         let mut found_any = !scripts.is_empty();
@@ -394,6 +492,240 @@ mod tests {
             &maintainer_scripts,
             "test-resources/testroot/testchild/debian/some.service",
         );
+    }
+
+    #[test]
+    fn generate_scripts_applies_upgrade_policy_per_unit() {
+        let mut listener = MockListener::new();
+        let (config, mut package_deb, mut in_ar) = prepare(vec![], None, &mut listener);
+
+        set_test_fs_path_content(
+            "test-resources/testroot/debian/postinst",
+            "#!/bin/sh\n#DEBHELPER#".to_string(),
+        );
+        set_test_fs_path_content(
+            "test-resources/testroot/debian/prerm",
+            "#!/bin/sh\n#DEBHELPER#".to_string(),
+        );
+        set_test_fs_path_content(
+            "test-resources/testroot/debian/postrm",
+            "#!/bin/sh\n#DEBHELPER#".to_string(),
+        );
+
+        set_test_fs_path_content(
+            "test-resources/testroot/debian/api.service",
+            "[Unit]\nDescription=api\n".to_string(),
+        );
+        set_test_fs_path_content(
+            "test-resources/testroot/debian/worker.service",
+            "[Unit]\nDescription=worker\n".to_string(),
+        );
+
+        package_deb.assets.resolved.push(Asset::new(
+            AssetSource::Path(PathBuf::from("test-resources/testroot/debian/api.service")),
+            PathBuf::from("usr/lib/systemd/system/api.service"),
+            Some(0o000),
+            IsBuilt::No,
+            crate::assets::AssetKind::Any,
+        ));
+        package_deb.assets.resolved.push(Asset::new(
+            AssetSource::Path(PathBuf::from("test-resources/testroot/debian/worker.service")),
+            PathBuf::from("usr/lib/systemd/system/worker.service"),
+            Some(0o000),
+            IsBuilt::No,
+            crate::assets::AssetKind::Any,
+        ));
+
+        package_deb
+            .maintainer_scripts_rel_path
+            .get_or_insert(PathBuf::from("debian"));
+
+        package_deb.systemd_units = Some(vec![
+            SystemdUnitsConfig {
+                unit_name: Some("api".to_string()),
+                restart_after_upgrade: Some(true),
+                stop_on_upgrade: Some(false),
+                ..Default::default()
+            },
+            SystemdUnitsConfig {
+                unit_name: Some("worker".to_string()),
+                restart_after_upgrade: Some(false),
+                stop_on_upgrade: Some(true),
+                ..Default::default()
+            },
+        ]);
+
+        in_ar.generate_scripts(&config, &package_deb).unwrap();
+
+        let archive_bytes = in_ar.finish().unwrap();
+        let mut out_ar = tar::Archive::new(&archive_bytes[..]);
+        let archived_content = extract_contents(&mut out_ar);
+        let archived_keys = archived_content.keys().cloned().collect::<Vec<_>>();
+
+        let postinst = archived_content
+            .get("./postinst")
+            .unwrap_or_else(|| panic!("missing postinst, archived keys: {archived_keys:?}"));
+        assert!(postinst.contains("deb-systemd-invoke $_dh_action api.service"));
+        assert!(postinst.contains("deb-systemd-invoke start worker.service"));
+        assert!(!postinst.contains("deb-systemd-invoke start api.service worker.service"));
+
+        let prerm = archived_content
+            .get("./prerm")
+            .unwrap_or_else(|| panic!("missing prerm, archived keys: {archived_keys:?}"));
+        assert!(prerm.contains("[ \"$1\" = remove ]"));
+        assert!(prerm.contains("deb-systemd-invoke stop api.service"));
+        assert!(prerm.contains("deb-systemd-invoke stop worker.service"));
+    }
+
+    #[test]
+    fn generate_scripts_applies_enable_and_start_per_unit_independent_of_order() {
+        fn render_postinst_for_configs(configs: Vec<SystemdUnitsConfig>) -> String {
+            let mut listener = MockListener::new();
+            let (config, mut package_deb, mut in_ar) = prepare(vec![], None, &mut listener);
+
+            set_test_fs_path_content(
+                "test-resources/testroot/debian/postinst",
+                "#!/bin/sh\n#DEBHELPER#".to_string(),
+            );
+            set_test_fs_path_content(
+                "test-resources/testroot/debian/prerm",
+                "#!/bin/sh\n#DEBHELPER#".to_string(),
+            );
+            set_test_fs_path_content(
+                "test-resources/testroot/debian/postrm",
+                "#!/bin/sh\n#DEBHELPER#".to_string(),
+            );
+
+            set_test_fs_path_content(
+                "test-resources/testroot/debian/foo.service",
+                "[Unit]\nDescription=foo\n[Install]\nWantedBy=multi-user.target\n".to_string(),
+            );
+            set_test_fs_path_content(
+                "test-resources/testroot/debian/bar.service",
+                "[Unit]\nDescription=bar\n[Install]\nWantedBy=multi-user.target\n".to_string(),
+            );
+
+            package_deb.assets.resolved.push(Asset::new(
+                AssetSource::Path(PathBuf::from("test-resources/testroot/debian/foo.service")),
+                PathBuf::from("usr/lib/systemd/system/foo.service"),
+                Some(0o000),
+                IsBuilt::No,
+                crate::assets::AssetKind::Any,
+            ));
+            package_deb.assets.resolved.push(Asset::new(
+                AssetSource::Path(PathBuf::from("test-resources/testroot/debian/bar.service")),
+                PathBuf::from("usr/lib/systemd/system/bar.service"),
+                Some(0o000),
+                IsBuilt::No,
+                crate::assets::AssetKind::Any,
+            ));
+
+            package_deb
+                .maintainer_scripts_rel_path
+                .get_or_insert(PathBuf::from("debian"));
+            package_deb.systemd_units = Some(configs);
+
+            in_ar.generate_scripts(&config, &package_deb).unwrap();
+
+            let archive_bytes = in_ar.finish().unwrap();
+            let mut out_ar = tar::Archive::new(&archive_bytes[..]);
+            let archived_content = extract_contents(&mut out_ar);
+
+            archived_content.get("./postinst").unwrap().clone()
+        }
+
+        let foo_default = SystemdUnitsConfig {
+            unit_name: Some("foo".to_string()),
+            ..Default::default()
+        };
+        let bar_disabled = SystemdUnitsConfig {
+            unit_name: Some("bar".to_string()),
+            enable: Some(false),
+            start: Some(false),
+            ..Default::default()
+        };
+
+        let postinst_a = render_postinst_for_configs(vec![foo_default.clone(), bar_disabled.clone()]);
+        let postinst_b = render_postinst_for_configs(vec![bar_disabled, foo_default]);
+
+        for postinst in [&postinst_a, &postinst_b] {
+            assert!(postinst.contains("deb-systemd-helper enable foo.service"));
+            assert!(postinst.contains("deb-systemd-helper debian-installed bar.service"));
+            assert!(!postinst.contains("deb-systemd-helper enable foo.service bar.service"));
+
+            assert!(postinst.contains("_dh_action=restart"));
+            assert!(postinst.contains("deb-systemd-invoke $_dh_action foo.service"));
+            assert!(postinst.contains("deb-systemd-invoke try-restart bar.service"));
+            assert!(!postinst.contains("deb-systemd-invoke start foo.service bar.service"));
+        }
+    }
+
+    #[test]
+    fn generate_scripts_combines_units_with_identical_options() {
+        let mut listener = MockListener::new();
+        let (config, mut package_deb, mut in_ar) = prepare(vec![], None, &mut listener);
+
+        set_test_fs_path_content(
+            "test-resources/testroot/debian/postinst",
+            "#!/bin/sh\n#DEBHELPER#".to_string(),
+        );
+        set_test_fs_path_content(
+            "test-resources/testroot/debian/prerm",
+            "#!/bin/sh\n#DEBHELPER#".to_string(),
+        );
+        set_test_fs_path_content(
+            "test-resources/testroot/debian/postrm",
+            "#!/bin/sh\n#DEBHELPER#".to_string(),
+        );
+
+        set_test_fs_path_content(
+            "test-resources/testroot/debian/foo.service",
+            "[Unit]\nDescription=foo\n[Install]\nWantedBy=multi-user.target\n".to_string(),
+        );
+        set_test_fs_path_content(
+            "test-resources/testroot/debian/baz.service",
+            "[Unit]\nDescription=baz\n[Install]\nWantedBy=multi-user.target\n".to_string(),
+        );
+
+        package_deb.assets.resolved.push(Asset::new(
+            AssetSource::Path(PathBuf::from("test-resources/testroot/debian/foo.service")),
+            PathBuf::from("usr/lib/systemd/system/foo.service"),
+            Some(0o000),
+            IsBuilt::No,
+            crate::assets::AssetKind::Any,
+        ));
+        package_deb.assets.resolved.push(Asset::new(
+            AssetSource::Path(PathBuf::from("test-resources/testroot/debian/baz.service")),
+            PathBuf::from("usr/lib/systemd/system/baz.service"),
+            Some(0o000),
+            IsBuilt::No,
+            crate::assets::AssetKind::Any,
+        ));
+
+        package_deb
+            .maintainer_scripts_rel_path
+            .get_or_insert(PathBuf::from("debian"));
+        package_deb.systemd_units = Some(vec![
+            SystemdUnitsConfig {
+                unit_name: Some("foo".to_string()),
+                ..Default::default()
+            },
+            SystemdUnitsConfig {
+                unit_name: Some("baz".to_string()),
+                ..Default::default()
+            },
+        ]);
+
+        in_ar.generate_scripts(&config, &package_deb).unwrap();
+
+        let archive_bytes = in_ar.finish().unwrap();
+        let mut out_ar = tar::Archive::new(&archive_bytes[..]);
+        let archived_content = extract_contents(&mut out_ar);
+
+        let postinst = archived_content.get("./postinst").unwrap();
+        assert!(postinst.contains("deb-systemd-invoke $_dh_action baz.service foo.service"));
+        assert!(!postinst.contains("deb-systemd-invoke $_dh_action foo.service >/dev/null || true"));
+        assert!(!postinst.contains("deb-systemd-invoke $_dh_action baz.service >/dev/null || true"));
     }
 
     // `maintainer_scripts` is a collection of file system paths for which:
