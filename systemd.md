@@ -190,6 +190,19 @@ systemd-units = [
     ] 
 ```
 
+Each entry applies its options only to the unit files whose name (without the unit type extension) matches its `unit-name`, so different units can be given different options, e.g. a socket-activated service can be prevented from being started at install time while the daemon next to it is started normally:
+
+```toml
+[package.metadata.deb]
+maintainer-scripts = "debian/"
+systemd-units = [
+        { unit-name = "my-daemon" },
+        { unit-name = "my-api", start = false },
+    ]
+```
+
+An entry without a `unit-name` applies to all unit files in the package. Unit files installed via `assets` are covered by whichever entry their file name matches.
+
 #### Advanced Example
 
 For a more advanced example you might want to look at the [NLnet Labs Krill project](https://github.com/NLnetLabs/krill/) use of cargo-deb (disclaimer: this author is a contributor) which shows:

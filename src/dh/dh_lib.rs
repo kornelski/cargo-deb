@@ -176,35 +176,34 @@ pub(crate) fn autoscript(
 
     listener.progress("Applying", format!("autoscript {snippet_filename} to maintainer script {script}"));
 
-    if scripts.contains_key(&outfile) && (script == "postrm" || script == "prerm") {
-        if !replacements.is_empty() {
-            let existing_text = scripts.get(&outfile).unwrap();
-
-            // prepend new text to existing script fragment
-            let new_text = [
-                &format!("# Automatically added by {bin_name}\n"),
-                &autoscript_sed(snippet_filename, replacements),
-                "# End automatically added section\n",
-                existing_text,
-            ].concat();
-            scripts.insert(outfile, new_text);
-        } else {
-            // We don't support sed commands yet.
-            return Err(CargoDebError::Str("unsupported"));
-        }
-    } else if !replacements.is_empty() {
-        // append to existing script fragment (if any)
-        let new_text = [
-            scripts.get(&outfile).unwrap_or(&String::new()),
-            &format!("# Automatically added by {bin_name}\n"),
-            &autoscript_sed(snippet_filename, replacements),
-            "# End automatically added section\n",
-        ].concat();
-        scripts.insert(outfile, new_text);
-    } else {
+    if replacements.is_empty() {
         // We don't support sed commands yet.
         return Err(CargoDebError::Str("unsupported"));
     }
+
+    let new_block = [
+        &format!("# Automatically added by {bin_name}\n"),
+        &autoscript_sed(snippet_filename, replacements),
+        "# End automatically added section\n",
+    ].concat();
+
+    let existing_text = scripts.get(&outfile).map(String::as_str).unwrap_or_default();
+
+    // prevent things like `postinst` `daemon-reload` and others being emitted > 1
+    if existing_text.contains(&new_block) {
+        return Ok(());
+    }
+
+    let new_text = if script == "postrm" || script == "prerm" {
+        // prepend: teardown fragments accumulate in reverse order so units are stopped
+        // and cleaned up in the opposite order of how postinst set them up
+        [new_block.as_str(), existing_text].concat()
+    } else {
+        // append to existing script fragment (if any)
+        [existing_text, new_block.as_str()].concat()
+    };
+
+    scripts.insert(outfile, new_text);
 
     Ok(())
 }
@@ -552,6 +551,18 @@ mod tests {
             assert_eq!(expected_autoscript_text1, created_autoscript_text1);
             assert_eq!(expected_autoscript_text2, created_autoscript_text2);
         }
+    }
+
+    #[test]
+    fn autoscript_does_not_duplicate_identical_fragments() {
+        let scripts = autoscript_test_wrapper("mypkg", "postinst", "postrm-systemd", "dummyunit", None);
+        let text_after_first = scripts.get("mypkg.postinst.debhelper").unwrap().clone();
+
+        // requesting the exact same fragment again must not duplicate it
+        let scripts = autoscript_test_wrapper("mypkg", "postinst", "postrm-systemd", "dummyunit", Some(scripts));
+        let text_after_second = scripts.get("mypkg.postinst.debhelper").unwrap();
+
+        assert_eq!(&text_after_first, text_after_second);
     }
 
     #[test]

@@ -69,24 +69,27 @@ impl<'l, W: Write> ControlArchiveBuilder<'l, W> {
         if let Some(systemd_units_config_vec) = &package_deb.systemd_units {
             for systemd_units_config in systemd_units_config_vec {
                 // Select and populate autoscript templates relevant to the unit
-                // file(s) in this package and the configuration settings chosen.
-                scripts = dh_installsystemd::generate(
+                // file(s) belonging to this config entry (or all unit files in this package when no unit name is set)
+                // and the configuration settings chosen, accumulating the fragments across entries.
+                dh_installsystemd::generate(
                     &package_deb.deb_name,
                     &package_deb.assets.resolved,
+                    systemd_units_config.unit_name.as_deref(),
                     &dh_installsystemd::Options::from(systemd_units_config),
+                    &mut scripts,
                     self.listener,
                 )?;
+            }
 
-                // Get Option<&str> from Option<String>
-                let unit_name = systemd_units_config.unit_name.as_deref();
-
-                // Replace the #DEBHELPER# token in the users maintainer scripts
-                // and/or generate maintainer scripts from scratch as needed.
+            // Replace the #DEBHELPER# token in the users maintainer scripts
+            // and/or generate maintainer scripts from scratch as needed,
+            // now that the fragments of every systemd-units entry are known.
+            for systemd_units_config in systemd_units_config_vec {
                 dh_lib::apply(
                     &maintainer_scripts_dir,
                     &mut scripts,
                     &package_deb.deb_name,
-                    unit_name,
+                    systemd_units_config.unit_name.as_deref(),
                     self.listener,
                 )?;
             }

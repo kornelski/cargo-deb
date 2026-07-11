@@ -178,6 +178,14 @@ fn is_comment(s: &str) -> bool {
     matches!(s.chars().next(), Some('#' | ';'))
 }
 
+/// Determine if the given file name (e.g. "foo.service") is a unit file of the named systemd unit (e.g. "foo"),
+/// i.e. whether the file name without its unit type extension matches the unit name.
+///
+/// See [`Options`]'s explanation of `--name`.
+fn is_unit_of(fname: &str, unit_name: &str) -> bool {
+    fname.rsplit_once('.').is_some_and(|(stem, _)| stem == unit_name)
+}
+
 /// Strip off any first layer of outer quotes according to systemd quoting
 /// rules.
 ///
@@ -205,18 +213,21 @@ fn unquote(s: &str) -> &str {
 /// manually in Cargo.toml, that will be installed into `LIB_SYSTEMD_SYSTEM_DIR`
 /// will be analysed.
 ///
-/// Unlike `dh_installsystemd` results are returned as a `ScriptFragments` value
+/// When `unit_name` is provided, we only act on unit files whose file name (stripped of the unit type extension) matches.
+/// This allows per `systemd-units` entry settings.
+///
+/// Unlike `dh_installsystemd` results are accumulated into the given `ScriptFragments` value
 /// rather than being written to temporary files on disk.
+///
+/// Repeated calls (e.g. one per `systemd-units` entry) add to the existing fragments.
 ///
 /// # Usage
 ///
-/// Pass the `ScriptFragments` result to `apply()`.
+/// Pass the accumulated `ScriptFragments` to `apply()`.
 ///
 /// See:
 ///   <https://git.launchpad.net/ubuntu/+source/debhelper/tree/dh_installsystemd?h=applied/12.10ubuntu1#n288>
-pub fn generate(package: &str, assets: &[Asset], options: &Options, listener: &dyn Listener) -> CDResult<ScriptFragments> {
-    let mut scripts = ScriptFragments::new();
-
+pub fn generate(package: &str, assets: &[Asset], unit_name: Option<&str>, options: &Options, scripts: &mut ScriptFragments, listener: &dyn Listener) -> CDResult<()> {
     // add postinst code blocks to handle tmpfiles
     // see: <https://salsa.debian.org/debian/debhelper/-/blob/master/dh_installsystemd#L305>
     // tmpfiles are installed with .conf as extension
@@ -224,6 +235,11 @@ pub fn generate(package: &str, assets: &[Asset], options: &Options, listener: &d
     let tmp_file_names = assets
         .iter()
         .filter(|a| a.c.target_path.starts_with(USR_LIB_TMPFILES_D_DIR))
+        .filter(|a| match unit_name {
+            Some(unit_name) => fname_from_path(a.c.target_path.as_path())
+                .is_some_and(|fname| fname == unit_name || is_unit_of(&fname, unit_name)),
+            None => true,
+        })
         .map(|v| {
             v.source.source_path()
                 .and_then(|p| fname_from_path(&p.with_extension("conf")))
@@ -233,7 +249,7 @@ pub fn generate(package: &str, assets: &[Asset], options: &Options, listener: &d
         .join(" ");
 
     if !tmp_file_names.is_empty() {
-        autoscript(&mut scripts, package, "postinst", "postinst-init-tmpfiles",
+        autoscript(scripts, package, "postinst", "postinst-init-tmpfiles",
             &map!{ "TMPFILES" => tmp_file_names }, false, listener)?;
     }
 
@@ -250,7 +266,11 @@ pub fn generate(package: &str, assets: &[Asset], options: &Options, listener: &d
             .iter()
             .filter(|a| a.c.target_path.parent() == Some(LIB_SYSTEMD_SYSTEM_DIR.as_ref()))
             .filter_map(|a| fname_from_path(a.c.target_path.as_path()))
-            .filter(|fname| !fname.contains('@')),
+            .filter(|fname| !fname.contains('@'))
+            .filter(|fname| match unit_name {
+                Some(unit_name) => is_unit_of(fname, unit_name),
+                None => true,
+            }),
     );
 
     // BTreeSets values iterate in sorted order irrespective of the order they
@@ -337,10 +357,10 @@ pub fn generate(package: &str, assets: &[Asset], options: &Options, listener: &d
     if !enable_units.is_empty() {
         let snippet = if options.no_enable { "postinst-systemd-dont-enable" } else { "postinst-systemd-enable" };
         for unit in &enable_units {
-            autoscript(&mut scripts, package, "postinst", snippet,
+            autoscript(scripts, package, "postinst", snippet,
                 &map!{ "UNITFILE" => unit.clone() }, true, listener)?;
         }
-        autoscript(&mut scripts, package, "postrm", "postrm-systemd",
+        autoscript(scripts, package, "postrm", "postrm-systemd",
             &map!{ "UNITFILES" => enable_units.join(" ") }, false, listener)?;
     }
 
@@ -358,26 +378,26 @@ pub fn generate(package: &str, assets: &[Asset], options: &Options, listener: &d
                 replace.insert("RESTART_ACTION", "restart".into());
                 "postinst-systemd-restart"
             };
-            autoscript(&mut scripts, package, "postinst", snippet, &replace, true, listener)?;
+            autoscript(scripts, package, "postinst", snippet, &replace, true, listener)?;
         } else if !options.no_start {
             // (stop|start) service (before|after) upgrade
-            autoscript(&mut scripts, package, "postinst", "postinst-systemd-start", &replace, true, listener)?;
+            autoscript(scripts, package, "postinst", "postinst-systemd-start", &replace, true, listener)?;
         }
 
         if options.no_stop_on_upgrade || options.restart_after_upgrade {
             // stop service only on remove
-            autoscript(&mut scripts, package, "prerm", "prerm-systemd-restart", &replace, true, listener)?;
+            autoscript(scripts, package, "prerm", "prerm-systemd-restart", &replace, true, listener)?;
         } else if !options.no_start {
             // always stop service
-            autoscript(&mut scripts, package, "prerm", "prerm-systemd", &replace, true, listener)?;
+            autoscript(scripts, package, "prerm", "prerm-systemd", &replace, true, listener)?;
         }
 
         // Run this with "default" order so it is always after other service
         // related autosnippets.
-        autoscript(&mut scripts, package, "postrm", "postrm-systemd-reload-only", &replace, false, listener)?;
+        autoscript(scripts, package, "postrm", "postrm-systemd-reload-only", &replace, false, listener)?;
     }
 
-    Ok(scripts)
+    Ok(())
 }
 
 #[cfg(test)]
@@ -542,7 +562,8 @@ mod tests {
         let mut mock_listener = crate::listener::MockListener::new();
         mock_listener.expect_info().times(0).return_const(());
 
-        let fragments = generate("", &[], &Options::default(), &mock_listener).unwrap();
+        let mut fragments = ScriptFragments::new();
+        generate("", &[], None, &Options::default(), &mut fragments, &mock_listener).unwrap();
 
         assert!(fragments.is_empty());
     }
@@ -560,7 +581,8 @@ mod tests {
             AssetKind::Any,
         )];
 
-        let fragments = generate("mypkg", &assets, &Options::default(), &mock_listener).unwrap();
+        let mut fragments = ScriptFragments::new();
+        generate("mypkg", &assets, None, &Options::default(), &mut fragments, &mock_listener).unwrap();
         assert!(fragments.is_empty());
     }
 
@@ -577,7 +599,7 @@ mod tests {
             AssetKind::Any,
         )];
 
-        assert!(generate("mypkg", &assets, &Options::default(), &mock_listener).is_err());
+        assert!(generate("mypkg", &assets, None, &Options::default(), &mut ScriptFragments::new(), &mock_listener).is_err());
     }
 
     #[test]
@@ -593,7 +615,7 @@ mod tests {
             AssetKind::Any,
         )];
 
-        assert!(generate("mypkg", &assets, &Options::default(), &mock_listener).is_err());
+        assert!(generate("mypkg", &assets, None, &Options::default(), &mut ScriptFragments::new(), &mock_listener).is_err());
     }
 
     #[test]
@@ -614,7 +636,8 @@ mod tests {
             AssetKind::Any,
         )];
 
-        let fragments = generate("mypkg", &assets, &Options::default(), &mock_listener).unwrap();
+        let mut fragments = ScriptFragments::new();
+        generate("mypkg", &assets, None, &Options::default(), &mut fragments, &mock_listener).unwrap();
         assert_eq!(1, fragments.len());
 
         let (fragment_name, created_text) = fragments.into_iter().next().unwrap();
@@ -664,7 +687,8 @@ mod tests {
             AssetKind::Any,
         )];
 
-        let fragments = generate("mypkg", &assets, &Options::default(), &mock_listener).unwrap();
+        let mut fragments = ScriptFragments::new();
+        generate("mypkg", &assets, None, &Options::default(), &mut fragments, &mock_listener).unwrap();
         assert_eq!(0, fragments.len());
     }
 
@@ -681,7 +705,8 @@ mod tests {
             AssetKind::Any,
         )];
 
-        let fragments = generate("mypkg", &assets, &Options::default(), &mock_listener).unwrap();
+        let mut fragments = ScriptFragments::new();
+        generate("mypkg", &assets, None, &Options::default(), &mut fragments, &mock_listener).unwrap();
         assert_eq!(0, fragments.len());
     }
 
@@ -699,8 +724,90 @@ mod tests {
             AssetKind::Any,
         )];
 
-        let fragments = generate("mypkg", &assets, &Options::default(), &mock_listener).unwrap();
+        let mut fragments = ScriptFragments::new();
+        generate("mypkg", &assets, None, &Options::default(), &mut fragments, &mock_listener).unwrap();
         assert_eq!(0, fragments.len());
+    }
+
+
+    fn unit_asset(source: &'static str, target: &str) -> Asset {
+        let test_unit_file_content = "[Unit]
+Description=A test unit
+
+[Service]
+Type=simple".to_owned();
+
+        set_test_fs_path_content(source, test_unit_file_content.to_owned());
+
+        Asset::new(
+            AssetSource::Path(PathBuf::from(source)),
+            Path::new(target).to_path_buf(),
+            Some(0o0),
+            IsBuilt::No,
+            AssetKind::Any,
+        )
+    }
+
+    #[test]
+    fn generate_scopes_actions_to_the_given_unit_name() {
+        let mut mock_listener = crate::listener::MockListener::new();
+        mock_listener.expect_progress().return_const(());
+
+        let _g = add_test_fs_paths(&[]);
+
+        let assets = vec![
+            unit_asset("debian/main.service", "usr/lib/systemd/system/main.service"),
+            unit_asset("debian/other.service", "usr/lib/systemd/system/other.service"),
+        ];
+
+        let mut fragments = ScriptFragments::new();
+        generate("mypkg", &assets, Some("other"), &Options::default(), &mut fragments, &mock_listener).unwrap();
+
+        let postinst = fragments.get("mypkg.postinst.service").unwrap();
+        assert!(postinst.contains("other.service"));
+        assert!(!postinst.contains("main.service"));
+    }
+
+    #[test]
+    fn generate_accumulates_fragments_with_per_entry_options() {
+        let mut mock_listener = crate::listener::MockListener::new();
+        mock_listener.expect_progress().return_const(());
+
+        let _g = add_test_fs_paths(&[]);
+
+        let assets = vec![
+            unit_asset("debian/main.service", "usr/lib/systemd/system/main.service"),
+            unit_asset("debian/other.service", "usr/lib/systemd/system/other.service"),
+        ];
+
+        let mut fragments = ScriptFragments::new();
+
+        let entries = [
+            // starts and restarts
+            (Some("main"), Options { restart_after_upgrade: true, ..Options::default() }),
+            // only restarts, should be running
+            (Some("other"), Options { restart_after_upgrade: true, no_start: true, ..Options::default() }),
+        ];
+
+        for (unit_name, options) in &entries {
+            generate("mypkg", &assets, *unit_name, options, &mut fragments, &mock_listener).unwrap();
+        }
+
+        let postinst = fragments.get("mypkg.postinst.service").unwrap();
+        assert!(postinst.contains("deb-systemd-invoke $_dh_action main.service"));
+        // only restart when other.service is already running
+        assert!(postinst.contains("deb-systemd-invoke try-restart other.service"));
+
+        assert!(!postinst.contains("try-restart main.service"));
+        assert!(!postinst.contains("$_dh_action other.service"));
+
+        // both stop
+        let prerm = fragments.get("mypkg.prerm.service").unwrap();
+        assert!(prerm.contains("deb-systemd-invoke stop main.service"));
+        assert!(prerm.contains("deb-systemd-invoke stop other.service"));
+
+        let postrm = fragments.get("mypkg.postrm.debhelper").unwrap();
+        assert_eq!(1, postrm.matches("daemon-reload").count());
     }
 
     #[rstest(ip, inst, ne, rau, ns, nsou,
@@ -809,7 +916,8 @@ WantedBy=multi-user.target");
         ]);
 
         // generate!
-        let fragments = generate("mypkg", &assets, &options, &mock_listener).unwrap();
+        let mut fragments = ScriptFragments::new();
+        generate("mypkg", &assets, None, &options, &mut fragments, &mock_listener).unwrap();
 
         // verify, though don't verify creation of autoscript fragments as that
         // is verified in tests of the lower level functionality, instead verify
