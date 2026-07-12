@@ -729,7 +729,6 @@ mod tests {
         assert_eq!(0, fragments.len());
     }
 
-
     fn unit_asset(source: &'static str, target: &str) -> Asset {
         let test_unit_file_content = "[Unit]
 Description=A test unit
@@ -737,7 +736,7 @@ Description=A test unit
 [Service]
 Type=simple".to_owned();
 
-        set_test_fs_path_content(source, test_unit_file_content.to_owned());
+        set_test_fs_path_content(source, test_unit_file_content);
 
         Asset::new(
             AssetSource::Path(PathBuf::from(source)),
