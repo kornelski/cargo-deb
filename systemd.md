@@ -1,6 +1,6 @@
 ### `[package.metadata.deb.systemd-units]` options
 
-When this table is present in `Cargo.toml` AND `maintainer-scripts` is also specified, correct installation of systemd units and sysusers config files will be handled automatically for you.
+When this table is present in `Cargo.toml` AND `maintainer-scripts` is also specified, correct installation of systemd units and tmpfiles and sysusers config files will be handled automatically for you.
 
 This works as follows:
 1. Assets will be added for any matching systemd unit files found in the `unit-scripts` _(see below)_ directory.
@@ -11,7 +11,7 @@ This works as follows:
 
 The exact behaviour can be tuned using the following options:
 
- - **unit-scripts**: Directory containing zero or more [systemd unit files](https://www.freedesktop.org/software/systemd/man/systemd.unit.html) (see below for matching rules) (defaults to the value of the `maintainer-scripts` option).
+ - **unit-scripts**: Directory containing zero or more [systemd unit](https://www.freedesktop.org/software/systemd/man/systemd.unit.html) and config files (see below for matching rules) (defaults to the value of the `maintainer-scripts` option).
  - **unit-name**: Only include systemd unit files for this unit (see below for matching rules).
  - **enable**: Enable the systemd unit on package installation and disable it on package removal (default `true`).
  - **start**: Start the systemd unit on package installation and stop it on package removal (default `true`).
