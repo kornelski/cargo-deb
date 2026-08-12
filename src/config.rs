@@ -128,6 +128,8 @@ pub struct PackageConfig {
     pub cargo_crate_name: String,
     /// The name to give the Debian package; usually the same as the Cargo project name
     pub deb_name: String,
+    /// The name of the source package, if different from `deb_name`
+    pub deb_source: Option<String>,
     /// The version to give the Debian package; usually the same as the Cargo version
     pub deb_version: String,
     /// The software license of the project (SPDX format).
@@ -989,6 +991,7 @@ impl PackageConfig {
             default_timestamp,
             cargo_crate_name: cargo_package.name.clone(),
             deb_name: deb.name.clone().unwrap_or_else(|| debian_package_name(&cargo_package.name)),
+            deb_source: None,
             license_identifier: license_identifier.map(From::from),
             license_file_rel_path,
             license_file_skip_lines,
@@ -1237,6 +1240,9 @@ impl PackageConfig {
 
         // Write all of the lines required by the control file.
         writeln!(control, "Package: {}", self.deb_name)?;
+        if let Some(ref deb_source) = self.deb_source {
+            writeln!(control, "Source: {deb_source}")?;
+        }
         writeln!(control, "Version: {}", self.deb_version)?;
         writeln!(control, "Architecture: {}", self.architecture)?;
         let ma = match self.multiarch {
@@ -1400,6 +1406,7 @@ impl PackageConfig {
         Some(Self {
             cargo_crate_name: self.cargo_crate_name.clone(),
             deb_name: format!("{}-dbgsym", self.deb_name),
+            deb_source: Some(self.deb_name.clone()),
             deb_version: self.deb_version.clone(),
             license_identifier: self.license_identifier.clone(),
             license_file_rel_path: None,
