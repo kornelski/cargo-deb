@@ -27,7 +27,7 @@ use crate::CDResult;
 ///   <https://git.launchpad.net/ubuntu/+source/debhelper/tree/autoscripts?h=applied/12.10ubuntu1>
 /// To understand which scripts are invoked when, consult:
 ///   <https://www.debian.org/doc/debian-policy/ap-flowcharts.htm>
-static AUTOSCRIPTS: [(&str, &[u8]); 10] = [
+static AUTOSCRIPTS: [(&str, &[u8]); 11] = [
     ("postinst-init-tmpfiles", include_bytes!("../../autoscripts/postinst-init-tmpfiles")),
     ("postinst-systemd-dont-enable", include_bytes!("../../autoscripts/postinst-systemd-dont-enable")),
     ("postinst-systemd-enable", include_bytes!("../../autoscripts/postinst-systemd-enable")),
@@ -38,6 +38,7 @@ static AUTOSCRIPTS: [(&str, &[u8]); 10] = [
     ("postrm-systemd-reload-only", include_bytes!("../../autoscripts/postrm-systemd-reload-only")),
     ("prerm-systemd", include_bytes!("../../autoscripts/prerm-systemd")),
     ("prerm-systemd-restart", include_bytes!("../../autoscripts/prerm-systemd-restart")),
+    ("postinst-sysusers", include_bytes!("../../autoscripts/postinst-sysusers")),
 ];
 pub(crate) type ScriptFragments = HashMap<String, String>;
 
@@ -450,6 +451,7 @@ mod tests {
             "postinst-systemd-restart",
             "postinst-systemd-restartnostart",
             "postinst-systemd-start",
+            "postinst-sysusers",
             "postrm-systemd",
             "postrm-systemd-reload-only",
             "prerm-systemd",

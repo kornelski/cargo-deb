@@ -2,7 +2,7 @@ use crate::assets::{Asset, AssetFmt, AssetKind, AssetSource, Assets, IsBuilt, Ra
 use crate::assets::is_dynamic_library_filename;
 use crate::util::compress::gzipped;
 use crate::dependencies::resolve_with_dpkg;
-use crate::dh::dh_installsystemd;
+use crate::dh::{dh_installsystemd, dh_installsysusers};
 use crate::error::{CDResult, CargoDebError};
 use crate::listener::Listener;
 use crate::parse::cargo::CargoConfig;
@@ -860,14 +860,26 @@ impl BuildEnvironment {
                 listener.warning(format!("No usable systemd units found for `{}` in `{}`", package_deb.deb_name, search_path.display()));
             }
 
-            for (source, target) in units {
+            let mut sysusers = dh_installsysusers::find_config(search_path, &package_deb.deb_name);
+            if package_deb.deb_name != package_deb.cargo_crate_name {
+                if let Some(fallback) = dh_installsysusers::find_config(search_path, &package_deb.cargo_crate_name) {
+                    if sysusers.is_some() {
+                        listener.warning(format!("Sysusers config found for Cargo package name ({}), but Debian package name was expected ({}). Used Cargo package name as a fallback.", package_deb.cargo_crate_name, package_deb.deb_name));
+                        sysusers = Some(fallback);
+                    } else {
+                        listener.warning(format!("Cargo package name and Debian package name are different ({} !=  {}) and both have sysusers configuration. Used Debian package name.", package_deb.cargo_crate_name, package_deb.deb_name));
+                    }
+                }
+            }
+
+            for (action, (source, target)) in units.into_iter().map(|u| ("systemd", u)).chain(sysusers.map(|u| ("sysusers", u))) {
                 package_deb.assets.resolved.push(Asset::new(
                     AssetSource::from_path(source, package_deb.preserve_symlinks), // should this even support symlinks at all?
                     target.path,
                     Some(target.mode),
                     IsBuilt::No,
                     AssetKind::Any,
-                ).processed("systemd", search_path.clone()));
+                ).processed(action, search_path.clone()));
             }
         }
         Ok(())
