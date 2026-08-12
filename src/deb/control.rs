@@ -1,6 +1,6 @@
 use crate::config::{BuildEnvironment, PackageConfig};
 use crate::deb::tar::Tarball;
-use crate::dh::{dh_installsystemd, dh_lib};
+use crate::dh::{dh_installsystemd, dh_installsysusers, dh_lib};
 use crate::error::{CDResult, CargoDebError};
 use crate::listener::Listener;
 use crate::util::{is_path_file, read_file_to_string};
@@ -68,6 +68,14 @@ impl<'l, W: Write> ControlArchiveBuilder<'l, W> {
 
         if let Some(systemd_units_config_vec) = &package_deb.systemd_units {
             for systemd_units_config in systemd_units_config_vec {
+                // Ordering dependency: sysusers.d hook must run before tmpfiles.d
+                dh_installsysusers::generate(
+                    &package_deb.deb_name,
+                    &package_deb.assets.resolved,
+                    &mut scripts,
+                    self.listener,
+                )?;
+
                 // Select and populate autoscript templates relevant to the unit
                 // file(s) belonging to this config entry (or all unit files in this package when no unit name is set)
                 // and the configuration settings chosen, accumulating the fragments across entries.

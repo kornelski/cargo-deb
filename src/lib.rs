@@ -35,6 +35,7 @@ pub mod deb {
 mod util;
 mod dh {
     pub(crate) mod dh_installsystemd;
+    pub(crate) mod dh_installsysusers;
     pub(crate) mod dh_lib;
 }
 pub mod listener;
