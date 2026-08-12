@@ -64,18 +64,14 @@ pub(crate) fn read_file_to_bytes(path: &Path) -> std::io::Result<Vec<u8>> {
 /// let empty = std::collections::HashMap::new();
 /// assert_eq!(empty, map!{ });
 /// ```
-///
-/// # Provenance
-///
-/// From: <https://stackoverflow.com/a/27582993>
 macro_rules! map(
     { $($key:expr => $value:expr),+ } => {
         {
-            let mut m = ::std::collections::HashMap::new();
-            $(
-                m.insert($key, $value);
-            )+
-            m
+            ::std::collections::HashMap::from([
+                $(
+                    ($key, $value),
+                )+
+            ])
         }
      };
 );
