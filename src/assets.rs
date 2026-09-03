@@ -291,7 +291,67 @@ impl UnresolvedAsset {
 
     /// Convert `source_path` (with glob or dir) to actual path
     pub fn resolve(&self) -> CDResult<Vec<Asset>> {
-        let (source_path, &preserve_symlinks, &AssetCommon { ref target_path, chmod, is_built, asset_kind }) =  match self {
+        fn search_glob(
+            paths: glob::Paths,
+            preserve_symlinks: bool,
+            c: &AssetCommon,
+            source_prefix_len: Option<usize>,
+        ) -> CDResult<Vec<Asset>> {
+            let mut symlink_dirs = Vec::new();
+            let mut matched_assets = Vec::new();
+            for entry in paths {
+                let source_file = entry?;
+                if preserve_symlinks {
+                    if symlink_dirs.iter().any(|dir| source_file.starts_with(dir)) {
+                        // Remove entries inside symlinked dirs
+                        continue;
+                    }
+
+                    if source_file.is_dir() {
+                        if !source_file.is_symlink() {
+                            // Remove dirs from globs without throwing away errors
+                            continue;
+                        }
+                        symlink_dirs.push(source_file.clone());
+                    }
+                } else if source_file.is_dir() {
+                    // Remove dirs from globs without throwing away errors
+                    continue;
+                }
+
+                let target_file = if let Some(source_prefix_len) = source_prefix_len {
+                    c.target_path.join(
+                        source_file
+                        .iter()
+                        .skip(source_prefix_len)
+                        .collect::<PathBuf>())
+                } else {
+                    c.target_path.clone()
+                };
+                // Use provided chmod or read from filesystem
+                let file_chmod = match c.chmod {
+                    Some(chmod) => chmod,
+                    None => get_file_mode(&source_file)?,
+                };
+                log::debug!("asset {} -> {} {} {:o}", source_file.display(), target_file.display(), if c.is_built != IsBuilt::No {"copy"} else {"build"}, file_chmod);
+
+                let asset = Asset::new(
+                    AssetSource::from_path(source_file, preserve_symlinks),
+                    target_file,
+                    Some(file_chmod),
+                    c.is_built,
+                    c.asset_kind,
+                );
+                if source_prefix_len.is_some() {
+                    matched_assets.push(asset.processed("glob", None));
+                } else {
+                    matched_assets.push(asset);
+                }
+            }
+            Ok(matched_assets)
+        }
+
+        let (source_path, &preserve_symlinks, c) =  match self {
             UnresolvedAsset::Symlink { link_name, c } => {
                 let target_path = Asset::normalized_target_path(c.target_path.to_owned(), Some(link_name));               
 
@@ -329,52 +389,14 @@ impl UnresolvedAsset {
             }
         });
 
-        let matched_assets = glob::glob(source_path.to_str().ok_or("utf8 path")?)?
-            // Remove dirs from globs without throwing away errors
-            .map(|entry| {
-                let source_file = entry?;
-                Ok(if source_file.is_dir() { None } else { Some(source_file) })
-            })
-            .filter_map(|res: Result<Option<PathBuf>, glob::GlobError>| {
-                Some(res.transpose()?.map_err(CargoDebError::from).and_then(|source_file| {
-                    let target_file = if let Some(source_prefix_len) = source_prefix_len {
-                        target_path.join(
-                            source_file
-                            .iter()
-                            .skip(source_prefix_len)
-                            .collect::<PathBuf>())
-                    } else {
-                        target_path.clone()
-                    };
-                    // Use provided chmod or read from filesystem
-                    let file_chmod = match chmod {
-                        Some(chmod) => chmod,
-                        None => get_file_mode(&source_file)?,
-                    };
-                    log::debug!("asset {} -> {} {} {:o}", source_file.display(), target_file.display(), if is_built != IsBuilt::No {"copy"} else {"build"}, file_chmod);
-                    
-                    let asset = Asset::new(
-                        AssetSource::from_path(source_file, preserve_symlinks),
-                        target_file,
-                        Some(file_chmod),
-                        is_built,
-                        asset_kind,
-                    );
-                    if source_prefix_len.is_some() {
-                        Ok(asset.processed("glob", None))
-                    } else {
-                        Ok(asset)
-                    }
-                }))
-            })
-            .collect::<CDResult<Vec<_>>>()
+        let matched_assets = search_glob(glob::glob(source_path.to_str().ok_or("utf8 path")?)?, preserve_symlinks, c, source_prefix_len)
             .map_err(|e| e.context(format_args!("Error while glob searching {}", source_path.display())))?;
 
         if matched_assets.is_empty() {
             return Err(CargoDebError::AssetFileNotFound(
                 source_path.clone(),
-                Asset::normalized_target_path(target_path.clone(), Some(source_path)),
-                source_prefix_len.is_some(), is_built != IsBuilt::No));
+                Asset::normalized_target_path(c.target_path.clone(), Some(source_path)),
+                source_prefix_len.is_some(), c.is_built != IsBuilt::No));
         }
         Ok(matched_assets)
     }
@@ -707,19 +729,37 @@ mod tests {
 
     #[test]
     fn assets_globs() {
-        for (glob, paths) in [
-            ("test-resources/testroot/src/*", &["bar/main.rs"][..]),
-            ("test-resources/testroot/*/main.rs", &["bar/main.rs"]),
-            ("test-resources/testroot/*/*", &["bar/src/main.rs", "bar/testchild/Cargo.toml"]),
-            ("test-resources/*/src/*", &["bar/testroot/src/main.rs"]),
-            ("test-resources/*/src/main.rs", &["bar/main.rs"]),
-            ("test-resources/*/*/main.rs", &["bar/main.rs"]),
-            ("test-resources/testroot/**/src/*", &["bar/src/main.rs", "bar/testchild/src/main.rs"]),
-            ("test-resources/testroot/**/*.rs", &["bar/src/main.rs", "bar/testchild/src/main.rs"]),
+        for (glob, preserve_symlinks, paths) in [
+            ("test-resources/testroot/src/*", false, &["bar/main.rs"][..]),
+            ("test-resources/testroot/*/main.rs", false, &["bar/main.rs"]),
+            ("test-resources/testroot/*/*", false, &["bar/src/main.rs", "bar/testchild/Cargo.toml"]),
+            ("test-resources/*/src/*", false, &["bar/testroot/src/main.rs"]),
+            ("test-resources/*/src/main.rs", false, &["bar/main.rs"]),
+            ("test-resources/*/*/main.rs", false, &["bar/main.rs"]),
+            ("test-resources/testroot/**/src/*", false, &["bar/src/main.rs", "bar/testchild/src/main.rs"]),
+            ("test-resources/testroot/**/*.rs", false, &["bar/src/main.rs", "bar/testchild/src/main.rs"]),
+            (
+                "test-resources/testroot/symlink/**/*",
+                false,
+                &[
+                    "bar/dir/file",
+                    "bar/lib/symlink_child",
+                    "bar/lib/symlink_dir/file",
+                    "bar/lib/test_child",
+                    "bar/lib64/symlink_child",
+                    "bar/lib64/symlink_dir/file",
+                    "bar/lib64/test_child",
+                ],
+            ),
+            (
+                "test-resources/testroot/symlink/**/*",
+                true,
+                &["bar/dir/file", "bar/lib/symlink_child", "bar/lib/symlink_dir", "bar/lib/test_child", "bar/lib64"],
+            ),
         ] {
             let asset = UnresolvedAsset::Asset {
                 source_path: PathBuf::from(glob),
-                preserve_symlinks: false,
+                preserve_symlinks,
                 c: AssetCommon {
                     target_path: PathBuf::from("bar/"),
                     chmod: Some(0o644),
