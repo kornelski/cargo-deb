@@ -16,7 +16,7 @@ jobs:
     outputs:
       msrv: ${{ steps.read-declared-msrv.outputs.msrv }}
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v7
       - id: read-declared-msrv
         name: Read msrv from Cargo.toml rust_version field
         run: echo "msrv=$(cargo metadata  --no-deps --format-version  1 | jq -r '.packages[] | select(.name = "cargo-deb") | ."rust_version"')" >>  "$GITHUB_OUTPUT"
@@ -32,7 +32,7 @@ jobs:
           - {rust: "${{ needs.read-msrv.outputs.msrv }}", name: "msrv"}
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@master
         with:
           toolchain: ${{ matrix.rust }}
