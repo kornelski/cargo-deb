@@ -3,23 +3,30 @@ name: CI
 on:
   push:
   pull_request:
-    branches:
-      # Branches from forks have the form 'user:branch-name' so we only run
-      # this job on pull_request events for branches that look like fork
-      # branches. Without this we would end up running this job twice for non
-      # forked PRs, once for the push and then once for opening the PR.
-    - '**:**'
 
 jobs:
+  read-msrv:
+    runs-on: ubuntu-latest
+    outputs:
+      msrv: ${{ steps.read-declared-msrv.outputs.msrv }}
+    steps:
+      - uses: actions/checkout@v7
+      - id: read-declared-msrv
+        name: Read msrv from Cargo.toml rust_version field
+        run: echo "msrv=$(cargo metadata  --no-deps --format-version  1 | jq -r '.packages[] | select(.name = "cargo-deb") | ."rust_version"')" >>  "$GITHUB_OUTPUT"
+
   test:
-    name: Test
+    name: "Test (${{ matrix.name || matrix.rust }})"
+    needs: [read-msrv]
     strategy:
       matrix:
         rust:
           - beta
+        include:
+          - {rust: "${{ needs.read-msrv.outputs.msrv }}", name: "msrv"}
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@master
         with:
           toolchain: ${{ matrix.rust }}
