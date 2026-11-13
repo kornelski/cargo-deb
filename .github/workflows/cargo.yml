@@ -22,13 +22,14 @@ jobs:
         run: echo "msrv=$(cargo metadata  --no-deps --format-version  1 | jq -r '.packages[] | select(.name = "cargo-deb") | ."rust_version"')" >>  "$GITHUB_OUTPUT"
 
   test:
-    name: Test
+    name: "Test (${{ matrix.name || matrix.rust }})"
     needs: [read-msrv]
     strategy:
       matrix:
         rust:
           - beta
-          - "${{ needs.read-msrv.outputs.msrv }}"
+        include:
+          - {rust: "${{ needs.read-msrv.outputs.msrv }}", name: "msrv"}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v3
