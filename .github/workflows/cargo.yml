@@ -11,12 +11,24 @@ on:
     - '**:**'
 
 jobs:
+  read-msrv:
+    runs-on: ubuntu-latest
+    outputs:
+      msrv: ${{ steps.read-declared-msrv.outputs.msrv }}
+    steps:
+      - uses: actions/checkout@v3
+      - id: read-declared-msrv
+        name: Read msrv from Cargo.toml rust_version field
+        run: echo "msrv=$(cargo metadata  --no-deps --format-version  1 | jq -r '.packages[] | select(.name = "cargo-deb") | ."rust_version"')" >>  "$GITHUB_OUTPUT"
+
   test:
     name: Test
+    needs: [read-msrv]
     strategy:
       matrix:
         rust:
           - beta
+          - "${{ needs.read-msrv.outputs.msrv }}"
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v3
